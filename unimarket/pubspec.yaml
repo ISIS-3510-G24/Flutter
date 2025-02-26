@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_svg: ^2.0.17
   flutter_animate: ^4.5.2
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
@@ -64,6 +65,11 @@ flutter:
     - assets/svgs/LogoCircle.svg
     - assets/svgs/LogoArrows.svg
     - assets/images/LogoSmall.png
+    - assets/images/RoundLogo.png
+    - assets/images/PlainLogoWithBackground.png
+    - assets/images/ArrowsLogo.png
+    - assets/images/Marketplace.jpg
+    - assets/images/Notebooks.png
 
 
   # An image asset can refer to one or more resolution-specific "variants", see
@@ -91,14 +97,3 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
-  fonts:
-    - family: Inter
-      fonts:
-        - asset: assets/fonts/Inter-Regular.ttf
-        - asset: assets/fonts/Inter-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/Inter-Italic.ttf
-          style: italic
-        - asset: assets/fonts/Inter-BoldItalic.ttf
-          weight: 700
-          style: italic
