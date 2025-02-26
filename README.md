@@ -1,3 +1,20 @@
+# iOS Testing
+
+1. Open simulator
+```bash
+open -a Simulator
+```
+
+2. Optional, if you want a specific device
+```bash
+xcrun simctl boot "iPhone 15"
+```
+
+3. Run the app
+```bash
+flutter run
+```
+
 ## Navigation
 
 <p align="center">
