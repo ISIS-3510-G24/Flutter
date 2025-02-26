@@ -8,7 +8,7 @@ class Routes {
     switch (settings.name) {
       case '/':
         return CupertinoPageRoute(builder: (_) => const SplashScreen());
-      case '/intro':  // asi se agregan las pantallas
+      case '/intro': 
         return CupertinoPageRoute(builder: (_) => const IntroductionScreen());
       case '/home':
         return CupertinoPageRoute(builder: (_) => const HomeScreen());

@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:unimarket/screens/splash_screen.dart';
 import 'package:unimarket/routes.dart';  
 
 void main() {
