@@ -41,7 +41,7 @@ class _IntroductionScreenState extends State<IntroductionScreen> {
         curve: Curves.easeInOut,
       );
     } else {
-      Navigator.pushReplacementNamed(context, '/home'); // Ir a Home
+      Navigator.pushReplacementNamed(context, '/preferences'); 
     }
   }
 
@@ -80,13 +80,13 @@ class _IntroductionScreenState extends State<IntroductionScreen> {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // 🔹 Se asegura que todas las imágenes tengan la misma altura
+                        // Se asegura que todas las imágenes tengan la misma altura
                         SizedBox(
-                          height: MediaQuery.of(context).size.height * 0.5, // 🔹 Ocupa 50% de la pantalla
-                          width: double.infinity, // 🔹 Ocupa todo el ancho disponible
+                          height: MediaQuery.of(context).size.height * 0.5, // Ocupa 50% de la pantalla
+                          width: double.infinity, // Ocupa todo el ancho disponible
                           child: Image.asset(
                             page["image"]!,
-                            fit: BoxFit.cover, // 🔹 Ajusta la imagen sin distorsionarla
+                            fit: BoxFit.cover, // Ajusta la imagen sin distorsionarla
                           ),
                         ),
                         const SizedBox(height: 20),
@@ -146,7 +146,7 @@ class _IntroductionScreenState extends State<IntroductionScreen> {
                   color: const Color(0xFF66B7F0),
                   borderRadius: BorderRadius.zero,
                   padding: const EdgeInsets.symmetric(vertical: 15),
-                  onPressed: _nextPage, // 🔹 Mueve onPressed arriba
+                  onPressed: _nextPage, // Mueve onPressed arriba
                   child: Text(
                     _currentPage < _pages.length - 1 ? "Next" : "Get Started",
                     style: GoogleFonts.inter(

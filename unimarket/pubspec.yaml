@@ -28,6 +28,7 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  cupertino_progress_bar: ^0.2.0
   flutter:
     sdk: flutter
 
@@ -62,14 +63,26 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
-    - assets/svgs/LogoCircle.svg
+    - assets/svgs/LogoCircle.svg # SVGS
     - assets/svgs/LogoArrows.svg
-    - assets/images/LogoSmall.png
+    - assets/svgs/ImagePlaceHolder.svg 
+    - assets/images/LogoSmall.png # IMAGES
     - assets/images/RoundLogo.png
     - assets/images/PlainLogoWithBackground.png
     - assets/images/ArrowsLogo.png
     - assets/images/Marketplace.jpg
     - assets/images/Notebooks.png
+    - assets/icons/Badge.svg # icons
+    - assets/icons/Bell.svg
+    - assets/icons/Chat.svg
+    - assets/icons/check-heart.svg
+    - assets/icons/Explore.svg
+    - assets/icons/FindAndOffer.svg
+    - assets/icons/Orders.svg
+    - assets/icons/Profile.svg
+    - assets/icons/Search.svg
+    - assets/icons/Shopping Bag Outlined.svg
+
 
 
   # An image asset can refer to one or more resolution-specific "variants", see
