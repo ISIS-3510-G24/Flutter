@@ -1,10 +1,13 @@
 import 'package:flutter/cupertino.dart';
+import 'package:unimarket/firebase_options.dart';
 import 'package:unimarket/routes.dart';  
 import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const UniMarketApp());
 }
 
