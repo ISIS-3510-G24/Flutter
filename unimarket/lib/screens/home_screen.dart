@@ -1,11 +1,14 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/widgets/popups/not_implemented.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
+  final user = FirebaseAuth.instance.currentUser!;
+  HomeScreen({super.key});
+  
   @override
   Widget build(BuildContext context) {
     return CupertinoTabScaffold(
@@ -32,7 +35,7 @@ class HomeScreen extends StatelessWidget {
           case 3:
             return const NotImplementedScreen();
           case 4:
-            return const NotImplementedScreen();
+            return _buildProfileScreen(context);
           default:
             return const NotImplementedScreen();
         }
@@ -70,6 +73,49 @@ class HomeScreen extends StatelessWidget {
       label: label,
     );
   }
+  // 🔹 Pantalla de perfil, por ahora solo es para hacer el sign out
+ Widget _buildProfileScreen(BuildContext context) {
+  return CupertinoPageScaffold(
+    navigationBar: CupertinoNavigationBar(
+      middle: Text(
+        "Profile",
+        style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+      ),
+    ),
+    child: SafeArea(
+      child: SingleChildScrollView(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+              Text('You are logged in as ${user.email!}'),
+              const SizedBox(height: 20),
+              MaterialButton(
+                onPressed: () async {
+                  await FirebaseAuth.instance.signOut();
+                  if (FirebaseAuth.instance.currentUser == null) {
+                    print('logout successful');
+                    Navigator.pushReplacementNamed(context, '/login');
+                    
+                  }
+                },
+                color: const Color(0xFF66B7EF),
+                child: const Text(
+                  'Sign out',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+
 
   // 🔹 Contenido de la pestaña de Explore (antes era HomeScreen)
   Widget _buildExploreScreen(BuildContext context) {

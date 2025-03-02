@@ -41,7 +41,7 @@ class _IntroductionScreenState extends State<IntroductionScreen> {
         curve: Curves.easeInOut,
       );
     } else {
-      Navigator.pushReplacementNamed(context, '/preferences'); 
+      Navigator.pushReplacementNamed(context, '/mainlogin'); 
     }
   }
 
@@ -52,7 +52,7 @@ class _IntroductionScreenState extends State<IntroductionScreen> {
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: () {
-            Navigator.pushReplacementNamed(context, '/home'); // Saltar intro
+            Navigator.pushReplacementNamed(context, '/mainlogin'); // Saltar intro
           },
           child: Text(
             'Skip Intro',
