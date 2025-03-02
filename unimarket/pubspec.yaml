@@ -27,6 +27,7 @@ environment:
 # dependencies can be manually updated by changing the version numbers below to
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
+
 dependencies:
   cupertino_progress_bar: ^0.2.0
   flutter:
@@ -46,6 +47,8 @@ dependencies:
   flutter_animate: ^4.5.2
   google_fonts: ^6.2.1
   firebase_performance: ^0.10.1+4
+  flutter_launcher_icons: ^0.14.3
+
 
    
   
@@ -74,6 +77,7 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
+    - assets/app_icon.png # MAIN ICON
     - assets/svgs/LogoCircle.svg # SVGS
     - assets/svgs/LogoArrows.svg
     - assets/svgs/ImagePlaceHolder.svg 
@@ -122,3 +126,10 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/app_icon.png"
+  adaptive_icon_foreground: "assets/app_icon.png"
+  remove_alpha_ios: true
