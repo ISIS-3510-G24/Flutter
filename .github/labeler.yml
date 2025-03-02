@@ -1,0 +1,43 @@
+Feature:
+  - head-branch: ['^feature', 'feature']
+
+View:
+  - changed-files:
+      - any-glob-to-any-file: 'lib/screens/**'
+
+Widgets:
+  - changed-files:
+      - any-glob-to-any-file: 'lib/widgets/**'
+
+Backend:
+  - changed-files:
+      - any-glob-to-any-file: 'lib/firebase_options.dart'
+
+Models:
+  - changed-files:
+      - any-glob-to-any-file: 'lib/models/**'
+
+Utils:
+  - changed-files:
+      - any-glob-to-any-file: 'lib/utils/**'
+
+Config:
+  - changed-files:
+      - any-glob-to-any-file: 'lib/config/**'
+
+API:
+  - changed-files:
+      - any-glob-to-any-file: 'lib/api/**'
+
+State Management:
+  - changed-files:
+      - any-glob-to-any-file: 'lib/state/**'
+
+Tests:
+  - changed-files:
+      - any-glob-to-any-file: 'test/**'
+
+Docs:
+  - changed-files:
+      - any-glob-to-any-file: 'docs/**'
+      - any-glob-to-any-file: '**/*.md'
