@@ -41,7 +41,7 @@ class _IntroductionScreenState extends State<IntroductionScreen> {
         curve: Curves.easeInOut,
       );
     } else {
-      Navigator.pushReplacementNamed(context, '/preferences'); 
+      Navigator.pushReplacementNamed(context, '/mainlogin'); 
     }
   }
 
