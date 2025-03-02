@@ -1,9 +1,6 @@
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:unimarket/screens/home_screen.dart';
-import 'package:unimarket/screens/login_screen.dart';
-import 'package:unimarket/screens/preferences_screen.dart';
 
 class MainLogin extends StatelessWidget {
   const MainLogin({super.key});
