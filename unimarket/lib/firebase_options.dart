@@ -85,4 +85,5 @@ class DefaultFirebaseOptions {
     storageBucket: 'unimarketyay.firebasestorage.app',
     measurementId: 'G-7L43376D1K',
   );
+
 }
