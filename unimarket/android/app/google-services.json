@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "543791710073",
+    "project_id": "unimarketyay",
+    "storage_bucket": "unimarketyay.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:543791710073:android:ac9377680598a08c1839a8",
+        "android_client_info": {
+          "package_name": "com.example.unimarket"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD9fgZ9tdRyevMsuFizElln3bc9B1BwhgQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
