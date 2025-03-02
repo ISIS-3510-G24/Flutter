@@ -1,12 +1,49 @@
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_performance/firebase_performance.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/widgets/popups/not_implemented.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  _ProfileScreenState createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final FirebaseAnalytics analytics = FirebaseAnalytics.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _trackScreenView();
+    _trackPerformance();
+  }
+
+  // 📊 Registrar que el usuario visitó esta pantalla en Firebase Analytics
+  void _trackScreenView() {
+    analytics.setCurrentScreen(screenName: "ProfileScreen");
+  }
+
+  // 🚨 Método para forzar un crash en Firebase Crashlytics
+  void _forceCrash() {
+    FirebaseCrashlytics.instance.crash();
+  }
+
+  // ⚡ Medir el rendimiento de carga con Firebase Performance
+  Future<void> _trackPerformance() async {
+    final Trace trace = FirebasePerformance.instance.newTrace("profile_screen_load");
+    await trace.start();
+
+    // Simulación de carga
+    await Future.delayed(Duration(seconds: 1));
+
+    await trace.stop();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -83,6 +120,28 @@ class ProfileScreen extends StatelessWidget {
                   _buildSettingItem(context, "Language"),
                   _buildSettingItem(context, "Privacy & Security"),
                   _buildSettingItem(context, "Log Out", logout: true),
+
+                  const SizedBox(height: 20),
+
+                  // 🚨 Botón para forzar un crash
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: CupertinoButton.filled(
+                      onPressed: _forceCrash,
+                      child: Text("Force Crash"),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ⚡ Botón para medir rendimiento
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: CupertinoButton.filled(
+                      onPressed: _trackPerformance,
+                      child: Text("Track Performance"),
+                    ),
+                  ),
                 ],
               ),
             ),
