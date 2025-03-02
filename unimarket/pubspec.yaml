@@ -72,6 +72,7 @@ flutter:
     - assets/svgs/ImagePlaceHolder.svg 
     - assets/images/LogoSmall.png # IMAGES
     - assets/images/RoundLogo.png
+    - assets/images/Avatar.png
     - assets/images/PlainLogoWithBackground.png
     - assets/images/ArrowsLogo.png
     - assets/images/Marketplace.jpg
