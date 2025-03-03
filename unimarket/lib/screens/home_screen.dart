@@ -1,13 +1,13 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+// SCREENS
 import 'package:unimarket/screens/tabs/explore_screen.dart';
 import 'package:unimarket/screens/tabs/profile_screen.dart';
 import 'package:unimarket/screens/tabs/chat_screen.dart';
 import 'package:unimarket/screens/tabs/find_offer_screen.dart';
 import 'package:unimarket/screens/tabs/orders_screen.dart';
-
 import 'package:unimarket/widgets/popups/not_implemented.dart';
 
 class HomeScreen extends StatefulWidget {
