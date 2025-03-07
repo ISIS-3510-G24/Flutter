@@ -1,8 +1,16 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:unimarket/screens/tabs/offer_screen.dart';
 
-class FindAndOfferScreen extends StatelessWidget {
+class FindAndOfferScreen extends StatefulWidget {
   const FindAndOfferScreen({super.key});
+
+  @override
+  _FindAndOfferScreenState createState() => _FindAndOfferScreenState();
+}
+
+class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
+  bool isFindSelected = true; // Variable de estado para controlar la selección
 
   @override
   Widget build(BuildContext context) {
@@ -55,9 +63,9 @@ class FindAndOfferScreen extends StatelessWidget {
   Widget _buildToggleButtons() {
     return Row(
       children: [
-        _buildChip("FIND", true),
+        _buildChip("FIND", isFindSelected),
         const SizedBox(width: 4),
-        _buildChip("OFFER", false),
+        _buildChip("OFFER", !isFindSelected),
       ],
     );
   }
@@ -67,9 +75,23 @@ class FindAndOfferScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: CupertinoButton(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        color: isSelected ? const Color(0xFF66B7F0) : CupertinoColors.systemGrey5,
+        color: isSelected ? const Color.fromRGBO(102, 183, 240, 1) : CupertinoColors.systemGrey5,
         borderRadius: BorderRadius.circular(18),
-        onPressed: () {},
+        onPressed: () {
+          setState(() {
+            if (text == "FIND") {
+              isFindSelected = true;
+            } else {
+              isFindSelected = false;
+              if (text == "OFFER") {
+                Navigator.push(
+                  context,
+                  CupertinoPageRoute(builder: (context) => const OfferScreen()),
+                );
+              }
+            }
+          });
+        },
         child: Text(
           text,
           style: TextStyle(fontSize: 14, color: isSelected ? CupertinoColors.white : CupertinoColors.black),
@@ -77,6 +99,8 @@ class FindAndOfferScreen extends StatelessWidget {
       ),
     );
   }
+
+  // ... el resto de tu código _buildCategoryChips, _buildSectionHeader, etc. ...
 
   Widget _buildCategoryChips() {
     return Row(
