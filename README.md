@@ -32,3 +32,11 @@ flutter run
     <img src="https://img.shields.io/badge/Documentation-Wiki-brightgreen" alt="Documentation: Wiki" />
   </a>
 </p>
+
+## Troubleshooting
+
+If the simulator is not loading:
+
+```bash
+rm -R ~/Library/Developer/CoreSimulator/Caches
+```
