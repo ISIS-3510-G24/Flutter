@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:unimarket/screens/tabs/offer_screen.dart';
+import 'package:unimarket/screens/submit_screen.dart';
 
 class FindAndOfferScreen extends StatefulWidget {
   const FindAndOfferScreen({super.key});
@@ -65,7 +65,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
       children: [
         _buildChip("FIND", isFindSelected),
         const SizedBox(width: 4),
-        _buildChip("OFFER", !isFindSelected),
+        _buildChip("SUBMIT", !isFindSelected),
       ],
     );
   }

@@ -5,10 +5,10 @@ class OfferScreen extends StatefulWidget {
   const OfferScreen({super.key});
 
   @override
-  _OfferScreenState createState() => _OfferScreenState();
+  _SubmitScreen createState() => _SubmitScreen();
 }
 
-class _OfferScreenState extends State<OfferScreen> {
+class _SubmitScreen extends State<OfferScreen> {
   final _formKey = GlobalKey<FormState>();
   String? _productName;
   String? _description;
