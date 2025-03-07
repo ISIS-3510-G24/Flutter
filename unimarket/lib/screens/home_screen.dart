@@ -23,7 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // Lista de pantallas para mostrar
   final List<Widget> _screens = const [
     NotImplementedScreen(), // Orders
-    NotImplementedScreen(), // Find & Offer
+    FindAndOfferScreen(), // Find & Offer
     ExploreScreen(),        // Explore
     NotImplementedScreen(), // Chat
     ProfileScreen(), // Profile - Cambiado temporalmente
