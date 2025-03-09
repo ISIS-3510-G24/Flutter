@@ -49,6 +49,7 @@ class FirebaseDAO {
       final ordersQuery = await _firestore
         .collection('orders')
         .where('sellerID', isEqualTo: userId)
+        .where('status', isEqualTo: 'Purchased')
         .get();
 
       if (ordersQuery.docs.isEmpty) {
@@ -136,15 +137,27 @@ class FirebaseDAO {
   }
 
   Future<void> updateOrderStatusDelivered(String orderId) async {
-  try {
-    final orderRef = _firestore.collection('orders').doc(orderId);
-    await orderRef.update({
-      'status': 'Delivered',
-    });
-    print("Order $orderId status updated to 'Delivered'.");
-  } catch (e) {
-    print("Error updating order status: $e");
-    rethrow; 
+    try {
+      final orderRef = _firestore.collection('orders').doc(orderId);
+      await orderRef.update({
+        'status': 'Delivered',
+      });
+      print("Order $orderId status updated to 'Delivered'.");
+    } catch (e) {
+      print("Error updating order status: $e");
+      rethrow; 
+    }
   }
-}
+  Future<void> updateOrderStatusPurchased(String orderId) async {
+    try {
+      final orderRef = _firestore.collection('orders').doc(orderId);
+      await orderRef.update({
+        'status': 'Purchased',
+      });
+      print("Order $orderId status updated to 'Purchased'.");
+    } catch (e) {
+      print("Error updating order status: $e");
+      rethrow; 
+    }
+  }
 }
