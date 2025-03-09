@@ -27,7 +27,7 @@ class Routes {
       case '/login':
         return CupertinoPageRoute(builder: (_) => const LoginScreen());
       case '/genQR':
-        return CupertinoPageRoute(builder: (_) => const LoginScreen());
+        return CupertinoPageRoute(builder: (_) => const QrGenerate());
       case '/scanQR':
         return CupertinoPageRoute(builder: (_) => const QrScan());
       default:

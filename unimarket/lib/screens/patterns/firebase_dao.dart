@@ -1,0 +1,116 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+class FirebaseDAO {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  User? getCurrentUser() {
+    return _auth.currentUser;
+  }
+  String? getCurrentUserId() {
+    return _auth.currentUser?.uid;
+  }
+
+  Future<List<Map<String, dynamic>>> getAllProducts() async {
+    try {
+      QuerySnapshot querySnapshot = await _firestore.collection('Product').get();
+      return querySnapshot.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+    } catch (e) {
+      print("Error getting products: $e");
+      return [];
+    }
+  }
+
+  Future<bool> signIn(String email, String password) async {
+    try {
+      await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password.trim(),
+      );
+      print("Login successful");
+      return true; 
+    } catch (e) {
+      print("Login failed: $e");
+      return false;
+    }
+  }
+
+  Future<Map<String, Map<String, dynamic>>> getProductsForCurrentUser() async {
+  final userId = getCurrentUserId();
+  if (userId == null) {
+    print("No user is currently logged in.");
+    return {};
+  }
+
+  try {
+    // Encontrar todas las ordenes del usuario actual
+    print("user ID: $userId");
+    '''
+    final ordersQueryTOTAL = await _firestore
+        .collection('orders')
+        .get();
+    // Extract seller IDs as strings
+    final productIDsPRUEBA = ordersQueryTOTAL.docs
+      .map((doc) {
+        final sellerID = doc['sellerID']; // This is a DocumentReference
+        return sellerID.id; // Extract the document ID from the reference
+      })
+      .toList();
+
+      // Print seller IDs
+    for (final sellerID in productIDsPRUEBA) {
+      print("id de vendedor:");
+    }
+    ''';
+    final ordersQuery = await _firestore
+      .collection('orders')
+      .where('sellerID', isEqualTo: userId)
+      .get();
+
+    if (ordersQuery.docs.isEmpty) {
+      print("No orders found for the current user.");
+      return {};
+    }
+
+    // listas de productos y de sus respectivos hashConfirms
+    final productIDs = ordersQuery.docs
+        .map((doc) => doc['productID'] as String)
+        .toList();
+
+    final hashConfirms = ordersQuery.docs
+        .map((doc) => doc['hashConfirm'] as String)
+        .toList();
+
+    // conseguir el objeto completo del Producto
+    final productsQuery = await _firestore
+        .collection('Product')
+        .where(FieldPath.documentId, whereIn: productIDs)
+        .get();
+
+    '''
+    Mapa final, cada llave es el ID de un producto y tiene un mapa dentro con 2 llaves:
+    1. product: contiene la información del producto
+    2. hashConfirm: String del hash necesario
+    ''';
+    final Map<String, Map<String, dynamic>> productMap = {};
+
+    for (var i = 0; i < productsQuery.docs.length; i++) {
+      final productDoc = productsQuery.docs[i];
+      final productData = productDoc.data();
+      final productId = productDoc.id;
+
+      // Add the product data and its corresponding hashConfirm to the map
+      productMap[productId] = {
+        'product': productData,
+        'hashConfirm': hashConfirms[i],
+      };
+    }
+
+    return productMap;
+  } catch (e) {
+    print("Error fetching products for current user: $e");
+    return {};
+  }
+}
+}
