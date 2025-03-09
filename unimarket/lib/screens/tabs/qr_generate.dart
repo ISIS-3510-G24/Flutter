@@ -24,7 +24,7 @@ class _QrGenerateState extends State<QrGenerate> {
 
   Future<void> _fetchProducts() async {
     try {
-      final productsWithHashes = await _firebaseDAO.getProductsForCurrentUser();
+      final productsWithHashes = await _firebaseDAO.getProductsForCurrentSELLER();
       setState(() {
         _productsWithHashes = productsWithHashes;
         _isLoading = false;
@@ -43,21 +43,21 @@ class _QrGenerateState extends State<QrGenerate> {
     builder: (context) {
       return CupertinoAlertDialog(
         content: Container(
-          color: CupertinoColors.white, // Set white background
-          padding: const EdgeInsets.all(20), // Add padding for better spacing
+          color: CupertinoColors.white, 
+          padding: const EdgeInsets.all(20),
           child: Column(
-            mainAxisSize: MainAxisSize.min, // Ensure the dialog doesn't scroll
+            mainAxisSize: MainAxisSize.min, 
             children: [
-              // Display the QR code with a fixed size
-              Container(
-                width: 200, // Fixed width
-                height: 200, // Fixed height
+              
+              SizedBox(
+                width: 200, 
+                height: 200, 
                 child: PrettyQrView.data(
                   data: hashConfirm,
                   errorCorrectLevel: QrErrorCorrectLevel.M,
                 ),
               ),
-              const SizedBox(height: 20), // Add spacing between QR code and button
+              const SizedBox(height: 20),
               CupertinoButton(
                 child: const Text('Close'),
                 onPressed: () {
@@ -77,13 +77,6 @@ class _QrGenerateState extends State<QrGenerate> {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text("Generate QR code"),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () {
-            Navigator.popAndPushNamed(context, "/scanQR");
-          },
-          child: const Icon(CupertinoIcons.qrcode),
-        ),
       ),
       child: SafeArea(
         child: Padding(
