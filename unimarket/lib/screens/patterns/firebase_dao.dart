@@ -5,6 +5,23 @@ class FirebaseDAO {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<AUTH OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Future<bool> signIn(String email, String password) async {
+    try {
+      await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password.trim(),
+      );
+      print("Login successful");
+      return true; 
+    } catch (e) {
+      print("Login failed: $e");
+      return false;
+    }
+  }
+
+
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<GET OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
   User? getCurrentUser() {
     return _auth.currentUser;
   }
@@ -21,21 +38,6 @@ class FirebaseDAO {
       return [];
     }
   }
-
-  Future<bool> signIn(String email, String password) async {
-    try {
-      await _auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password.trim(),
-      );
-      print("Login successful");
-      return true; 
-    } catch (e) {
-      print("Login failed: $e");
-      return false;
-    }
-  }
-
   Future<Map<String, Map<String, dynamic>>> getProductsForCurrentSELLER() async {
     final userId = getCurrentUserId();
     if (userId == null) {
@@ -97,6 +99,10 @@ class FirebaseDAO {
       return {};
     }
   }
+
+
+
+
   Future<Map<String, String>> getProductsForCurrentBUYER() async {
     final userId = getCurrentUserId();
     if (userId == null) {
@@ -136,6 +142,13 @@ class FirebaseDAO {
     }
   }
 
+
+
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<CREATE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+//... gulp.
+
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<UPDATE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
   Future<void> updateOrderStatusDelivered(String orderId) async {
     try {
       final orderRef = _firestore.collection('orders').doc(orderId);
@@ -161,3 +174,5 @@ class FirebaseDAO {
     }
   }
 }
+
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<DELETE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
