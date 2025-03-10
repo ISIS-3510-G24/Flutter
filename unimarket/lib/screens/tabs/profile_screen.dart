@@ -119,7 +119,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _buildSettingItem(context, "Appearance"),
                   _buildSettingItem(context, "Language"),
                   _buildSettingItem(context, "Privacy & Security"),
-                  _buildSettingItem(context, "Go to QR Generator", route: '/genQR'),
+                  _buildSettingItem(context, "Validate a product delivery (seller)", route: '/genQR'),
+                  _buildSettingItem(context, "Receive and validate a product (buyer)", route: '/scanQR'),
                   _buildSettingItem(context, "Log Out", logout: true),
 
                   const SizedBox(height: 20),
