@@ -119,6 +119,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _buildSettingItem(context, "Appearance"),
                   _buildSettingItem(context, "Language"),
                   _buildSettingItem(context, "Privacy & Security"),
+                  _buildSettingItem(context, "Validate a product delivery (seller)", route: '/genQR'),
+                  _buildSettingItem(context, "Receive and validate a product (buyer)", route: '/scanQR'),
                   _buildSettingItem(context, "Log Out", logout: true),
 
                   const SizedBox(height: 20),
@@ -152,33 +154,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // 🔹 Método para construir cada ítem de la lista
-  Widget _buildSettingItem(BuildContext context, String title, {bool logout = false}) {
-    return CupertinoButton(
-      padding: EdgeInsets.zero,
-      onPressed: () async {
-        if (logout) {
-          await FirebaseAuth.instance.signOut();
-          Navigator.pushReplacementNamed(context, '/login');
-        } else {
-          Navigator.push(context, CupertinoPageRoute(builder: (context) => const NotImplementedScreen()));
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: CupertinoColors.systemGrey4)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              title,
-              style: GoogleFonts.inter(fontSize: 16),
-            ),
-            const Icon(CupertinoIcons.right_chevron, color: CupertinoColors.systemGrey, size: 18),
-          ],
-        ),
+  Widget _buildSettingItem(BuildContext context, String title, {bool logout = false, String? route}) {
+  return CupertinoButton(
+    padding: EdgeInsets.zero,
+    onPressed: () async {
+      if (logout) {
+        await FirebaseAuth.instance.signOut();
+        Navigator.pushReplacementNamed(context, '/login');
+      } else if (route != null) {
+        Navigator.pushNamed(context, route);
+      } else {
+        Navigator.push(context, CupertinoPageRoute(builder: (context) => const NotImplementedScreen()));
+      }
+    },
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: CupertinoColors.systemGrey4)),
       ),
-    );
-  }
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.inter(fontSize: 16),
+          ),
+          const Icon(CupertinoIcons.right_chevron, color: CupertinoColors.systemGrey, size: 18),
+        ],
+      ),
+    ),
+  );
+}
 }

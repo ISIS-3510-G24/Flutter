@@ -50,6 +50,10 @@ dependencies:
   flutter_launcher_icons: ^0.14.3
   cloud_firestore: ^5.6.5
 
+#Qr code dependencies
+  mobile_scanner: ^6.0.7
+  pretty_qr_code: ^3.3.0
+
 
    
   

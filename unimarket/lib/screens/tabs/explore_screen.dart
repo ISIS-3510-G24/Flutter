@@ -27,10 +27,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   Future<void> _loadProducts() async {
     List<ProductModel> products = await _productService.fetchProducts();
-    setState(() {
-      _products = products;
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _products = products;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
