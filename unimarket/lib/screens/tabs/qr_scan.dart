@@ -62,7 +62,7 @@ class _QrScanState extends State<QrScan> {
                 print("hashConfirm: $hashConfirm, productID: $productID");
               });
               if (orderId != null) {
-                _firebaseDAO.updateOrderStatusDelivered(orderId).then((_) {
+                _firebaseDAO.updateOrderStatusDelivered(orderId,hashConfirm).then((_) {
                   showCupertinoDialog(
                     context: context,
                     builder: (context) {
