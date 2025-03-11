@@ -1,6 +1,11 @@
+import 'package:unimarket/widgets/dropdowns/custom_dropdown_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+// IMPORTAMOS ConfirmProductScreen
+import 'package:unimarket/widgets/confirm_product_screen.dart';
+
 import 'package:unimarket/screens/tabs/offer_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
@@ -12,9 +17,10 @@ class FindAndOfferScreen extends StatefulWidget {
 }
 
 class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
-  bool isFindSelected = true; // Controla si estamos en modo FIND u OFFER
+  bool isFindSelected = true; 
+  String _selectedCategory = "All requests"; 
 
-  // Ejemplo de datos para la sección horizontal (“From your major”)
+  // Ejemplo de datos para “From your major”
   final List<Map<String, String>> _majorItems = [
     {
       "title": "Computer",
@@ -36,7 +42,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
     },
   ];
 
-  // Ejemplo de datos para la sección “Your wishlist”
+  // Ejemplo: “Your wishlist”
   final List<Map<String, String>> _wishlistItems = [
     {
       "title": "Set pink rulers",
@@ -48,7 +54,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
     },
   ];
 
-  // Ejemplo de datos para la sección “Selling out”
+  // Ejemplo: “Selling out”
   final List<Map<String, String>> _sellingItems = [
     {
       "title": "Smartphone",
@@ -63,7 +69,6 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      // Barra de navegación
       navigationBar: CupertinoNavigationBar(
         middle: Text(
           "Find & Offer",
@@ -76,61 +81,26 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
             // ---- CONTENIDO PRINCIPAL SCROLLEABLE ----
             Positioned.fill(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 80), 
-                // para dejar espacio al botón flotante
+                padding: const EdgeInsets.only(bottom: 80),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // TOP ROW: boton circular "All requests", toggles FIND/OFFER, icono Search
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Row(
-                        children: [
-                          // Botón circular "All requests"
-                          _buildAllRequestsButton(),
-                          const SizedBox(width: 12),
-                          
-                          // Botones FIND y OFFER
-                          Expanded(
-                            child: Row(
-                              children: [
-                                _buildBigToggleButton("FIND", isFind: true),
-                                const SizedBox(width: 10),
-                                _buildBigToggleButton("OFFER", isFind: false),
-                              ],
-                            ),
-                          ),
-                          
-                          const SizedBox(width: 12),
-                          // Icono de búsqueda
-                          CupertinoButton(
-                            padding: EdgeInsets.zero,
-                            onPressed: _showSearchModal,
-                            child: const Icon(
-                              CupertinoIcons.search,
-                              size: 26,
-                              color: AppColors.primaryBlue,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    // Sección horizontal “From your major”
+                    _buildTopRow(),
+                    // “From your major”
                     _buildSectionHeader(
                       title: "From your major",
                       onSeeMore: () => debugPrint("See more: From your major"),
                     ),
                     _buildMajorHorizontalList(),
 
-                    // Sección “Your wishlist”
+                    // “Your wishlist”
                     _buildSectionHeader(
                       title: "Your wishlist",
                       onSeeMore: () => debugPrint("See more: Your wishlist"),
                     ),
                     _buildVerticalList(_wishlistItems, showBuyButton: false),
 
-                    // Sección “Selling out”
+                    // “Selling out”
                     _buildSectionHeader(
                       title: "Selling out",
                       onSeeMore: () => debugPrint("See more: Selling out"),
@@ -141,12 +111,11 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
               ),
             ),
 
-            // ---- BOTÓN FLOTANTE (New Request / New Offer) ----
+            // ---- BOTÓN FLOTANTE ----
             Positioned(
               right: 20,
               bottom: 20,
               child: CupertinoButton(
-                // Sobrescribimos el color por defecto (que es azul iOS) con tu primaryBlue
                 color: AppColors.primaryBlue,
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 borderRadius: BorderRadius.circular(30),
@@ -159,14 +128,28 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                 ),
                 onPressed: () {
                   if (isFindSelected) {
-                    // Lógica para crear un nuevo "Find"
-                    debugPrint("Crear nueva solicitud (Find)");
-                  } else {
-                    // Navegar a la pantalla OfferScreen, por ejemplo
+                    // En modo FIND, abrimos la misma pantalla pero con postType = "find"
                     Navigator.push(
                       context,
-                      CupertinoPageRoute(builder: (ctx) => const OfferScreen()),
+                      CupertinoPageRoute(
+                        builder: (ctx) => const ConfirmProductScreen(
+                          postType: "find", 
+                          // si tienes una imageUrl, puedes pasarla
+                        ),
+                      ),
                     );
+                  } else {
+                    // En modo OFFER, abrimos la misma pantalla pero con postType = "offer"
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (ctx) => const ConfirmProductScreen(
+                          postType: "offer",
+                        ),
+                      ),
+                    );
+                    // O si prefieres OfferScreen, lo dejas:
+                    // Navigator.push(context, CupertinoPageRoute(builder: (ctx) => const OfferScreen()));
                   }
                 },
               ),
@@ -177,13 +160,52 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
     );
   }
 
-  // TODO: reemplazar el texto "ALL" con un ícono cuando lo tengas
+  /// TOP ROW: Botón circular "All requests", toggles FIND/OFFER, ícono Search
+  Widget _buildTopRow() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Row(
+        children: [
+          // Botón circular "All requests"
+          _buildAllRequestsButton(),
+          const SizedBox(width: 12),
+
+          // Botones FIND y OFFER
+          Expanded(
+            child: Row(
+              children: [
+                _buildBigToggleButton("FIND", isFind: true),
+                const SizedBox(width: 10),
+                _buildBigToggleButton("OFFER", isFind: false),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // Ícono de búsqueda
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: _showSearchModal,
+            child: const Icon(
+              CupertinoIcons.search,
+              size: 26,
+              color: AppColors.primaryBlue,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAllRequestsButton() {
     return CupertinoButton(
       padding: EdgeInsets.zero,
       onPressed: () {
-        debugPrint("All requests button pressed");
-        // Aquí podrías mostrar un menú, un picker, etc.
+        // No hacemos nada
+        showCustomDropdownPicker(
+          context,
+          selectedCategory: _selectedCategory,
+        );
       },
       child: Container(
         width: 40,
@@ -192,30 +214,22 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
           shape: BoxShape.circle,
           color: AppColors.primaryBlue,
         ),
-        child: Center(
-          child: Text(
-            "ALL",
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: CupertinoColors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+        child: const Icon(
+          CupertinoIcons.list_bullet,
+          color: CupertinoColors.white,
+          size: 20,
         ),
       ),
     );
   }
 
-  /// Botón grande para FIND u OFFER, ocupa espacio en el row
+  /// Botón grande para FIND u OFFER
   Widget _buildBigToggleButton(String label, {required bool isFind}) {
-    final bool isSelected =
-        (isFindSelected && isFind) || (!isFindSelected && !isFind);
+    final bool isSelected = (isFindSelected && isFind) || (!isFindSelected && !isFind);
     return Expanded(
       child: CupertinoButton(
         padding: const EdgeInsets.symmetric(vertical: 14),
-        color: isSelected
-            ? AppColors.primaryBlue
-            : AppColors.lightGreyBackground,
+        color: isSelected ? AppColors.primaryBlue : AppColors.lightGreyBackground,
         borderRadius: BorderRadius.circular(25),
         onPressed: () {
           setState(() {
@@ -265,10 +279,10 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
     );
   }
 
-  /// Lista horizontal (ej: “From your major”) con altura un poco mayor para no overflow
+  /// Lista horizontal (From your major)
   Widget _buildMajorHorizontalList() {
     return SizedBox(
-      height: 210, // Ajustado para que no haga overflow
+      height: 210,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -282,7 +296,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
     );
   }
 
-  /// Tarjeta horizontal con imagen, fecha y botón “Buy”
+  /// Tarjeta horizontal
   Widget _buildMajorCard(Map<String, String> item) {
     return Container(
       width: 160,
@@ -303,7 +317,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
               width: double.infinity,
               fit: BoxFit.fill,
               errorBuilder: (ctx, error, stack) => Container(
-                height: 90, // TODO
+                height: 90,
                 width: double.infinity,
                 color: AppColors.lightGreyBackground,
                 child: const Icon(CupertinoIcons.photo),
@@ -349,37 +363,34 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                 color: CupertinoColors.systemGrey,
               ),
             ),
-            ),
-            // Botón “Buy”
-            // Botón “Buy” más pequeño
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: SizedBox(
-            height: 32, // Ajusté la altura del botón
-            width: double.infinity, // Ocupar todo el ancho
-            child: CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              color: AppColors.primaryBlue,
-              borderRadius: BorderRadius.circular(20),
-              onPressed: () {
-                debugPrint("Buy ${item["title"]}");
-              },
-              child: Text(
-                "Buy",
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: CupertinoColors.white,
+          ),
+          // Botón “Buy”
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: SizedBox(
+              height: 32,
+              width: double.infinity,
+              child: CupertinoButton(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                color: AppColors.primaryBlue,
+                borderRadius: BorderRadius.circular(20),
+                onPressed: () => debugPrint("Buy ${item["title"]}"),
+                child: Text(
+                  "Buy",
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: CupertinoColors.white,
+                  ),
                 ),
               ),
-              ),
-              ),
             ),
+          ),
         ],
       ),
     );
   }
 
-  /// Lista vertical (para “Your wishlist” o “Selling out”)
+  /// Lista vertical (Your wishlist / Selling out)
   Widget _buildVerticalList(
     List<Map<String, String>> items, {
     bool showBuyButton = false,
@@ -407,7 +418,10 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                   color: AppColors.transparentGrey,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(CupertinoIcons.photo, color: CupertinoColors.white),
+                child: const Icon(
+                  CupertinoIcons.photo,
+                  color: CupertinoColors.white,
+                ),
               ),
               const SizedBox(width: 10),
               // Texto
