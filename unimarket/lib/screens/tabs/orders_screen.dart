@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:unimarket/widgets/popups/not_implemented.dart';
+import 'package:unimarket/theme/app_colors.dart';
 
 class OrdersScreen extends StatefulWidget {
     const OrdersScreen({super.key});
@@ -11,26 +11,49 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
-    int _selectedTab = 1; // Inicia en "Available"
+    int _selectedTab = 1; // Inicia en "Buying"
 
-    // Datos de ejemplo de productos (simulados)
-    final List<Map<String, String>> products = [
+    // Datos de productos por categoría
+    final List<Map<String, String>> historyProducts = [
         {
             "name": "Linoleum Sheets",
             "details": "Black / M",
-            "price": "20.500 COP",
+            "status": "Completed",
+            "action": "Help",
             "image": "assets/svgs/ImagePlaceHolder.svg",
+        },
+    ];
+
+    final List<Map<String, String>> buyingProducts = [
+        {
+            "name": "Thermoformed Tubes",
+            "details": "Blue / 42",
+            "status": "Ordered",
+            "action": "Complete",
+            "image": "assets/svgs/ImagePlaceHolder.svg"
         },
         {
             "name": "Organizer",
             "details": "Gold / L",
-            "price": "20.500 COP",
+            "status": "Ordered",
+            "action": "Complete",
             "image": "assets/svgs/ImagePlaceHolder.svg",
         },
         {
             "name": "Beautiful Colorful Folders",
             "details": "Blue, pink, yellow",
-            "price": "20.500 COP",
+            "status": "Ordered",
+            "action": "Complete",
+            "image": "assets/svgs/ImagePlaceHolder.svg"
+        },
+    ];
+
+    final List<Map<String, String>> sellingProducts = [
+        {
+            "name": "MD Board",
+            "details": "Black / M",
+            "price": "\$88.000",
+            "action": "Modify",
             "image": "assets/svgs/ImagePlaceHolder.svg",
         },
     ];
@@ -43,47 +66,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     "Orders",
                     style: GoogleFonts.inter(fontWeight: FontWeight.bold),
                 ),
+                trailing: const Icon(CupertinoIcons.search, color: AppColors.primaryBlue),
             ),
             child: SafeArea(
                 child: Column(
                     children: [
                         const SizedBox(height: 10),
-
-                        // 🔹 Tab Selector (Not Available, Available, Purchased)
-                        Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: CupertinoSegmentedControl<int>(
-                                groupValue: _selectedTab,
-                                onValueChanged: (int newIndex) {
-                                    setState(() {
-                                        _selectedTab = newIndex;
-                                    });
-                                },
-                                children: {
-                                    0: _buildTabItem("Not available", 0),
-                                    1: _buildTabItem("Available", 1),
-                                    2: _buildTabItem("Purchased", 2),
-                                },
-                                selectedColor: const Color(0xFF66B7F0),
-                                borderColor: CupertinoColors.systemGrey2,
-                                unselectedColor: CupertinoColors.systemGrey6,
-                                pressedColor: CupertinoColors.systemGrey5,
-                            ),
-                        ),
-
+                        _buildTabSelector(),
                         const SizedBox(height: 10),
-
-                        // 🔹 Lista de productos basada en el tab seleccionado
                         Expanded(
                             child: ListView.separated(
                                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                                itemCount: products.length,
-                                separatorBuilder: (context, index) => Container(
-                                    height: 1,
-                                    color: CupertinoColors.systemGrey5,
-                                ),
+                                itemCount: _getCurrentProducts().length,
+                                separatorBuilder: (context, index) =>
+                                        Container(height: 1, color: AppColors.lightGreyBackground),
                                 itemBuilder: (context, index) {
-                                    final product = products[index];
+                                    final product = _getCurrentProducts()[index];
                                     return _buildProductItem(product);
                                 },
                             ),
@@ -94,41 +92,83 @@ class _OrdersScreenState extends State<OrdersScreen> {
         );
     }
 
-    // 🔹 Widget para cada tab en la barra superior
+    Widget _buildTabSelector() {
+        return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 30),
+            child: Container(
+                decoration: BoxDecoration(
+                    color: AppColors.transparentGrey, // Fondo más claro
+                    borderRadius: BorderRadius.circular(30), // Bordes súper redondeados
+                ),
+                padding: const EdgeInsets.all(8), // Espaciado interno para suavizar bordes
+                child: CupertinoSegmentedControl<int>(
+                    groupValue: _selectedTab,
+                    onValueChanged: (int newIndex) {
+                        setState(() {
+                            _selectedTab = newIndex;
+                        });
+                    },
+                    children: {
+                        0: _buildTabItem("History", 0),
+                        1: _buildTabItem("Buying", 1),
+                        2: _buildTabItem("Selling", 2),
+                    },
+                    selectedColor: AppColors.primaryBlue, // Azul oficial
+                    borderColor: CupertinoColors.transparent, // Sin bordes visibles
+                    unselectedColor: CupertinoColors.transparent, // Sin color de fondo,
+                    pressedColor: CupertinoColors.systemGrey4.withOpacity(0.2),
+                    padding: EdgeInsets.zero,
+                ),
+            ),
+        );
+    }
+
     Widget _buildTabItem(String title, int index) {
         final bool isSelected = _selectedTab == index;
         return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
             child: Text(
                 title,
                 style: GoogleFonts.inter(
                     fontSize: 14,
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    color: isSelected ? CupertinoColors.white : CupertinoColors.black,
+                    color: isSelected ? CupertinoColors.white : CupertinoColors.black.withOpacity(0.7),
                 ),
             ),
         );
+    }
+
+    // 🔹 Obtiene la lista de productos según la pestaña seleccionada
+    List<Map<String, String>> _getCurrentProducts() {
+        switch (_selectedTab) {
+            case 0:
+                return historyProducts;
+            case 1:
+                return buyingProducts;
+            case 2:
+                return sellingProducts;
+            default:
+                return [];
+        }
     }
 
     // 🔹 Widget para cada producto en la lista
     Widget _buildProductItem(Map<String, String> product) {
         return CupertinoButton(
             padding: EdgeInsets.zero,
-            onPressed: () {
-                Navigator.push(context, CupertinoPageRoute(builder: (context) => const NotImplementedScreen()));
-            },
+            onPressed: () {},
             child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                        // 🔹 Imagen del producto (Placeholder)
+                        // 🔹 Imagen del producto
                         ClipRRect(
                             borderRadius: BorderRadius.circular(10),
                             child: SvgPicture.asset(
                                 product["image"]!,
-                                width: 50,
-                                height: 50,
+                                width: 100,
+                                height: 100,
                                 fit: BoxFit.cover,
                             ),
                         ),
@@ -141,51 +181,76 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 children: [
                                     Text(
                                         product["name"]!,
-                                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
+                                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
                                     ),
                                     Text(
                                         product["details"]!,
                                         style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
                                     ),
-                                    Text(
-                                        product["price"]!,
-                                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
-                                    ),
+                                    if (product.containsKey("price"))
+                                        Text(
+                                            product["price"]!,
+                                            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.primaryBlue),
+                                        ),
+                                    if (product.containsKey("status"))
+                                        Text(
+                                            product["status"]!,
+                                            style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
+                                        ),
                                 ],
                             ),
                         ),
 
-                        // 🔹 Botón de acción (Comprar o más información)
-                        CupertinoButton(
-                            padding: EdgeInsets.zero,
-                            child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: const Color(0xFF66B7F0),
+                        // 🔹 Botón de acción (Help, Complete, Modify)
+                        if (_selectedTab != 2) ...[
+                            CupertinoButton(
+                                padding: EdgeInsets.zero,
+                                child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: AppColors.primaryBlue,
+                                    ),
+                                    child: const Icon(
+                                        CupertinoIcons.chat_bubble,
+                                        color: CupertinoColors.white,
+                                        size: 20,
+                                    ),
                                 ),
-                                child: const Icon(
-                                    CupertinoIcons.chat_bubble,
-                                    color: CupertinoColors.white,
-                                    size: 20,
-                                ),
+                                onPressed: () {},
                             ),
-                            onPressed: () {
-                                Navigator.push(context, CupertinoPageRoute(builder: (context) => const NotImplementedScreen()));
-                            },
-                        ),
+                        ],
 
                         const SizedBox(width: 10),
 
-                        // 🔹 Botón de compra (Por ahora solo un placeholder)
                         Text(
-                            "Buy",
+                            product["action"]!,
                             style: GoogleFonts.inter(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: const Color(0xFF66B7F0),
+                                color: AppColors.primaryBlue,
                             ),
                         ),
+
+                        if (_selectedTab == 2) ...[
+                            const SizedBox(width: 10),
+                            CupertinoButton(
+                                padding: EdgeInsets.zero,
+                                child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: AppColors.lightGreyBackground,
+                                    ),
+                                    child: const Icon(
+                                        CupertinoIcons.clear_circled,
+                                        color: CupertinoColors.systemGrey,
+                                        size: 20,
+                                    ),
+                                ),
+                                onPressed: () {},
+                            ),
+                        ]
                     ],
                 ),
             ),
