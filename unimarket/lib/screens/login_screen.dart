@@ -1,9 +1,10 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:unimarket/screens/patterns/firebase_dao.dart';
+
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -14,22 +15,25 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final FirebaseDAO _firebaseDAO = FirebaseDAO();
 
-  Future<void> signIn() async {
-  try {
-    await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: _emailController.text.trim(),
-      password: _passwordController.text.trim(),
-    );
-    print("Login successful");
+  Future<void> _handleLogin() async {
+    final email = _emailController.text;
+    final password = _passwordController.text;
 
-    if (mounted) {
+    final isLoginSuccessful = await _firebaseDAO.signIn(email, password);
+
+    if (isLoginSuccessful && mounted) {
       Navigator.pushReplacementNamed(context, '/preferences');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Login failed. Please check your credentials.'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
-  } catch (e) {
-    print("Login failed: $e");
   }
-}
 
 
   @override
@@ -38,6 +42,8 @@ class _LoginScreenState extends State<LoginScreen> {
     _passwordController.dispose();
     super.dispose();
   }
+
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -130,7 +136,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     onTap: () {
                       print("Email: ${_emailController.text}");
                       print("Password: ${_passwordController.text}");
-                      signIn();
+                      _handleLogin();
                     },
                     child: Container(
                       padding: const EdgeInsets.all(20),
