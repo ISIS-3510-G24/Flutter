@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:unimarket/screens/patterns/firebase_dao.dart';
+import 'package:unimarket/data/firebase_dao.dart';
 
 class QrScan extends StatefulWidget {
   const QrScan({super.key});

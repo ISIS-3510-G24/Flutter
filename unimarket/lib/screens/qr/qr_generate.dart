@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
-import 'package:unimarket/screens/patterns/firebase_dao.dart';
+import 'package:unimarket/data/firebase_dao.dart';
 
 class QrGenerate extends StatefulWidget {
   const QrGenerate({super.key});

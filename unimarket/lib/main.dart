@@ -1,8 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
-import 'package:unimarket/firebase_options.dart';
-import 'package:unimarket/routes.dart';  
+import 'package:unimarket/core/firebase_options.dart';
+import 'package:unimarket/core/routes.dart';  
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
