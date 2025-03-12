@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/widgets/popups/not_implemented.dart';
+import 'package:unimarket/theme/app_colors.dart'; // Importa el archivo de colores
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -79,7 +80,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF66B7F0),
+                      color: AppColors.primaryBlue, // Usa el azul oficial
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(CupertinoIcons.pencil, color: CupertinoColors.white, size: 16),
@@ -99,11 +100,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             // 🔹 Nombre y usuario
             Text(
               user?.displayName ?? "User",
-              style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
+              style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: CupertinoColors.black),
             ),
             Text(
               "@${user?.email?.split('@').first ?? 'user'}",
-              style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
+              style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.black),
             ),
 
             const SizedBox(height: 20),
@@ -123,14 +124,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _buildSettingItem(context, "Receive and validate a product (buyer)", route: '/scanQR'),
                   _buildSettingItem(context, "Log Out", logout: true),
 
+                  // Añadir espacio entre "Log Out" y los botones
                   const SizedBox(height: 20),
 
                   // 🚨 Botón para forzar un crash
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: CupertinoButton.filled(
+                    child: CupertinoButton(
                       onPressed: _forceCrash,
-                      child: Text("Force Crash"),
+                      color: AppColors.primaryBlue, // Usa el azul oficial
+                      child: Text("Force Crash", style: TextStyle(color: CupertinoColors.white)),
                     ),
                   ),
 
@@ -139,9 +142,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   // ⚡ Botón para medir rendimiento
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: CupertinoButton.filled(
+                    child: CupertinoButton(
                       onPressed: _trackPerformance,
-                      child: Text("Track Performance"),
+                      color: AppColors.primaryBlue, // Usa el azul oficial
+                      child: Text("Track Performance", style: TextStyle(color: CupertinoColors.white)),
                     ),
                   ),
                 ],
@@ -154,35 +158,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // 🔹 Método para construir cada ítem de la lista
-  Widget _buildSettingItem(BuildContext context, String title, {bool logout = false, String? route}) {
-  return CupertinoButton(
-    padding: EdgeInsets.zero,
-    onPressed: () async {
-      if (logout) {
-        await FirebaseAuth.instance.signOut();
-        Navigator.pushReplacementNamed(context, '/login');
-      } else if (route != null) {
-        Navigator.pushNamed(context, route);
-      } else {
-        Navigator.push(context, CupertinoPageRoute(builder: (context) => const NotImplementedScreen()));
-      }
-    },
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: CupertinoColors.systemGrey4)),
+  Widget _buildSettingItem(BuildContext context, String title, {bool logout = false}) {
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: () async {
+        if (logout) {
+          await FirebaseAuth.instance.signOut();
+          Navigator.pushReplacementNamed(context, '/login');
+        } else {
+          Navigator.push(context, CupertinoPageRoute(builder: (context) => const NotImplementedScreen()));
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: CupertinoColors.systemGrey4)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              title,
+              style: GoogleFonts.inter(fontSize: 16, color: AppColors.primaryBlue),
+            ),
+            const Icon(CupertinoIcons.right_chevron, color: CupertinoColors.systemGrey, size: 18),
+          ],
+        ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.inter(fontSize: 16),
-          ),
-          const Icon(CupertinoIcons.right_chevron, color: CupertinoColors.systemGrey, size: 18),
-        ],
-      ),
-    ),
-  );
-}
+    );
+  }
 }
