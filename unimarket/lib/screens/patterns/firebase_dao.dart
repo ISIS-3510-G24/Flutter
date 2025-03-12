@@ -149,18 +149,45 @@ Future<bool> signIn(String email, String password) async {
 //... gulp.
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<UPDATE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-  Future<void> updateOrderStatusDelivered(String orderId) async {
+  Future<void> updateOrderStatusDelivered(String orderId, String hashConfirm) async {
+  try {
+    final orderRef = _firestore.collection('orders').doc(orderId);
+    await orderRef.update({
+      'status': 'Delivered',
+    });
+    print("Order $orderId status updated to 'Delivered'.");
+  } catch (e) {
+    print("Error updating order status using orderId: $e");
+
+    // Debugging in case it fails
     try {
-      final orderRef = _firestore.collection('orders').doc(orderId);
-      await orderRef.update({
+      final querySnapshot = await _firestore
+          .collection('orders')
+          .where(
+            'hashConfirm', 
+            isEqualTo: hashConfirm
+          )
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        print("No order found with hashConfirm: $hashConfirm");
+        return;
+      }
+      final orderDoc = querySnapshot.docs.first;
+      await orderDoc.reference.update({
         'status': 'Delivered',
       });
-      print("Order $orderId status updated to 'Delivered'.");
+      print("Order with hashConfirm $hashConfirm status updated to 'Delivered'.");
     } catch (e) {
-      print("Error updating order status: $e");
+      print("Error updating order status using hashConfirm: $e");
       rethrow; 
     }
   }
+}
+
+
+
+
   Future<void> updateOrderStatusPurchased(String orderId) async {
     try {
       final orderRef = _firestore.collection('orders').doc(orderId);

@@ -55,8 +55,14 @@ class _QrScanState extends State<QrScan> {
             final hashConfirm = barcode.rawValue;
             if (hashConfirm != null && _hashAndOrders!.containsKey(hashConfirm)) {
               final orderId = _hashAndOrders![hashConfirm];
+              print("Order ID obtained: $orderId");
+              print("debugging hashes");
+
+              _hashAndOrders?.forEach((hashConfirm, productID) {
+                print("hashConfirm: $hashConfirm, productID: $productID");
+              });
               if (orderId != null) {
-                _firebaseDAO.updateOrderStatusDelivered(orderId).then((_) {
+                _firebaseDAO.updateOrderStatusDelivered(orderId,hashConfirm).then((_) {
                   showCupertinoDialog(
                     context: context,
                     builder: (context) {
