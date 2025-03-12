@@ -1,12 +1,12 @@
 import 'package:flutter/cupertino.dart';
-import 'package:unimarket/screens/main_login_screen.dart';
-import 'package:unimarket/screens/splash_screen.dart';
-import 'package:unimarket/screens/home_screen.dart';
-import 'package:unimarket/screens/introduction_screen.dart';
-import 'package:unimarket/screens/preferences_screen.dart'; 
-import 'package:unimarket/screens/login_screen.dart'; 
-import 'package:unimarket/screens/tabs/qr_scan.dart';
-import 'package:unimarket/screens/tabs/qr_generate.dart';
+import 'package:unimarket/screens/auth/main_login_screen.dart';
+import 'package:unimarket/screens/onboarding/splash_screen.dart';
+import 'package:unimarket/screens/home/home_screen.dart';
+import 'package:unimarket/screens/onboarding/introduction_screen.dart';
+import 'package:unimarket/screens/onboarding/preferences_screen.dart'; 
+import 'package:unimarket/screens/auth/login_screen.dart'; 
+import 'package:unimarket/screens/qr/qr_scan.dart';
+import 'package:unimarket/screens/qr/qr_generate.dart';
 
 //Para anadir pantalla nueva le agregan el import y ponen un case abajo.
 

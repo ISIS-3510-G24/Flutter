@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 // IMPORTAMOS ConfirmProductScreen
-import 'package:unimarket/widgets/confirm_product_screen.dart';
+import 'package:unimarket/screens/upload/confirm_product_screen.dart';
 
 import 'package:unimarket/screens/tabs/offer_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';

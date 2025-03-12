@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:unimarket/screens/patterns/firebase_dao.dart';
+import 'package:unimarket/data/firebase_dao.dart';
 
 
 class LoginScreen extends StatefulWidget {
