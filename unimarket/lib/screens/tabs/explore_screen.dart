@@ -6,6 +6,7 @@ import 'package:unimarket/services/product_service.dart';
 import 'package:unimarket/models/product_model.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/screens/upload/confirm_product_screen.dart';
+import 'package:unimarket/screens/product/product_detail_screen.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -44,6 +45,82 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
   }
 
+  String _formatPrice(double price) {
+    // Convert to integer to remove decimal part
+    int wholePart = price.toInt();
+    String priceString = wholePart.toString();
+    String result = '';
+    
+    // Process differently based on number length
+    if (priceString.length > 6) {
+      // For millions (7+ digits)
+      // Add apostrophe after first digit
+      result = priceString[0] + "'";
+      
+      // Add the rest of the digits with thousands separator
+      String remainingDigits = priceString.substring(1);
+      for (int i = 0; i < remainingDigits.length; i++) {
+        result += remainingDigits[i];
+        
+        // Add dot after every 3rd digit from the right
+        int positionFromRight = remainingDigits.length - 1 - i;
+        if (positionFromRight % 3 == 0 && i < remainingDigits.length - 1) {
+          result += '.';
+        }
+      }
+    } else {
+      // For smaller numbers, just add thousands separators
+      for (int i = 0; i < priceString.length; i++) {
+        result += priceString[i];
+        
+        // Add dot after every 3rd digit from the right
+        int positionFromRight = priceString.length - 1 - i;
+        if (positionFromRight % 3 == 0 && i < priceString.length - 1) {
+          result += '.';
+        }
+      }
+    }
+    
+    // Add dollar sign at the end
+    return "$result \$";
+  }
+  
+  // Muestra un modal con un campo de búsqueda
+  void _showSearchModal() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) {
+        // Focus node to auto-focus the search field when modal opens
+        final FocusNode _searchFocus = FocusNode();
+        
+        // Auto-focus after the modal is built
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          FocusScope.of(context).requestFocus(_searchFocus);
+        });
+        
+        return Container(
+          color: CupertinoColors.systemBackground,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CupertinoSearchTextField(
+                focusNode: _searchFocus,
+                onSubmitted: (value) {
+                  print("Search query: $value");
+                  // Implement search functionality here
+                  Navigator.pop(ctx);
+                },
+                placeholder: "Search products...",
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
@@ -51,6 +128,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
         middle: Text(
           "Explore",
           style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+        ),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: _showSearchModal,
+          child: const Icon(
+            CupertinoIcons.search,
+            size: 26,
+            color: AppColors.primaryBlue,
+          ),
         ),
       ),
       child: Stack(
@@ -96,10 +182,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                       itemBuilder: (context, index) {
                                         final product = _products[index];
                                         return GestureDetector(
-                                          onTap: () {
-                                            print("Clicked on ${product.title}");
-                                            // Navigate to product detail screen
-                                          },
+                                            onTap: () {
+                                              Navigator.push(
+                                                context,
+                                                CupertinoPageRoute(
+                                                  builder: (ctx) => ProductDetailScreen(product: product),
+                                                ),
+                                              );
+                                            },
                                           child: Container(
                                             padding: const EdgeInsets.all(10),
                                             decoration: BoxDecoration(
@@ -143,9 +233,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                                   maxLines: 1,
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
-                                                Text(
-                                                  "\$${product.price.toStringAsFixed(2)}",
-                                                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
+                                               Text(
+                                                   _formatPrice(product.price),
+                                                   style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
                                                 ),
                                               ],
                                             ),
