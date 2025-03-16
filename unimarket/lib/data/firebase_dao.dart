@@ -200,6 +200,71 @@ Future<bool> signIn(String email, String password) async {
       rethrow; 
     }
   }
+
+  //PRODUCTS
+
+  // Product creation method
+Future<String?> createProduct(Map<String, dynamic> productData) async {
+  try {
+    final docRef = await _firestore.collection('Product').add(productData);
+    print("Product created with ID: ${docRef.id}");
+    return docRef.id;
+  } catch (e) {
+    print("Error creating product: $e");
+    return null;
+  }
+}
+
+// Method to upload an image and get URL
+// Note: This is a placeholder. You'll need to implement actual image upload using Firebase Storage
+Future<String?> uploadProductImage(String filePath) async {
+  // Implementation for image upload to Firebase Storage
+  // Return the download URL
+  // For now, it returns a placeholder
+  return null;
+}
+
+// Method to get product details by ID
+Future<Map<String, dynamic>?> getProductById(String productId) async {
+  try {
+    final docSnapshot = await _firestore.collection('Product').doc(productId).get();
+    if (docSnapshot.exists) {
+      Map<String, dynamic> data = docSnapshot.data() as Map<String, dynamic>;
+      data['id'] = docSnapshot.id;
+      return data;
+    }
+    return null;
+  } catch (e) {
+    print("Error getting product by ID: $e");
+    return null;
+  }
+}
+
+// Method to update a product
+Future<bool> updateProduct(String productId, Map<String, dynamic> productData) async {
+  try {
+    await _firestore.collection('Product').doc(productId).update(productData);
+    print("Product $productId updated successfully");
+    return true;
+  } catch (e) {
+    print("Error updating product: $e");
+    return false;
+  }
+}
+
+// Add this method to your FirebaseDAO class
+
+// Delete a product
+Future<bool> deleteProduct(String productId) async {
+  try {
+    await _firestore.collection('Product').doc(productId).delete();
+    print('Product $productId deleted successfully');
+    return true;
+  } catch (e) {
+    print('Error deleting product: $e');
+    return false;
+  }
+}
 }
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<DELETE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
