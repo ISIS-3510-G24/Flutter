@@ -1177,6 +1177,9 @@ PODS:
   - Firebase/Performance (11.8.0):
     - Firebase/CoreOnly
     - FirebasePerformance (~> 11.8.0)
+  - Firebase/Storage (11.8.0):
+    - Firebase/CoreOnly
+    - FirebaseStorage (~> 11.8.0)
   - firebase_analytics (11.4.4):
     - Firebase/Analytics (= 11.8.0)
     - firebase_core
@@ -1198,6 +1201,10 @@ PODS:
     - Flutter
   - firebase_performance (0.10.1-4):
     - Firebase/Performance (= 11.8.0)
+    - firebase_core
+    - Flutter
+  - firebase_storage (12.4.4):
+    - Firebase/Storage (= 11.8.0)
     - firebase_core
     - Flutter
   - FirebaseABTesting (11.8.0):
@@ -1309,6 +1316,13 @@ PODS:
     - nanopb (~> 3.30910.0)
     - PromisesSwift (~> 2.1)
   - FirebaseSharedSwift (11.9.0)
+  - FirebaseStorage (11.8.0):
+    - FirebaseAppCheckInterop (~> 11.0)
+    - FirebaseAuthInterop (~> 11.0)
+    - FirebaseCore (~> 11.8.0)
+    - FirebaseCoreExtension (~> 11.8.0)
+    - GoogleUtilities/Environment (~> 8.0)
+    - GTMSessionFetcher/Core (< 5.0, >= 3.4)
   - Flutter (1.0.0)
   - GoogleAppMeasurement (11.8.0):
     - GoogleAppMeasurement/AdIdSupport (= 11.8.0)
@@ -1503,6 +1517,7 @@ DEPENDENCIES:
   - firebase_crashlytics (from `.symlinks/plugins/firebase_crashlytics/ios`)
   - firebase_in_app_messaging (from `.symlinks/plugins/firebase_in_app_messaging/ios`)
   - firebase_performance (from `.symlinks/plugins/firebase_performance/ios`)
+  - firebase_storage (from `.symlinks/plugins/firebase_storage/ios`)
   - Flutter (from `Flutter`)
   - mobile_scanner (from `.symlinks/plugins/mobile_scanner/ios`)
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
@@ -1530,6 +1545,7 @@ SPEC REPOS:
     - FirebaseRemoteConfigInterop
     - FirebaseSessions
     - FirebaseSharedSwift
+    - FirebaseStorage
     - GoogleAppMeasurement
     - GoogleDataTransport
     - GoogleMLKit
@@ -1563,6 +1579,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/firebase_in_app_messaging/ios"
   firebase_performance:
     :path: ".symlinks/plugins/firebase_performance/ios"
+  firebase_storage:
+    :path: ".symlinks/plugins/firebase_storage/ios"
   Flutter:
     :path: Flutter
   mobile_scanner:
@@ -1581,6 +1599,7 @@ SPEC CHECKSUMS:
   firebase_crashlytics: 05519be6b623981a77fe54fb52e6061956cb6047
   firebase_in_app_messaging: 060a8f8ca9d6bd0aa75b921434dbbaccd198163e
   firebase_performance: 1f77894fb3e50cec1a13277dcab50a4fff1160f0
+  firebase_storage: 4ed3dade149f74651bdae3536b68d403c364591c
   FirebaseABTesting: 7d6eee42b9137541eac2610e5fea3568d956707a
   FirebaseAnalytics: 4fd42def128146e24e480e89f310e3d8534ea42b
   FirebaseAppCheckInterop: 9226f7217b43e99dfa0bc9f674ad8108cef89feb
@@ -1599,6 +1618,7 @@ SPEC CHECKSUMS:
   FirebaseRemoteConfigInterop: 710954a00e956c5fe5144a8e46164f0361389203
   FirebaseSessions: c4d40a97f88f9eaff2834d61b4fea0a522d62123
   FirebaseSharedSwift: 574e6a5602afe4397a55c8d4f767382d620285de
+  FirebaseStorage: 8eede00081a6ce904eaa8d2daa66f1e053e8e6ea
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   GoogleAppMeasurement: fc0817122bd4d4189164f85374e06773b9561896
   GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
