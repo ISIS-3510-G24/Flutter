@@ -53,6 +53,7 @@ dependencies:
 #Qr code dependencies
   mobile_scanner: ^6.0.7
   pretty_qr_code: ^3.3.0
+  firebase_in_app_messaging: ^0.8.1+4
 
 
    
