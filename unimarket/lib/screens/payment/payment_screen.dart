@@ -1,13 +1,14 @@
 import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/theme/app_colors.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:unimarket/services/order_service.dart';
 
 class PaymentScreen extends StatelessWidget {
   final String productId;
   final String orderId;
+  final OrderService _orderService = OrderService();
 
-  const PaymentScreen({super.key, required this.productId, required this.orderId});
+  PaymentScreen({super.key, required this.productId, required this.orderId});
 
   @override
   Widget build(BuildContext context) {
@@ -79,11 +80,8 @@ class PaymentScreen extends StatelessWidget {
                       ),
                     ),
                     onPressed: () async {
-                      // Actualizar el estado del producto en Firestore
-                      await FirebaseFirestore.instance
-                          .collection('orders')
-                          .doc(orderId)
-                          .update({'status': 'Payment'});
+                      // Actualizar el estado del producto en Firestore usando el servicio
+                      await _orderService.updateOrderStatusToPaid(orderId);
 
                       // Navegar a la siguiente pantalla de revisión
                       Navigator.pop(context);
