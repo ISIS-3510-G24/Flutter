@@ -2,13 +2,51 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/models/product_model.dart';
+import 'package:unimarket/models/user_model.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
-class ProductDetailScreen extends StatelessWidget {
+class ProductDetailScreen extends StatefulWidget {
   final ProductModel product;
 
   const ProductDetailScreen({Key? key, required this.product}) : super(key: key);
+
+  @override
+  _ProductDetailScreenState createState() => _ProductDetailScreenState();
+}
+
+class _ProductDetailScreenState extends State<ProductDetailScreen> {
+  UserModel? seller;
+  final FirebaseDAO _firebaseDAO = FirebaseDAO();
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSellerDetails();
+  }
+
+  Future<void> _loadSellerDetails() async {
+    try {
+      // Using the firebase_dao directly to ensure we're getting the data
+      final sellerData = await _firebaseDAO.getUserById(widget.product.sellerID);
+      
+      if (mounted) {
+        setState(() {
+          seller = sellerData;
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      print("Error loading seller details: $e");
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +66,7 @@ class ProductDetailScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Product Image
-                  _buildProductImage(product),
+                  _buildProductImage(widget.product),
                   
                   // Product Details
                   Padding(
@@ -43,7 +81,7 @@ class ProductDetailScreen extends StatelessWidget {
                             // Title
                             Expanded(
                               child: Text(
-                                product.title,
+                                widget.product.title,
                                 style: GoogleFonts.inter(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
@@ -52,7 +90,7 @@ class ProductDetailScreen extends StatelessWidget {
                             ),
                             // Price
                             Text(
-                              _formatPrice(product.price),
+                              _formatPrice(widget.product.price),
                               style: GoogleFonts.inter(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w600,
@@ -64,25 +102,34 @@ class ProductDetailScreen extends StatelessWidget {
                         
                         const SizedBox(height: 12),
                         
-                        // Status Badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: product.status == "Available" 
-                                ? AppColors.primaryBlue.withOpacity(0.2) 
-                                : CupertinoColors.systemGrey4,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            product.status,
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: product.status == "Available" 
-                                  ? AppColors.primaryBlue 
-                                  : CupertinoColors.systemGrey,
+                        // Status Badge and Seller Info in same row
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Available badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: widget.product.status == "Available" 
+                                    ? AppColors.primaryBlue.withOpacity(0.2) 
+                                    : CupertinoColors.systemGrey4,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                widget.product.status,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: widget.product.status == "Available" 
+                                      ? AppColors.primaryBlue 
+                                      : CupertinoColors.systemGrey,
+                                ),
+                              ),
                             ),
-                          ),
+                            
+                            // Seller info
+                            _buildSellerInfo(),
+                          ],
                         ),
                         
                         const SizedBox(height: 16),
@@ -97,7 +144,7 @@ class ProductDetailScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          product.description,
+                          widget.product.description,
                           style: GoogleFonts.inter(
                             fontSize: 16,
                             color: CupertinoColors.systemGrey,
@@ -115,7 +162,7 @@ class ProductDetailScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        _buildLabelsRow(product.labels),
+                        _buildLabelsRow(widget.product.labels),
                         
                         const SizedBox(height: 24),
                         
@@ -128,10 +175,10 @@ class ProductDetailScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        _buildInfoRow("Major", product.majorID),
-                        _buildInfoRow("Posted on", _formatDate(product.createdAt)),
-                        _buildInfoRow("Updated", _formatDate(product.updatedAt)),
-                        _buildInfoRow("ID", product.classId),
+                        _buildInfoRow("Major", widget.product.majorID),
+                        _buildInfoRow("Posted on", _formatDate(widget.product.createdAt)),
+                        _buildInfoRow("Updated", _formatDate(widget.product.updatedAt)),
+                        _buildInfoRow("ID", widget.product.classId),
                       ],
                     ),
                   ),
@@ -159,7 +206,7 @@ class ProductDetailScreen extends StatelessWidget {
                       ),
                     ),
                     onPressed: () {
-                      print("Contacting seller: ${product.sellerID}");
+                      print("Contacting seller: ${widget.product.sellerID}");
                       // Add your contact logic here
                     },
                   ),
@@ -167,6 +214,63 @@ class ProductDetailScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildSellerInfo() {
+    if (isLoading) {
+      return const CupertinoActivityIndicator();
+    }
+    
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          seller?.displayName ?? "Unknown Seller",
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(width: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(15),
+          child: seller?.photoURL != null && seller!.photoURL!.isNotEmpty
+              ? Image.network(
+                  seller!.photoURL!,
+                  width: 30,
+                  height: 30,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return _buildDefaultAvatar();
+                  },
+                )
+              : _buildDefaultAvatar(),
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildDefaultAvatar() {
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        color: AppColors.primaryBlue.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Center(
+        child: Text(
+          seller?.displayName?.isNotEmpty == true
+              ? seller!.displayName[0].toUpperCase()
+              : "?",
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: AppColors.primaryBlue,
+          ),
         ),
       ),
     );
@@ -299,6 +403,7 @@ class ProductDetailScreen extends StatelessWidget {
     // Format: Month Day, Year at Hour:Minute AM/PM
     String month = _getMonthName(date.month);
     String hour = date.hour > 12 ? (date.hour - 12).toString() : date.hour.toString();
+    if (hour == "0") hour = "12"; // Handle midnight
     String minute = date.minute.toString().padLeft(2, '0');
     String period = date.hour >= 12 ? 'PM' : 'AM';
     
