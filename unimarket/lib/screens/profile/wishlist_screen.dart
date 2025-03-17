@@ -102,7 +102,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
                           ),
                           onPressed: () {
                             // Navigate to explore/home screen
-                            Navigator.of(context, rootNavigator: true).pushNamed('/explore');
+                            Navigator.of(context, rootNavigator: true).pushNamed('/home');
                           },
                         ),
                       ],
@@ -134,7 +134,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
                             Navigator.pushNamed(
                               context,
                               '/product/detail',
-                              arguments: {'productId': product['id']},
+                              arguments: {'productID': product['id']},
                             );
                           },
                           child: Container(
