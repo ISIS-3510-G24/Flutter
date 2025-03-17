@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:unimarket/models/order_model.dart';
+
 
 class FirebaseDAO {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -19,6 +21,8 @@ Future<bool> signIn(String email, String password) async {
       return false;
     }
   }
+
+
 
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<GET OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -142,6 +146,20 @@ Future<bool> signIn(String email, String password) async {
     }
   }
 
+  Future<OrderModel?> getOrderById(String orderId) async {
+      try {
+        final doc = await _firestore.collection('orders').doc(orderId).get();
+        if (doc.exists) {
+          return OrderModel.fromFirestore(doc.data()!, doc.id);
+        }
+        return null;
+      } catch (e) {
+        print("Error getting order by ID: $e");
+        return null;
+      }
+    }
+
+
 
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<CREATE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -200,6 +218,22 @@ Future<bool> signIn(String email, String password) async {
       rethrow; 
     }
   }
-}
+Future<void> updateOrderStatus(String orderId, String status) async {
+    try {
+      final orderRef = _firestore.collection('orders').doc(orderId);
+      await orderRef.update({
+        'status': status,
+      });
+      print("Order $orderId status updated to '$status'.");
+    } catch (e) {
+      print("Error updating order status: $e");
+      rethrow; 
+    }
+  }
+
+
+
+  
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<DELETE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+}
