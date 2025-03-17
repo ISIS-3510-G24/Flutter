@@ -66,24 +66,26 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   }
 
   Future<void> _loadUserProducts() async {
-    try {
-
-  final loadedProducts = await _userService.getProductsFromUser(widget.userId);
-       if (mounted) {
-    setState(() {
-      userProducts = loadedProducts;  // Assign the loaded products to userProducts
-      isLoading = false;
-    });
-      }
-    } catch (e) {
-      print("Error loading user products: $e");
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
+  try {
+    final productMaps = await _firebaseDAO.getProductsByUserId(widget.userId);
+    print("Productos crudos: $productMaps"); // Debug: revisa qué retorna la consulta
+    final loadedProducts = productMaps.map((map) => ProductModel.fromMap(map)).toList();
+    if (mounted) {
+      setState(() {
+        userProducts = loadedProducts;
+        isLoading = false;
+      });
+    }
+  } catch (e) {
+    print("Error loading user products: $e");
+    if (mounted) {
+      setState(() {
+        isLoading = false;
+      });
     }
   }
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +197,18 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           ),
           
           const SizedBox(height: 12),
-          
+
+            // User Bio
+          Text(
+              user?.bio ?? "",
+              style: GoogleFonts.inter(
+              fontSize: 16,
+              color: CupertinoColors.black,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            
           // User Major and Join Date
           Row(
             mainAxisAlignment: MainAxisAlignment.center,

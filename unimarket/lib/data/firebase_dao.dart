@@ -326,7 +326,7 @@ Future<List<Map<String, dynamic>>> getProductsByUserId(String userId) async {
   try {
     final querySnapshot = await _firestore
         .collection('Product')
-        .where('sellerId', isEqualTo: userId)
+        .where('sellerID', isEqualTo: userId)
         .get();
     
     List<Map<String, dynamic>> products = [];
@@ -356,14 +356,14 @@ Future<Map<String, dynamic>?> getProductWithSellerDetails(String productId) asyn
     productData['id'] = productSnapshot.id;
     
     // Get seller details if sellerId exists
-    if (productData.containsKey('sellerId')) {
-      final sellerId = productData['sellerId'];
-      final sellerSnapshot = await _firestore.collection('User').doc(sellerId).get();
+    if (productData.containsKey('sellerID')) {
+      final sellerID = productData['sellerID'];
+      final sellerSnapshot = await _firestore.collection('User').doc(sellerID).get();
       
       if (sellerSnapshot.exists) {
         final sellerData = sellerSnapshot.data() as Map<String, dynamic>;
         productData['seller'] = {
-          'id': sellerId,
+          'id': sellerID,
           'displayName': sellerData['displayName'] ?? 'Unknown Seller',
           'photoURL': sellerData['profilePicture'],
           'rating': sellerData['ratingAverage'] ?? 0.0,

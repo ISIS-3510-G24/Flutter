@@ -72,10 +72,13 @@ class UserService {
     return await _firebaseDAO.isProductInWishlist(productId);
   }
 
-  Future<List<ProductModel>> getProductsFromUser(String userId) async {
-    final productMaps = await _firebaseDAO.getProductsByUserId(userId);
-    return productMaps.map((map) => ProductModel.fromMap(map)).toList();
-  }
+ // UserService: Corrigiendo el método getProductsFromUser
+Future<List<ProductModel>> getProductsFromUser(String userId) async {
+  final productMaps = await _firebaseDAO.getProductsByUserId(userId);
+  // Se pasa el docId de forma explícita al factory de ProductModel
+  return productMaps.map((map) => ProductModel.fromMap(map, docId: map['id'])).toList();
+}
+
 
   // Get user's wishlist products
   Future<List<Map<String, dynamic>>> getWishlistProducts() async {
