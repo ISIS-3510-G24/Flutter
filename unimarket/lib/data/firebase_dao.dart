@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:unimarket/models/user_model.dart';
 
 class FirebaseDAO {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -264,7 +265,194 @@ Future<bool> deleteProduct(String productId) async {
     print('Error deleting product: $e');
     return false;
   }
-}
+
 }
 
-//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<DELETE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+
+
+
+
+
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<USER OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+// Add these methods to your FirebaseDAO class
+
+// Get user details by ID
+Future<UserModel?> getUserById(String userId) async {
+  try {
+    // Add cache configuration to ensure fresh data
+    final docSnapshot = await _firestore
+        .collection('User')
+        .doc(userId)
+        .get(GetOptions(source: Source.server)); // Force server fetch
+        
+    if (docSnapshot.exists && docSnapshot.data() != null) {
+      print("User data fetched successfully: ${docSnapshot.data()}"); // Add logging
+      return UserModel.fromFirestore(docSnapshot.data()!, docSnapshot.id);
+    } else {
+      print("User document does not exist or is empty: $userId");
+      return null;
+    }
+  } catch (e) {
+    print("Error getting user by ID ($userId): $e");
+    return null;
+  }
+}
+
+// Get current user details
+Future<UserModel?> getCurrentUserDetails() async {
+  final userId = getCurrentUserId();
+  if (userId == null) {
+    return null;
+  }
+  return getUserById(userId);
+}
+
+// Update user profile
+Future<bool> updateUserProfile(String userId, Map<String, dynamic> userData) async {
+  try {
+    await _firestore.collection('User').doc(userId).update(userData);
+    print("User profile updated successfully");
+    return true;
+  } catch (e) {
+    print("Error updating user profile: $e");
+    return false;
+  }
+}
+
+// Get products by user ID
+Future<List<Map<String, dynamic>>> getProductsByUserId(String userId) async {
+  try {
+    final querySnapshot = await _firestore
+        .collection('Product')
+        .where('sellerID', isEqualTo: userId)
+        .get();
+    
+    List<Map<String, dynamic>> products = [];
+    for (var doc in querySnapshot.docs) {
+      Map<String, dynamic> data = doc.data();
+      data['id'] = doc.id; // Add document ID to the product data
+      products.add(data);
+    }
+    
+    return products;
+  } catch (e) {
+    print("Error getting products by user ID: $e");
+    return [];
+  }
+}
+
+// Get product with seller details
+Future<Map<String, dynamic>?> getProductWithSellerDetails(String productId) async {
+  try {
+    final productSnapshot = await _firestore.collection('Product').doc(productId).get();
+    
+    if (!productSnapshot.exists) {
+      return null;
+    }
+    
+    Map<String, dynamic> productData = productSnapshot.data() as Map<String, dynamic>;
+    productData['id'] = productSnapshot.id;
+    
+    // Get seller details if sellerId exists
+    if (productData.containsKey('sellerID')) {
+      final sellerID = productData['sellerID'];
+      final sellerSnapshot = await _firestore.collection('User').doc(sellerID).get();
+      
+      if (sellerSnapshot.exists) {
+        final sellerData = sellerSnapshot.data() as Map<String, dynamic>;
+        productData['seller'] = {
+          'id': sellerID,
+          'displayName': sellerData['displayName'] ?? 'Unknown Seller',
+          'photoURL': sellerData['profilePicture'],
+          'rating': sellerData['ratingAverage'] ?? 0.0,
+        };
+      }
+    }
+    
+    return productData;
+  } catch (e) {
+    print("Error getting product with seller details: $e");
+    return null;
+  }
+}
+
+// Add product to wishlist
+Future<bool> addToWishlist(String productId) async {
+  final userId = getCurrentUserId();
+  if (userId == null) {
+    return false;
+  }
+  
+  try {
+    await _firestore.collection('wishlist').add({
+      'productID': productId,
+      'userID': userId,
+      'addedAt': FieldValue.serverTimestamp(),
+    });
+    return true;
+  } catch (e) {
+    print("Error adding to wishlist: $e");
+    return false;
+  }
+}
+
+// Remove product from wishlist
+Future<bool> removeFromWishlist(String productId) async {
+  final userId = getCurrentUserId();
+  if (userId == null) {
+    return false;
+  }
+  
+  try {
+    final querySnapshot = await _firestore
+        .collection('wishlist')
+        .where('userID', isEqualTo: userId)
+        .where('productID', isEqualTo: productId)
+        .get();
+    
+    if (querySnapshot.docs.isEmpty) {
+      return false;
+    }
+    
+    for (var doc in querySnapshot.docs) {
+      await doc.reference.delete();
+    }
+    
+    return true;
+  } catch (e) {
+    print("Error removing from wishlist: $e");
+    return false;
+  }
+}
+
+// Get user's wishlist
+Future<List<String>> getUserWishlist() async {
+  final userId = getCurrentUserId();
+  if (userId == null) {
+    return [];
+  }
+  
+  try {
+    final querySnapshot = await _firestore
+        .collection('wishlist')
+        .where('userID', isEqualTo: userId)
+        .get();
+    
+    return querySnapshot.docs
+        .map((doc) => doc['productID'] as String)
+        .toList();
+  } catch (e) {
+    print("Error getting user wishlist: $e");
+    return [];
+  }
+}
+
+// Check if product is in user's wishlist
+Future<bool> isProductInWishlist(String productId) async {
+  final wishlist = await getUserWishlist();
+  return wishlist.contains(productId);
+}
+
+}
