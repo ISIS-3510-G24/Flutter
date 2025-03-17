@@ -80,20 +80,10 @@ Future<List<ProductModel>> getProductsFromUser(String userId) async {
 }
 
 
-  // Get user's wishlist products
-  Future<List<Map<String, dynamic>>> getWishlistProducts() async {
-    final wishlistIds = await _firebaseDAO.getUserWishlist();
-    List<Map<String, dynamic>> products = [];
-    
-    for (var id in wishlistIds) {
-      final product = await _firebaseDAO.getProductById(id);
-      if (product != null) {
-        products.add(product);
-      }
-    }
-    
-    return products;
-  }
-
+ Future<List<ProductModel>> getWishlistProducts() async {
+  final products = await _firebaseDAO.getWishlistProducts();
+  return products.map((product) => ProductModel.fromMap(product, docId: product['id'])).toList();
+}
+   
   
 }
