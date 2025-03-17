@@ -281,13 +281,21 @@ Future<bool> deleteProduct(String productId) async {
 // Get user details by ID
 Future<UserModel?> getUserById(String userId) async {
   try {
-    final docSnapshot = await _firestore.collection('User').doc(userId).get();
-    if (docSnapshot.exists) {
-      return UserModel.fromFirestore(docSnapshot.data() as Map<String, dynamic>, docSnapshot.id);
+    // Add cache configuration to ensure fresh data
+    final docSnapshot = await _firestore
+        .collection('User')
+        .doc(userId)
+        .get(GetOptions(source: Source.server)); // Force server fetch
+        
+    if (docSnapshot.exists && docSnapshot.data() != null) {
+      print("User data fetched successfully: ${docSnapshot.data()}"); // Add logging
+      return UserModel.fromFirestore(docSnapshot.data()!, docSnapshot.id);
+    } else {
+      print("User document does not exist or is empty: $userId");
+      return null;
     }
-    return null;
   } catch (e) {
-    print("Error getting user by ID: $e");
+    print("Error getting user by ID ($userId): $e");
     return null;
   }
 }
@@ -310,6 +318,28 @@ Future<bool> updateUserProfile(String userId, Map<String, dynamic> userData) asy
   } catch (e) {
     print("Error updating user profile: $e");
     return false;
+  }
+}
+
+// Get products by user ID
+Future<List<Map<String, dynamic>>> getProductsByUserId(String userId) async {
+  try {
+    final querySnapshot = await _firestore
+        .collection('Product')
+        .where('sellerId', isEqualTo: userId)
+        .get();
+    
+    List<Map<String, dynamic>> products = [];
+    for (var doc in querySnapshot.docs) {
+      Map<String, dynamic> data = doc.data();
+      data['id'] = doc.id; // Add document ID to the product data
+      products.add(data);
+    }
+    
+    return products;
+  } catch (e) {
+    print("Error getting products by user ID: $e");
+    return [];
   }
 }
 

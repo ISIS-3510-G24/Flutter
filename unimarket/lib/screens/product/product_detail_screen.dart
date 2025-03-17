@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/models/product_model.dart';
 import 'package:unimarket/models/user_model.dart';
+import 'package:unimarket/screens/profile/user_profile_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
 class ProductDetailScreen extends StatefulWidget {
@@ -24,17 +25,34 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   @override
   void initState() {
     super.initState();
+    print("⚠️ Product seller ID: '${widget.product.sellerID}'");
     _loadSellerDetails();
   }
 
   Future<void> _loadSellerDetails() async {
     try {
-      // Using the firebase_dao directly to ensure we're getting the data
-      final sellerData = await _firebaseDAO.getUserById(widget.product.sellerID);
+      // Add a loading state indicator
+      if (mounted) {
+        setState(() {
+          isLoading = true;
+        });
+      }
+      
+      // Add a retry mechanism
+      int retryCount = 0;
+      UserModel? fetchedUser;
+      
+      while (retryCount < 3 && fetchedUser == null) {
+        fetchedUser = await _firebaseDAO.getUserById(widget.product.sellerID);
+        if (fetchedUser == null) {
+          retryCount++;
+          await Future.delayed(Duration(seconds: 1)); // Add delay between retries
+        }
+      }
       
       if (mounted) {
         setState(() {
-          seller = sellerData;
+          seller = fetchedUser;
           isLoading = false;
         });
       }
@@ -45,6 +63,35 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           isLoading = false;
         });
       }
+    }
+  }
+
+  void _navigateToUserProfile() {
+    if (seller != null) {
+      Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (context) => UserProfileScreen(
+            userId: widget.product.sellerID,
+            initialUserData: seller, // Pass the already loaded user data
+          ),
+        ),
+      );
+    } else {
+      // Show loading indicator or error message if seller data isn't available
+      showCupertinoDialog(
+        context: context,
+        builder: (context) => CupertinoAlertDialog(
+          title: Text('Unable to View Profile'),
+          content: Text('Seller information is not available at the moment.'),
+          actions: [
+            CupertinoDialogAction(
+              child: Text('OK'),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      );
     }
   }
 
@@ -127,8 +174,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                               ),
                             ),
                             
-                            // Seller info
-                            _buildSellerInfo(),
+                            // Seller info with tap to navigate to profile
+                            GestureDetector(
+                              onTap: _navigateToUserProfile,
+                              child: _buildSellerInfo(),
+                            ),
                           ],
                         ),
                         
@@ -195,7 +245,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   width: double.infinity,
                   child: CupertinoButton(
                     color: AppColors.primaryBlue,
-                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                     borderRadius: BorderRadius.circular(30),
                     child: Text(
                       "Contact Seller",
@@ -232,6 +282,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           style: GoogleFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w500,
+            // Add underline to indicate it's clickable
+            decoration: TextDecoration.underline,
+            decorationColor: AppColors.primaryBlue.withOpacity(0.5),
           ),
         ),
         const SizedBox(width: 8),

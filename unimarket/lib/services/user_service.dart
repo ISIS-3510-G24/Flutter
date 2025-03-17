@@ -2,6 +2,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:unimarket/data/firebase_dao.dart';
+import 'package:unimarket/models/product_model.dart';
 import 'package:unimarket/models/user_model.dart';
 import 'dart:io';
 
@@ -71,6 +72,11 @@ class UserService {
     return await _firebaseDAO.isProductInWishlist(productId);
   }
 
+  Future<List<ProductModel>> getProductsFromUser(String userId) async {
+    final productMaps = await _firebaseDAO.getProductsByUserId(userId);
+    return productMaps.map((map) => ProductModel.fromMap(map)).toList();
+  }
+
   // Get user's wishlist products
   Future<List<Map<String, dynamic>>> getWishlistProducts() async {
     final wishlistIds = await _firebaseDAO.getUserWishlist();
@@ -85,4 +91,6 @@ class UserService {
     
     return products;
   }
+
+  
 }
