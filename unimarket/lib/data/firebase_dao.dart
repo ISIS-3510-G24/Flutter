@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:unimarket/models/order_model.dart';
-
+import 'package:unimarket/models/user_model.dart';
 
 class FirebaseDAO {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -218,7 +218,8 @@ Future<bool> signIn(String email, String password) async {
       rethrow; 
     }
   }
-Future<void> updateOrderStatus(String orderId, String status) async {
+
+  Future<void> updateOrderStatus(String orderId, String status) async {
     try {
       final orderRef = _firestore.collection('orders').doc(orderId);
       await orderRef.update({
@@ -236,4 +237,294 @@ Future<void> updateOrderStatus(String orderId, String status) async {
   
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<DELETE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+=======
+
+  //PRODUCTS
+
+  // Product creation method
+Future<String?> createProduct(Map<String, dynamic> productData) async {
+  try {
+    final docRef = await _firestore.collection('Product').add(productData);
+    print("Product created with ID: ${docRef.id}");
+    return docRef.id;
+  } catch (e) {
+    print("Error creating product: $e");
+    return null;
+  }
+}
+
+// Method to upload an image and get URL
+// Note: This is a placeholder. You'll need to implement actual image upload using Firebase Storage
+Future<String?> uploadProductImage(String filePath) async {
+  // Implementation for image upload to Firebase Storage
+  // Return the download URL
+  // For now, it returns a placeholder
+  return null;
+}
+
+// Method to get product details by ID
+Future<Map<String, dynamic>?> getProductById(String productId) async {
+  try {
+    final docSnapshot = await _firestore.collection('Product').doc(productId).get();
+    if (docSnapshot.exists) {
+      Map<String, dynamic> data = docSnapshot.data() as Map<String, dynamic>;
+      data['id'] = docSnapshot.id;
+      return data;
+    }
+    return null;
+  } catch (e) {
+    print("Error getting product by ID: $e");
+    return null;
+  }
+}
+
+// Method to update a product
+Future<bool> updateProduct(String productId, Map<String, dynamic> productData) async {
+  try {
+    await _firestore.collection('Product').doc(productId).update(productData);
+    print("Product $productId updated successfully");
+    return true;
+  } catch (e) {
+    print("Error updating product: $e");
+    return false;
+  }
+}
+
+// Add this method to your FirebaseDAO class
+
+// Delete a product
+Future<bool> deleteProduct(String productId) async {
+  try {
+    await _firestore.collection('Product').doc(productId).delete();
+    print('Product $productId deleted successfully');
+    return true;
+  } catch (e) {
+    print('Error deleting product: $e');
+    return false;
+  }
+
+}
+
+
+
+
+
+
+
+
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<USER OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+// Add these methods to your FirebaseDAO class
+
+// Get user details by ID
+Future<UserModel?> getUserById(String userId) async {
+  try {
+    // Add cache configuration to ensure fresh data
+    final docSnapshot = await _firestore
+        .collection('User')
+        .doc(userId)
+        .get(GetOptions(source: Source.server)); // Force server fetch
+        
+    if (docSnapshot.exists && docSnapshot.data() != null) {
+      print("User data fetched successfully: ${docSnapshot.data()}"); // Add logging
+      return UserModel.fromFirestore(docSnapshot.data()!, docSnapshot.id);
+    } else {
+      print("User document does not exist or is empty: $userId");
+      return null;
+    }
+  } catch (e) {
+    print("Error getting user by ID ($userId): $e");
+    return null;
+  }
+}
+
+// Get current user details
+Future<UserModel?> getCurrentUserDetails() async {
+  final userId = getCurrentUserId();
+  if (userId == null) {
+    return null;
+  }
+  return getUserById(userId);
+}
+
+// Update user profile
+Future<bool> updateUserProfile(String userId, Map<String, dynamic> userData) async {
+  try {
+    await _firestore.collection('User').doc(userId).update(userData);
+    print("User profile updated successfully");
+    return true;
+  } catch (e) {
+    print("Error updating user profile: $e");
+    return false;
+  }
+}
+
+// Get products by user ID
+Future<List<Map<String, dynamic>>> getProductsByUserId(String userId) async {
+  try {
+    final querySnapshot = await _firestore
+        .collection('Product')
+        .where('sellerID', isEqualTo: userId)
+        .get();
+    
+    List<Map<String, dynamic>> products = [];
+    for (var doc in querySnapshot.docs) {
+      Map<String, dynamic> data = doc.data();
+      data['id'] = doc.id; // Add document ID to the product data
+      products.add(data);
+    }
+    
+    return products;
+  } catch (e) {
+    print("Error getting products by user ID: $e");
+    return [];
+  }
+}
+
+// Get product with seller details
+Future<Map<String, dynamic>?> getProductWithSellerDetails(String productId) async {
+  try {
+    final productSnapshot = await _firestore.collection('Product').doc(productId).get();
+    
+    if (!productSnapshot.exists) {
+      return null;
+    }
+    
+    Map<String, dynamic> productData = productSnapshot.data() as Map<String, dynamic>;
+    productData['id'] = productSnapshot.id;
+    
+    // Get seller details if sellerId exists
+    if (productData.containsKey('sellerID')) {
+      final sellerID = productData['sellerID'];
+      final sellerSnapshot = await _firestore.collection('User').doc(sellerID).get();
+      
+      if (sellerSnapshot.exists) {
+        final sellerData = sellerSnapshot.data() as Map<String, dynamic>;
+        productData['seller'] = {
+          'id': sellerID,
+          'displayName': sellerData['displayName'] ?? 'Unknown Seller',
+          'photoURL': sellerData['profilePicture'],
+          'rating': sellerData['ratingAverage'] ?? 0.0,
+        };
+      }
+    }
+    
+    return productData;
+  } catch (e) {
+    print("Error getting product with seller details: $e");
+    return null;
+  }
+}
+
+// Add product to wishlist
+Future<bool> addToWishlist(String productId) async {
+  final userId = getCurrentUserId();
+  if (userId == null) {
+    return false;
+  }
+  
+  try {
+    await _firestore.collection('wishlist').add({
+      'productID': productId,
+      'userID': userId,
+      'addedAt': FieldValue.serverTimestamp(),
+    });
+    return true;
+  } catch (e) {
+    print("Error adding to wishlist: $e");
+    return false;
+  }
+}
+
+// Remove product from wishlist
+Future<bool> removeFromWishlist(String productId) async {
+  final userId = getCurrentUserId();
+  if (userId == null) {
+    return false;
+  }
+  
+  try {
+    final querySnapshot = await _firestore
+        .collection('wishlist')
+        .where('userID', isEqualTo: userId)
+        .where('productID', isEqualTo: productId)
+        .get();
+    
+    if (querySnapshot.docs.isEmpty) {
+      return false;
+    }
+    
+    for (var doc in querySnapshot.docs) {
+      await doc.reference.delete();
+    }
+    
+    return true;
+  } catch (e) {
+    print("Error removing from wishlist: $e");
+    return false;
+  }
+}
+
+// Get user's wishlist
+Future<List<String>> getUserWishlist() async {
+  final userId = getCurrentUserId();
+  if (userId == null) {
+    return [];
+  }
+  
+  try {
+    final querySnapshot = await _firestore
+        .collection('wishlist')
+        .where('userID', isEqualTo: userId)
+        .get();
+    
+    return querySnapshot.docs
+        .map((doc) => doc['productID'] as String)
+        .toList();
+  } catch (e) {
+    print("Error getting user wishlist: $e");
+    return [];
+  }
+}
+
+// Check if product is in user's wishlist
+Future<bool> isProductInWishlist(String productId) async {
+  final wishlist = await getUserWishlist();
+  return wishlist.contains(productId);
+}
+
+//MAJORS
+Future<List<Map<String, dynamic>>> getAllMajors() async {
+  try {
+    final querySnapshot = await _firestore.collection('majors').get();
+    return querySnapshot.docs.map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      data['id'] = doc.id; // El ID del major
+      return data;
+    }).toList();
+  } catch (e) {
+    print("Error fetching majors: $e");
+    return [];
+  }
+}
+
+Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
+  try {
+    // Consulta la subcolección "clases" dentro del documento de major específico
+    final querySnapshot = await _firestore
+        .collection('majors')
+        .doc(majorId)
+        .collection('clases')
+        .get();
+    
+    return querySnapshot.docs.map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      data['id'] = doc.id; // El ID de la clase
+      return data;
+    }).toList();
+  } catch (e) {
+    print("Error fetching classes for major: $e");
+    return [];
+  }
+}
+
 }
