@@ -41,7 +41,7 @@ class PaymentScreen extends StatelessWidget {
                   const SizedBox(width: 20), 
                   _buildStepIndicator("Payment", true, active: true),
                   const SizedBox(width: 20), 
-                  _buildStepIndicator("Shipping", true),
+                  _buildStepIndicator("Shipping", false),
                   const SizedBox(width: 20), 
                   _buildStepIndicator("Review", false),
                 ],
