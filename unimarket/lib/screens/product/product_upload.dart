@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:unimarket/models/class_model.dart'; // You'll need to create this
 
 class UploadProductScreen extends StatefulWidget {
   const UploadProductScreen({Key? key}) : super(key: key);
@@ -12,6 +13,9 @@ class UploadProductScreen extends StatefulWidget {
 
 class _UploadProductScreenState extends State<UploadProductScreen> {
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
+
+  String? _tempSelectedMajor; // Temporarily store selected major
+  bool _isClassLoading = false;
   
   // Form fields
   final TextEditingController _titleController = TextEditingController();
@@ -20,6 +24,7 @@ class _UploadProductScreenState extends State<UploadProductScreen> {
   final TextEditingController _imageUrlController = TextEditingController();
   
   String _selectedMajor = "No major"; // Default value
+  String _selectedClass = "No class"; // Default value for class
   List<String> _labels = []; // Store selected labels
   List<String> _availableLabels = [
     'Arts & Crafts', 'Books', 'Electronics', 'Furniture', 
@@ -28,6 +33,8 @@ class _UploadProductScreenState extends State<UploadProductScreen> {
   
   bool _isLoading = false;
   List<String> _availableMajors = ["No major"]; // Will be populated from Firestore
+  List<Map<String, dynamic>> _availableClasses = []; // Will be populated based on selected major
+  List<String> _availableClassNames = ["No class"]; // Class names for the picker
   
   @override
   void initState() {
@@ -69,6 +76,44 @@ class _UploadProductScreenState extends State<UploadProductScreen> {
       });
     }
   }
+  
+  // Fetch classes for the selected major
+  Future<void> _fetchClassesForMajor(String majorId) async {
+  if (majorId == "No major") {
+    setState(() {
+      _availableClasses = [];
+      _availableClassNames = ["No class"];
+      _selectedClass = "No class";
+    });
+    return;
+  }
+  
+  setState(() {
+    _isClassLoading = true; // Only set class loading to true, not the entire screen
+  });
+  
+  try {
+    List<Map<String, dynamic>> classes = await _firebaseDAO.getClassesForMajor(majorId);
+    
+    // Extract class names and add default option
+    List<String> classNames = ["No class"];
+    for (var classItem in classes) {
+      classNames.add(classItem['name'] ?? classItem['id']);
+    }
+    
+    setState(() {
+      _availableClasses = classes;
+      _availableClassNames = classNames;
+      _selectedClass = "No class"; // Reset selection when major changes
+    });
+  } catch (e) {
+    _showErrorAlert('Error loading classes: $e');
+  } finally {
+    setState(() {
+      _isClassLoading = false;
+    });
+  }
+}
   
   // Toggle label selection
   void _toggleLabel(String label) {
@@ -125,6 +170,22 @@ class _UploadProductScreenState extends State<UploadProductScreen> {
       // Only add majorID if not "No major"
       if (_selectedMajor != "No major") {
         productData['majorID'] = _selectedMajor;
+      }
+      
+      // Only add classID if not "No class"
+      if (_selectedClass != "No class") {
+        // Find the class ID that matches the selected class name
+        String? classId;
+        for (var classItem in _availableClasses) {
+          if (classItem['name'] == _selectedClass || classItem['id'] == _selectedClass) {
+            classId = classItem['id'];
+            break;
+          }
+        }
+        
+        if (classId != null) {
+          productData['classID'] = classId;
+        }
       }
       
       // Create the product
@@ -293,7 +354,20 @@ class _UploadProductScreenState extends State<UploadProductScreen> {
                                   ),
                                   CupertinoButton(
                                     child: const Text('Done'),
-                                    onPressed: () => Navigator.pop(context),
+                                    onPressed: () {
+                                      // Store the selected major temporarily
+                                      final String selectedMajor = _tempSelectedMajor ?? _selectedMajor;
+                                      
+                                      // Update the state and fetch classes only when Done is pressed
+                                      setState(() {
+                                        _selectedMajor = selectedMajor;
+                                      });
+                                      
+                                      // Fetch classes for the selected major
+                                      _fetchClassesForMajor(selectedMajor);
+                                      
+                                      Navigator.pop(context);
+                                    },
                                   ),
                                 ],
                               ),
@@ -308,9 +382,8 @@ class _UploadProductScreenState extends State<UploadProductScreen> {
                                   useMagnifier: true,
                                   itemExtent: 32,
                                   onSelectedItemChanged: (int index) {
-                                    setState(() {
-                                      _selectedMajor = _availableMajors[index];
-                                    });
+                                    // Only store the value temporarily without fetching or updating state
+                                    _tempSelectedMajor = _availableMajors[index];
                                   },
                                   children: _availableMajors.map((String major) => 
                                     Center(child: Text(major))
@@ -347,7 +420,101 @@ class _UploadProductScreenState extends State<UploadProductScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                
+                // Class selection - only visible when a major is selected
+                if (_selectedMajor != "No major") ...[
+                  const Text('Class', 
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  _isClassLoading ? 
+                    const Center(child: CupertinoActivityIndicator()) :
+                    Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: CupertinoColors.systemGrey4),
+                        borderRadius: BorderRadius.circular(8),
+                        color: CupertinoColors.systemGrey6,
+                      ),
+                    child: CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () {
+                        showCupertinoModalPopup(
+                          context: context,
+                          builder: (BuildContext context) => Container(
+                            height: 200,
+                            padding: const EdgeInsets.only(top: 6.0),
+                            margin: EdgeInsets.only(
+                              bottom: MediaQuery.of(context).viewInsets.bottom,
+                            ),
+                            color: CupertinoColors.systemBackground,
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    CupertinoButton(
+                                      child: const Text('Cancel'),
+                                      onPressed: () => Navigator.pop(context),
+                                    ),
+                                    CupertinoButton(
+                                      child: const Text('Done'),
+                                      onPressed: () => Navigator.pop(context),
+                                    ),
+                                  ],
+                                ),
+                                Container(
+                                  height: 1,
+                                  color: CupertinoColors.systemGrey5,
+                                ),
+                                Expanded(
+                                  child: CupertinoPicker(
+                                    magnification: 1.22,
+                                    squeeze: 1.2,
+                                    useMagnifier: true,
+                                    itemExtent: 32,
+                                    onSelectedItemChanged: (int index) {
+                                      setState(() {
+                                        _selectedClass = _availableClassNames[index];
+                                      });
+                                    },
+                                    children: _availableClassNames.map((String className) => 
+                                      Center(child: Text(className))
+                                    ).toList(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(left: 12),
+                            child: Text(
+                              _selectedClass,
+                              style: const TextStyle(
+                                color: CupertinoColors.black,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.only(right: 12),
+                            child: Icon(
+                              CupertinoIcons.chevron_down,
+                              color: CupertinoColors.systemGrey,
+                              size: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 
                 // Labels section
                 const Text(
@@ -385,7 +552,6 @@ class _UploadProductScreenState extends State<UploadProductScreen> {
                   }).toList(),
                 ),
                 const SizedBox(height: 32),
-                
                 // Submit button
                 SizedBox(
                   width: double.infinity,
