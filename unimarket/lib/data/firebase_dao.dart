@@ -415,7 +415,7 @@ Future<Map<String, dynamic>?> getProductWithSellerDetails(String productId) asyn
   }
 }
 
-// Add product to wishlist
+// Consistent wishlist implementation
 Future<bool> addToWishlist(String productId) async {
   final userId = getCurrentUserId();
   if (userId == null) {
@@ -423,9 +423,13 @@ Future<bool> addToWishlist(String productId) async {
   }
   
   try {
-    await _firestore.collection('wishlist').add({
+    await _firestore
+        .collection('User')
+        .doc(userId)
+        .collection('wishlist')
+        .doc(productId)
+        .set({
       'productID': productId,
-      'userID': userId,
       'addedAt': FieldValue.serverTimestamp(),
     });
     return true;
@@ -443,20 +447,12 @@ Future<bool> removeFromWishlist(String productId) async {
   }
   
   try {
-    final querySnapshot = await _firestore
+    await _firestore
+        .collection('User')
+        .doc(userId)
         .collection('wishlist')
-        .where('userID', isEqualTo: userId)
-        .where('productID', isEqualTo: productId)
-        .get();
-    
-    if (querySnapshot.docs.isEmpty) {
-      return false;
-    }
-    
-    for (var doc in querySnapshot.docs) {
-      await doc.reference.delete();
-    }
-    
+        .doc(productId)
+        .delete();
     return true;
   } catch (e) {
     print("Error removing from wishlist: $e");
@@ -464,7 +460,7 @@ Future<bool> removeFromWishlist(String productId) async {
   }
 }
 
-// Get user's wishlist
+// WISHLIST
 Future<List<String>> getUserWishlist() async {
   final userId = getCurrentUserId();
   if (userId == null) {
@@ -473,12 +469,14 @@ Future<List<String>> getUserWishlist() async {
   
   try {
     final querySnapshot = await _firestore
+        .collection('User')
+        .doc(userId)
         .collection('wishlist')
-        .where('userID', isEqualTo: userId)
         .get();
     
+    // Extract product IDs from wishlist documents
     return querySnapshot.docs
-        .map((doc) => doc['productID'] as String)
+        .map((doc) => doc.data()['productID'] as String)
         .toList();
   } catch (e) {
     print("Error getting user wishlist: $e");
@@ -490,6 +488,34 @@ Future<List<String>> getUserWishlist() async {
 Future<bool> isProductInWishlist(String productId) async {
   final wishlist = await getUserWishlist();
   return wishlist.contains(productId);
+}
+
+Future<List<Map<String, dynamic>>> getWishlistProducts() async {
+  try {
+    // Get wishlist product IDs
+    final wishlistIds = await getUserWishlist();
+    List<Map<String, dynamic>> products = [];
+    
+    // If we have wishlist IDs, fetch the products
+    if (wishlistIds.isNotEmpty) {
+      // Use the correct collection name and batch get
+      final productsQuery = await _firestore
+          .collection('Product')
+          .where(FieldPath.documentId, whereIn: wishlistIds)
+          .get();
+      
+      for (var doc in productsQuery.docs) {
+        final productData = doc.data();
+        productData['id'] = doc.id; // Add the ID to the data
+        products.add(productData);
+      }
+    }
+    
+    return products;
+  } catch (e) {
+    print("Error getting wishlist products: $e");
+    return [];
+  }
 }
 
 //MAJORS
