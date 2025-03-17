@@ -1,9 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class PaymentScreen extends StatelessWidget {
-  const PaymentScreen({super.key});
+  final String productId;
+  final String orderId;
+
+  const PaymentScreen({super.key, required this.productId, required this.orderId});
 
   @override
   Widget build(BuildContext context) {
@@ -74,8 +78,15 @@ class PaymentScreen extends StatelessWidget {
                         color: CupertinoColors.white,
                       ),
                     ),
-                    onPressed: () {
+                    onPressed: () async {
+                      // Actualizar el estado del producto en Firestore
+                      await FirebaseFirestore.instance
+                          .collection('orders')
+                          .doc(orderId)
+                          .update({'status': 'Payment'});
+
                       // Navegar a la siguiente pantalla de revisión
+                      Navigator.pop(context);
                     },
                   ),
                 ),
