@@ -34,11 +34,11 @@ class PaymentScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _buildStepIndicator("Your bag", true),
-                  const SizedBox(width: 20), // Añade espacio entre los iconos
-                  _buildStepIndicator("Shipping", true),
-                  const SizedBox(width: 20), // Añade espacio entre los iconos
+                  const SizedBox(width: 20), 
                   _buildStepIndicator("Payment", true, active: true),
-                  const SizedBox(width: 20), // Añade espacio entre los iconos
+                  const SizedBox(width: 20), 
+                  _buildStepIndicator("Shipping", true),
+                  const SizedBox(width: 20), 
                   _buildStepIndicator("Review", false),
                 ],
               ),
@@ -61,16 +61,24 @@ class PaymentScreen extends StatelessWidget {
               const SizedBox(height: 20),
               _buildPaymentMethodSection(),
               const Spacer(),
-              CupertinoButton(
-                color: AppColors.primaryBlue,
-                borderRadius: BorderRadius.circular(12),
-                child: Text(
-                  "Continue",
-                  style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+              Center(
+                child: SizedBox(
+                  width: double.infinity, // Ancho completo
+                  child: CupertinoButton(
+                    color: AppColors.primaryBlue,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Text(
+                      "Continue",
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.bold,
+                        color: CupertinoColors.white,
+                      ),
+                    ),
+                    onPressed: () {
+                      // Navegar a la siguiente pantalla de revisión
+                    },
+                  ),
                 ),
-                onPressed: () {
-                  // Navegar a la siguiente pantalla de revisión
-                },
               ),
             ],
           ),
