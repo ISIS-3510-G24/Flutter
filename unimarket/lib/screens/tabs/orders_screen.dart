@@ -39,6 +39,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
       setState(() {
         buyingProducts = snapshot.docs.map((doc) {
           return {
+            "orderId": doc.id,
+            "productId": doc['productID'],
             "name": "Product ID: ${doc['productID']}",
             "details": "Order Date: ${doc['orderDate'].toDate()}",
             "status": doc['status'],
@@ -236,7 +238,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       Navigator.push(
                         context,
                         CupertinoPageRoute(
-                          builder: (context) => const PaymentScreen(),
+                          builder: (context) => PaymentScreen(
+                            productId: product["productId"],
+                            orderId: product["orderId"],
+                          ),
                         ),
                       );
                     }
