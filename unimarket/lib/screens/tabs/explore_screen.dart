@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:unimarket/screens/product/product_upload.dart';
+import 'package:unimarket/widgets/buttons/floating_action_button_factory.dart';
 import 'package:unimarket/widgets/popups/not_implemented.dart';
 import 'package:unimarket/services/product_service.dart';
 import 'package:unimarket/models/product_model.dart';
@@ -253,30 +255,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ),
           ),
 
-          // Floating button fixed at the bottom
-          Positioned(
-            right: 20,
-            bottom: 20,
-            child: CupertinoButton(
-              color: AppColors.primaryBlue,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              borderRadius: BorderRadius.circular(30),
-              child: Text(
-                "Upload Product",
-                style: GoogleFonts.inter(
-                  color: CupertinoColors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (ctx) => const ConfirmProductScreen(postType: "offer"),
-                  ),
-                );
-              },
-            ),
+          // Add the FloatingActionButtonFactory at the bottom of the stack
+          FloatingActionButtonFactory(
+            buttonText: "Add Product",
+            destinationScreen: const UploadProductScreen(),
           ),
         ],
       ),
