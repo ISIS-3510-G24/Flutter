@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:unimarket/screens/payment/payment_screen.dart'; // Importa PaymentScreen
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -23,35 +24,34 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Future<void> _fetchBuyingOrders() async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) {
-    print("User is not authenticated");
-    return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("User is not authenticated");
+      return;
+    }
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('buyerID', isEqualTo: user.uid)
+          .get();
+
+      setState(() {
+        buyingProducts = snapshot.docs.map((doc) {
+          return {
+            "name": "Product ID: ${doc['productID']}",
+            "details": "Order Date: ${doc['orderDate'].toDate()}",
+            "status": doc['status'],
+            "action": doc['status'] == "Delivered" ? "Help" : "Complete",
+            "image": "assets/svgs/ImagePlaceHolder.svg",
+            "price": doc['price'].toString(),
+          };
+        }).toList();
+      });
+    } catch (e) {
+      print("Error fetching orders: $e");
+    }
   }
-
-  try {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('orders')
-        .where('buyerID', isEqualTo: user.uid)
-        .get();
-
-    setState(() {
-      buyingProducts = snapshot.docs.map((doc) {
-        return {
-          "name": "Product ID: ${doc['productID']}",
-          "details": "Order Date: ${doc['orderDate'].toDate()}",
-          "status": doc['status'],
-          "action": doc['status'] == "Delivered" ? "Help" : "Complete",
-          "image": "assets/svgs/ImagePlaceHolder.svg",
-          "price": doc['price'].toString(),
-        };
-      }).toList();
-    });
-  } catch (e) {
-    print("Error fetching orders: $e");
-  }
-}
-
 
   List<Map<String, dynamic>> _getCurrentProducts() {
     switch (_selectedTab) {
@@ -229,12 +229,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ),
             ],
             const SizedBox(width: 10),
-            Text(
-              product["action"]!,
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppColors.primaryBlue,
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: product["action"] == "Complete"
+                  ? () {
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (context) => const PaymentScreen(),
+                        ),
+                      );
+                    }
+                  : null,
+              child: Text(
+                product["action"]!,
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primaryBlue,
+                ),
               ),
             ),
             if (_selectedTab == 2) ...[
