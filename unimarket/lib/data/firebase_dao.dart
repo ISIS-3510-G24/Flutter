@@ -68,9 +68,15 @@ Future<bool> createUser(String email, String password, String bio, String major,
     return _auth.currentUser?.uid;
   }
 
-  Future<List<Map<String, dynamic>>> getAllProducts() async {
+  Future<List<Map<String, dynamic>>> getAllProducts({String? filter}) async {
     try {
-      QuerySnapshot querySnapshot = await _firestore.collection('Product').get();
+      Query query = _firestore.collection('Product');
+
+      if (filter != null && filter.isNotEmpty) {
+        query = query.where('majorID', isEqualTo: filter);
+      }
+
+      QuerySnapshot querySnapshot = await query.get();
       return querySnapshot.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
     } catch (e) {
       print("Error getting products: $e");
@@ -205,6 +211,22 @@ Future<bool> createUser(String email, String password, String bio, String major,
       }
     }
 
+   Future<String?> getUserMajor() async {
+    try {
+      final userId = getCurrentUserId();
+      if (userId == null) return null;
+
+      final doc = await _firestore.collection('User').doc(userId).get();
+      if (doc.exists) {
+        return doc.data()?['major'] as String?;
+      }
+      return null;
+    } catch (e) {
+      print("Error getting user major: $e");
+      return null;
+    }
+  }
+
 
 
 
@@ -284,7 +306,7 @@ Future<bool> createUser(String email, String password, String bio, String major,
   
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<DELETE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-=======
+
 
   //PRODUCTS
 

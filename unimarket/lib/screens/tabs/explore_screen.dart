@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/screens/product/product_upload.dart';
@@ -19,7 +20,8 @@ class ExploreScreen extends StatefulWidget {
 
 class _ExploreScreenState extends State<ExploreScreen> {
   final ProductService _productService = ProductService();
-  List<ProductModel> _products = [];
+  List<ProductModel> _allProducts = [];
+  List<ProductModel> _filteredProducts = [];
   bool _isLoading = true;
 
   @override
@@ -30,10 +32,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   Future<void> _loadProducts() async {
     try {
-      List<ProductModel> products = await _productService.fetchProducts();
+      List<ProductModel> allProducts = await _productService.fetchAllProducts();
+      List<ProductModel> filteredProducts = await _productService.fetchProductsByMajor();
       if (mounted) {
         setState(() {
-          _products = products;
+          _allProducts = allProducts;
+          _filteredProducts = filteredProducts;
           _isLoading = false;
         });
       }
@@ -149,7 +153,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 Expanded(
                   child: _isLoading
                       ? const Center(child: CupertinoActivityIndicator())
-                      : _products.isEmpty
+                      : _allProducts.isEmpty
                           ? Center(
                               child: Text(
                                 "No products available",
@@ -180,9 +184,95 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                         crossAxisSpacing: 10,
                                         mainAxisSpacing: 10,
                                       ),
-                                      itemCount: _products.length,
+                                      itemCount: _filteredProducts.length,
                                       itemBuilder: (context, index) {
-                                        final product = _products[index];
+                                        final product = _filteredProducts[index];
+                                        return GestureDetector(
+                                            onTap: () {
+                                              Navigator.push(
+                                                context,
+                                                CupertinoPageRoute(
+                                                  builder: (ctx) => ProductDetailScreen(product: product),
+                                                ),
+                                              );
+                                            },
+                                          child: Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: CupertinoColors.white,
+                                              borderRadius: BorderRadius.circular(10),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: CupertinoColors.systemGrey4,
+                                                  blurRadius: 5,
+                                                  spreadRadius: 1,
+                                                ),
+                                              ],
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Expanded(
+                                                  child: ClipRRect(
+                                                    borderRadius: BorderRadius.circular(10),
+                                                    child: product.imageUrls.isNotEmpty
+                                                        ? Image.network(
+                                                            product.imageUrls.first,
+                                                            fit: BoxFit.cover,
+                                                            errorBuilder: (context, error, stackTrace) {
+                                                              return SvgPicture.asset(
+                                                                "assets/svgs/ImagePlaceHolder.svg",
+                                                                fit: BoxFit.cover,
+                                                              );
+                                                            },
+                                                          )
+                                                        : SvgPicture.asset(
+                                                            "assets/svgs/ImagePlaceHolder.svg",
+                                                            fit: BoxFit.cover,
+                                                          ),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 10),
+                                                Text(
+                                                  product.title,
+                                                  style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                               Text(
+                                                   _formatPrice(product.price),
+                                                   style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    child: Text(
+                                      "All",
+                                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    child: GridView.builder(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: 2,
+                                        childAspectRatio: 0.9,
+                                        crossAxisSpacing: 10,
+                                        mainAxisSpacing: 10,
+                                      ),
+                                      itemCount: _allProducts.length,
+                                      itemBuilder: (context, index) {
+                                        final product = _allProducts[index];
                                         return GestureDetector(
                                             onTap: () {
                                               Navigator.push(
