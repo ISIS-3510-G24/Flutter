@@ -7,6 +7,7 @@ import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class WishlistScreen extends StatefulWidget {
   const WishlistScreen({Key? key}) : super(key: key);
@@ -31,16 +32,37 @@ class _WishlistScreenState extends State<WishlistScreen> {
   /// Siguen en la lista visual, pero con el ícono outline.
   final Set<String> _removedProductIds = {};
 
+  /// Set con los IDs de productos que ya han mostrado el diálogo
+  final Set<String> _shownDialogProductIds = {};
+
+  /// Variable para rastrear si el diálogo ya se ha mostrado durante la sesión actual
+  bool _dialogShownThisSession = false;
+
   @override
   void initState() {
     super.initState();
     _loadWishlist();
     _trackScreenView();
+    _checkDialogShown();
   }
 
   // Registro de analítica
   void _trackScreenView() {
     analytics.setCurrentScreen(screenName: "WishlistScreen");
+  }
+
+  /// Verifica si el diálogo ya se ha mostrado durante la sesión actual
+  Future<void> _checkDialogShown() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _dialogShownThisSession = prefs.getBool('dialogShownThisSession') ?? false;
+    });
+  }
+
+  /// Marca el diálogo como mostrado
+  Future<void> _setDialogShown() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('dialogShownThisSession', true);
   }
 
   /// Carga la wishlist desde Firestore
@@ -67,6 +89,8 @@ class _WishlistScreenState extends State<WishlistScreen> {
         _wishlistProducts.removeWhere((p) => p.id == productId);
         // Y por si lo habíamos marcado como “removido”
         _removedProductIds.remove(productId);
+        // También lo quitamos del set de diálogos mostrados
+        _shownDialogProductIds.remove(productId);
       });
     }
   }
@@ -122,30 +146,41 @@ class _WishlistScreenState extends State<WishlistScreen> {
             }
 
             final products = snapshot.data!.docs;
+            List<String> notAvailableProducts = [];
 
             for (var product in products) {
               final productId = product.id;
               final productStatus = product['status'];
 
-              if (_wishlistProducts.any((p) => p.id == productId) && productStatus == "Not available") {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  showCupertinoDialog(
-                    context: context,
-                    builder: (context) => CupertinoAlertDialog(
-                      title: Text('Producto Not Available'),
-                      content: Text('The product with  ID $productId is not available anymore.'),
-                      actions: [
-                        CupertinoDialogAction(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                          },
-                          child: Text('Accept'),
-                        ),
-                      ],
-                    ),
-                  );
-                });
+              if (_wishlistProducts.any((p) => p.id == productId) && productStatus == "Not available" && !_shownDialogProductIds.contains(productId)) {
+                _shownDialogProductIds.add(productId);
+                notAvailableProducts.add(productId);
               }
+            }
+
+            if (notAvailableProducts.isNotEmpty && !_dialogShownThisSession) {
+              _dialogShownThisSession = true;
+              _setDialogShown();
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                showCupertinoDialog(
+                  context: context,
+                  builder: (context) => CupertinoAlertDialog(
+                    title: Text('Productos no disponibles'),
+                    content: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: notAvailableProducts.map((productId) => Text('El producto con ID $productId no está disponible.')).toList(),
+                    ),
+                    actions: [
+                      CupertinoDialogAction(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: Text('Aceptar'),
+                      ),
+                    ],
+                  ),
+                );
+              });
             }
 
             return _isLoading
