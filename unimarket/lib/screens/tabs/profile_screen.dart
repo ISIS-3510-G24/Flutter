@@ -321,7 +321,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       onPressed: () async {
         if (logout) {
           await FirebaseAuth.instance.signOut();
-          Navigator.pushReplacementNamed(context, '/login');
+          Navigator.pushReplacementNamed(context, '/mainlogin');
         } else if (route != null) {
           Navigator.pushNamed(context, route);
         } else {
