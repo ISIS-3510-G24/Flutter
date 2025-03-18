@@ -351,7 +351,7 @@ class _UserRegisterState extends State<UserRegister> {
                                 child: Text("Proceed to preferences"),
                                 onPressed: () {
                                   Navigator.pop(context);
-                                  Navigator.pushReplacementNamed(context, "/mainlogin");
+                                  Navigator.pushReplacementNamed(context, "/preferences");
                                 },
                               ),
                             ],
@@ -396,7 +396,7 @@ class _UserRegisterState extends State<UserRegister> {
                 ),
                 const SizedBox(height: 20),
             
-                // Sign Up Text
+                //la parte esta de abajo del sign up
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [

@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:unimarket/data/firebase_dao.dart';
+import 'package:unimarket/theme/app_colors.dart';
 
 class PreferencesScreen extends StatefulWidget {
   const PreferencesScreen({super.key});
@@ -9,15 +11,17 @@ class PreferencesScreen extends StatefulWidget {
 }
 
 class _PreferencesScreenState extends State<PreferencesScreen> {
+  final FirebaseDAO _firebasedao = FirebaseDAO();
   final List<String> preferences = [
-    "Selling Items",
-    "Turbo Delivery",
-    "Buying Major Specific Materials",
-    "Buying Class Specific Materials",
-    "Extra Curricular Supplies",
-    "School Supplies Exchange",
-    "Advanced Browsing",
-    "Everything"
+    "Academics and Education",
+    "Technology, Electronics and Engineering",
+    "Art and Design",
+    "Handcrafts",
+    "Fashion and Accessories",
+    "Sports and Wellness",
+    "Entertainment",
+    "Home and Decoration",
+    "Other"
   ];
 
   final Set<String> selectedPreferences = {}; // Permite múltiples selecciones
@@ -51,7 +55,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       height: 6,
                       width: MediaQuery.of(context).size.width * 0.75, // 75% de progreso
                       decoration: BoxDecoration(
-                        color: const Color(0xFF66B7F0),
+                        color: AppColors.primaryBlue,
                         borderRadius: BorderRadius.circular(3),
                       ),
                     ),
@@ -72,7 +76,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               // Subtítulo
               const SizedBox(height: 5),
               Text(
-                "Choose your interests.",
+                "Please choose at least one of your interests.",
                 style: GoogleFonts.inter(
                   fontSize: 16,
                   color: CupertinoColors.systemGrey,
@@ -142,9 +146,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     color: const Color(0xFF66B7F0),
                     borderRadius: BorderRadius.circular(12),
                     padding: const EdgeInsets.symmetric(vertical: 15),
-                    onPressed: () {
-                      // Aquí se enviarán los datos a Firebase (comentado por ahora)
-                      // sendPreferencesToFirebase(selectedPreferences);
+                    onPressed: () async {
+                      // Aquí se enviarán los datos a Firebase 
+                      await _firebasedao.sendPreferencesToFirebase(selectedPreferences);
                       Navigator.pushReplacementNamed(context, '/home');
                     },
                     child: Text(
