@@ -21,6 +21,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   final ProductService _productService = ProductService();
   List<ProductModel> _products = [];
   bool _isLoading = true;
+  String? _selectedFilter;
 
   @override
   void initState() {
@@ -28,9 +29,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _loadProducts();
   }
 
-  Future<void> _loadProducts() async {
+  Future<void> _loadProducts({String? filter}) async {
     try {
-      List<ProductModel> products = await _productService.fetchProducts();
+      List<ProductModel> products = await _productService.fetchProducts(filter: filter);
       if (mounted) {
         setState(() {
           _products = products;
@@ -45,6 +46,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
         });
       }
     }
+  }
+
+  void _onFilterSelected(String? filter) {
+    setState(() {
+      _selectedFilter = filter;
+      _isLoading = true;
+    });
+    _loadProducts(filter: filter);
   }
 
   String _formatPrice(double price) {
@@ -146,6 +155,18 @@ class _ExploreScreenState extends State<ExploreScreen> {
           SafeArea(
             child: Column(
               children: [
+                // Añadir botones de filtro
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildFilterButton("ARTE"),
+                      _buildFilterButton("DISC"),
+                      _buildFilterButton("DISO"),
+                    ],
+                  ),
+                ),
                 Expanded(
                   child: _isLoading
                       ? const Center(child: CupertinoActivityIndicator())
@@ -261,6 +282,22 @@ class _ExploreScreenState extends State<ExploreScreen> {
             destinationScreen: const UploadProductScreen(),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFilterButton(String label) {
+    return CupertinoButton(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: _selectedFilter == label ? AppColors.primaryBlue : CupertinoColors.systemGrey,
+      borderRadius: BorderRadius.circular(20),
+      onPressed: () => _onFilterSelected(label),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          color: CupertinoColors.white,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
