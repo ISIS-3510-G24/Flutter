@@ -6,6 +6,7 @@ import 'package:unimarket/screens/product/product_detail_screen.dart';
 import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class WishlistScreen extends StatefulWidget {
   const WishlistScreen({Key? key}) : super(key: key);
@@ -17,6 +18,7 @@ class WishlistScreen extends StatefulWidget {
 class _WishlistScreenState extends State<WishlistScreen> {
   final UserService _userService = UserService();
   final FirebaseAnalytics analytics = FirebaseAnalytics.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   /// Productos que llegan desde la wishlist de Firestore.
   List<ProductModel> _wishlistProducts = [];
@@ -112,17 +114,53 @@ class _WishlistScreenState extends State<WishlistScreen> {
         ),
       ),
       child: SafeArea(
-        child: _isLoading
-            ? const Center(child: CupertinoActivityIndicator())
-            : _wishlistProducts.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    itemCount: _wishlistProducts.length,
-                    itemBuilder: (context, index) {
-                      final product = _wishlistProducts[index];
-                      return _buildWishlistItem(product);
-                    },
-                  ),
+        child: StreamBuilder<QuerySnapshot>(
+          stream: _firestore.collection('Product').snapshots(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(child: CupertinoActivityIndicator());
+            }
+
+            final products = snapshot.data!.docs;
+
+            for (var product in products) {
+              final productId = product.id;
+              final productStatus = product['status'];
+
+              if (_wishlistProducts.any((p) => p.id == productId) && productStatus == "Not available") {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  showCupertinoDialog(
+                    context: context,
+                    builder: (context) => CupertinoAlertDialog(
+                      title: Text('Producto Not Available'),
+                      content: Text('The product with  ID $productId is not available anymore.'),
+                      actions: [
+                        CupertinoDialogAction(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                          },
+                          child: Text('Accept'),
+                        ),
+                      ],
+                    ),
+                  );
+                });
+              }
+            }
+
+            return _isLoading
+                ? const Center(child: CupertinoActivityIndicator())
+                : _wishlistProducts.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                        itemCount: _wishlistProducts.length,
+                        itemBuilder: (context, index) {
+                          final product = _wishlistProducts[index];
+                          return _buildWishlistItem(product);
+                        },
+                      );
+          },
+        ),
       ),
     );
   }
