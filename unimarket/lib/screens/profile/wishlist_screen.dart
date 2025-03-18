@@ -53,16 +53,37 @@ class _WishlistScreenState extends State<WishlistScreen> {
 
   /// Verifica si el diálogo ya se ha mostrado durante la sesión actual
   Future<void> _checkDialogShown() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _dialogShownThisSession = prefs.getBool('dialogShownThisSession') ?? false;
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _dialogShownThisSession = prefs.getBool('dialogShownThisSession') ?? false;
+      });
+    } catch (e) {
+      print('Error checking dialog shown status: $e');
+    }
   }
 
   /// Marca el diálogo como mostrado
   Future<void> _setDialogShown() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('dialogShownThisSession', true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('dialogShownThisSession', true);
+    } catch (e) {
+      print('Error setting dialog shown status: $e');
+    }
+  }
+
+  /// Restablece el estado del diálogo mostrado (solo para desarrollo)
+  Future<void> _resetDialogShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('dialogShownThisSession', false);
+      setState(() {
+        _dialogShownThisSession = false;
+      });
+    } catch (e) {
+      print('Error resetting dialog shown status: $e');
+    }
   }
 
   /// Carga la wishlist desde Firestore
@@ -136,6 +157,11 @@ class _WishlistScreenState extends State<WishlistScreen> {
           "My Wishlist",
           style: GoogleFonts.inter(fontWeight: FontWeight.bold),
         ),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: _resetDialogShown, // Botón para restablecer el estado del diálogo
+          child: Icon(CupertinoIcons.refresh),
+        ),
       ),
       child: SafeArea(
         child: StreamBuilder<QuerySnapshot>(
@@ -165,17 +191,17 @@ class _WishlistScreenState extends State<WishlistScreen> {
                 showCupertinoDialog(
                   context: context,
                   builder: (context) => CupertinoAlertDialog(
-                    title: Text('Productos no disponibles'),
+                    title: Text('Products not available'),
                     content: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: notAvailableProducts.map((productId) => Text('El producto con ID $productId no está disponible.')).toList(),
+                      children: notAvailableProducts.map((productId) => Text('The product with ID $productId is not available anymore.')).toList(),
                     ),
                     actions: [
                       CupertinoDialogAction(
                         onPressed: () {
                           Navigator.of(context).pop();
                         },
-                        child: Text('Aceptar'),
+                        child: Text('Accept'),
                       ),
                     ],
                   ),
