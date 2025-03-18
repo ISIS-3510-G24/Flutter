@@ -6,10 +6,10 @@ class ProductService {
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
 
   // Fetch all products
-  Future<List<ProductModel>> fetchProducts() async {
+  Future<List<ProductModel>> fetchProducts({String? filter}) async {
     try {
-      // Get raw product data from FirebaseDAO
-      final List<Map<String, dynamic>> rawProducts = await _firebaseDAO.getAllProducts();
+      // Get raw product data from FirebaseDAO with optional filter
+      final List<Map<String, dynamic>> rawProducts = await _firebaseDAO.getAllProducts(filter: filter);
       
       // Convert raw data to ProductModel objects
       final List<ProductModel> products = rawProducts.map((productData) {
