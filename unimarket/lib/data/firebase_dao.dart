@@ -33,9 +33,15 @@ Future<bool> signIn(String email, String password) async {
     return _auth.currentUser?.uid;
   }
 
-  Future<List<Map<String, dynamic>>> getAllProducts() async {
+  Future<List<Map<String, dynamic>>> getAllProducts({String? filter}) async {
     try {
-      QuerySnapshot querySnapshot = await _firestore.collection('Product').get();
+      Query query = _firestore.collection('Product');
+
+      if (filter != null && filter.isNotEmpty) {
+        query = query.where('majorID', isEqualTo: filter);
+      }
+
+      QuerySnapshot querySnapshot = await query.get();
       return querySnapshot.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
     } catch (e) {
       print("Error getting products: $e");
