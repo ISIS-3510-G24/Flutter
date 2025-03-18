@@ -20,7 +20,7 @@ class MainLogin extends StatelessWidget {
            
           } else {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                Navigator.pushReplacementNamed(context, '/login');
+                Navigator.pushReplacementNamed(context, '/authval');
               });
             
           }
