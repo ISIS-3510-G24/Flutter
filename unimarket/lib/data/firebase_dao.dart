@@ -237,7 +237,7 @@ Future<bool> signIn(String email, String password) async {
   
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<DELETE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-=======
+
 
   //PRODUCTS
 
