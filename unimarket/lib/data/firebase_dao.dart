@@ -22,6 +22,41 @@ Future<bool> signIn(String email, String password) async {
     }
   }
 
+Future<bool> createUser(String email, String password, String bio, String major, String displayName )async {
+    try {
+      
+       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password.trim(),
+      );
+      String uid = userCredential.user!.uid;
+      await _firestore.collection("User").doc(uid).set({
+      "email": email,
+      "displayName": displayName,
+      "bio": bio,
+      "major": major,
+      "profilePicture": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/Default_pfp.svg/2048px-Default_pfp.svg.png",
+      "ratingAverage": 0,
+      "reviewsCount": 0,
+      "updatedAt": FieldValue.serverTimestamp(),
+      "createdAt": FieldValue.serverTimestamp(),  
+    });
+
+    await _firestore.collection("User").doc(uid).collection("wishlist").doc("placeholder").set({
+      "message": "Placeholder wishlist",
+    });
+
+    await _firestore.collection("User").doc(uid).collection("reviews").doc("placeholder").set({
+      "message": "Placeholder review",
+    });
+      print("User creation successful");
+      return true; 
+    } catch (e) {
+      print("User creation failed: $e");
+      return false;
+    }
+  }
+
 
 
 
@@ -146,6 +181,17 @@ Future<bool> signIn(String email, String password) async {
     }
   }
 
+
+  Future<List<String>> fetchMajors() async {
+  try {
+    final querySnapshot = await _firestore.collection('majors').get();
+    return querySnapshot.docs.map((doc) => doc.id).toList();
+  } catch (e) {
+    print("Error fetching majors: $e");
+    return [];
+  }
+}
+
   Future<OrderModel?> getOrderById(String orderId) async {
       try {
         final doc = await _firestore.collection('orders').doc(orderId).get();
@@ -158,6 +204,7 @@ Future<bool> signIn(String email, String password) async {
         return null;
       }
     }
+
 
 
 
