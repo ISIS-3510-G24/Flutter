@@ -5,11 +5,18 @@ import 'package:firebase_auth/firebase_auth.dart';
 class ProductService {
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
 
-  // Fetch all products
-  Future<List<ProductModel>> fetchProducts({String? filter}) async {
+  // Fetch all products based on user's major
+  Future<List<ProductModel>> fetchProducts() async {
     try {
-      // Get raw product data from FirebaseDAO with optional filter
-      final List<Map<String, dynamic>> rawProducts = await _firebaseDAO.getAllProducts(filter: filter);
+      // Get the user's major
+      final String? userMajor = await _firebaseDAO.getUserMajor();
+      if (userMajor == null) {
+        print('User major not found');
+        return [];
+      }
+
+      // Get raw product data from FirebaseDAO with the user's major as filter
+      final List<Map<String, dynamic>> rawProducts = await _firebaseDAO.getAllProducts(filter: userMajor);
       
       // Convert raw data to ProductModel objects
       final List<ProductModel> products = rawProducts.map((productData) {
