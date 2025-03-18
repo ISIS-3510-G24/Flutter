@@ -26,9 +26,9 @@ class _UploadProductScreenState extends State<UploadProductScreen> {
   String _selectedMajor = "No major"; // Default value
   String _selectedClass = "No class"; // Default value for class
   List<String> _labels = []; // Store selected labels
-  List<String> _availableLabels = [
-    'Arts & Crafts', 'Books', 'Electronics', 'Furniture', 
-    'Clothing', 'Sports', 'Study Materials', 'Other'
+  final List<String> _availableLabels = [
+  "Academics","Education","Technology", "Electronics","Art","Design""Engineering",
+  "Handcrafts","Fashion","Accessories","Sports","Wellness","Entertainment","Home","Decoration","Other"
   ];
   
   bool _isLoading = false;

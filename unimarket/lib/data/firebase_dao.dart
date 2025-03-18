@@ -22,7 +22,7 @@ Future<bool> signIn(String email, String password) async {
     }
   }
 
-Future<bool> createUser(String email, String password, String bio, String major, String displayName )async {
+Future<bool> createUser(String email, String password, String bio, String displayName, String major )async {
     try {
       
        UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
