@@ -29,7 +29,7 @@ Future<bool> createUser(String email, String password, String bio, String major,
         password: password.trim(),
       );
       String uid = userCredential.user!.uid;
-      await _firestore.collection("Users").doc(uid).set({
+      await _firestore.collection("User").doc(uid).set({
       "email": email,
       "displayName": displayName,
       "bio": bio,
@@ -41,11 +41,11 @@ Future<bool> createUser(String email, String password, String bio, String major,
       "createdAt": FieldValue.serverTimestamp(),  
     });
 
-    await _firestore.collection("Users").doc(uid).collection("wishlist").doc("placeholder").set({
+    await _firestore.collection("User").doc(uid).collection("wishlist").doc("placeholder").set({
       "message": "Placeholder wishlist",
     });
 
-    await _firestore.collection("Users").doc(uid).collection("reviews").doc("placeholder").set({
+    await _firestore.collection("User").doc(uid).collection("reviews").doc("placeholder").set({
       "message": "Placeholder review",
     });
       print("User creation successful");

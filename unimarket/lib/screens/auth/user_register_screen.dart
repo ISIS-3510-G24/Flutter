@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/data/firebase_dao.dart';
@@ -12,7 +13,7 @@ class UserRegister extends StatefulWidget {
 }
 
 class _UserRegisterState extends State<UserRegister> {
-  String? _selectedMajor;
+  String? selectedMajor;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
@@ -32,31 +33,35 @@ class _UserRegisterState extends State<UserRegister> {
     super.dispose();
   }
 
-  Future _signUp() async{
+  Future<bool> _signUp() async {
     final email = _emailController.text;
     final bio = _bioController.text;
     final password = _passwordController.text;
     final displayName = _displayNameController.text;
-    final passwordconfirm = _confirmpasswordController.text;
-    String? _selectedMajor;
-    if (_selectedMajor == null) {
+    final passwordConfirm = _confirmpasswordController.text;
+
+    if (selectedMajor == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please select a major")),
       );
-      return;
+      return false;
     }
 
-    if (confirmPassword()){
-      await _firebaseDAO.createUser(email, password, bio, displayName, _selectedMajor);
+    if (confirmPassword(password.trim(), passwordConfirm.trim())) {
+      try {
+        await _firebaseDAO.createUser(email, password, bio, displayName, selectedMajor!);
+        return true;
+      } catch (e) {
+        print("Signup error: $e");
+        return false;
+      }
     }
-
-
-    
-
+    return false;
   }
 
-  bool confirmPassword(){
-    if (_passwordController.text.trim() == _confirmpasswordController.text.trim()){
+
+  bool confirmPassword(String password, String confirmPassword) {
+    if (password == confirmPassword){
       return true;
     }
     else {
@@ -67,10 +72,9 @@ class _UserRegisterState extends State<UserRegister> {
   @override
   Widget build(BuildContext context) {
     
-    return MaterialApp(
-      home: Scaffold(
+    return CupertinoPageScaffold(
         backgroundColor: Color(0xFFf1f1f1),
-        body: SafeArea(
+        child: SafeArea(
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -102,7 +106,7 @@ class _UserRegisterState extends State<UserRegister> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25),
                   child: Text(
-                      "Name",
+                      "Name - The name you want others to see",
                       style: GoogleFonts.poppins(
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
@@ -110,7 +114,7 @@ class _UserRegisterState extends State<UserRegister> {
                       ),
                     ),
                 ),
-                // Username textbox
+                // display Name textbox
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25),
                   child: Container(
@@ -121,18 +125,67 @@ class _UserRegisterState extends State<UserRegister> {
                     ),
                     child: Padding(
                       padding: const EdgeInsets.only(left: 20),
-                      child: TextField(
-                        controller: _emailController,
-                        decoration: const InputDecoration(
-                          hintText: "Username",
-                          border: InputBorder.none,
+                      child: CupertinoTextField(
+                        controller: _displayNameController,
+                        placeholder: "Display name",
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: CupertinoColors.systemGrey),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
-            
+
+                //Email textbox
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 25),
+                  child: Text(
+                      "E-mail address",
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Colors.black,
+                      ),
+                    ),
+                ),
+                // Email
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 25),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 20),
+                      child: CupertinoTextField(
+                        controller: _emailController,
+                        placeholder: "Your email address",
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: CupertinoColors.systemGrey),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 25),
+                  child: Text(
+                      "Password - has to have at least 6 characters",
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Colors.black,
+                      ),
+                    ),
+                ),
                 // Password Textbox
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25),
@@ -144,18 +197,67 @@ class _UserRegisterState extends State<UserRegister> {
                     ),
                     child: Padding(
                       padding: const EdgeInsets.only(left: 20),
-                      child: TextField(
+                      child: CupertinoTextField(
                         controller: _passwordController,
+                        placeholder: "Password",
                         obscureText: true,
-                        decoration: const InputDecoration(
-                          hintText: "Password",
-                          border: InputBorder.none,
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: CupertinoColors.systemGrey),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 25),
+                  child: Text(
+                      "Confirm Password",
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Colors.black,
+                      ),
+                    ),
+                ),
+                // Confirm password
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 25),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 20),
+                      child: CupertinoTextField(
+                        controller: _confirmpasswordController,
+                        placeholder: "Confirm Password",
+                        obscureText: true,
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: CupertinoColors.systemGrey),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 25),
+                  child: Text(
+                      "Select your major  (only one)",
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Colors.black,
+                      ),
+                    ),
+                ),
                  // Major Dropdown
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25),
@@ -169,35 +271,109 @@ class _UserRegisterState extends State<UserRegister> {
                         return const Text("Error loading majors or no majors found"); // Handle errors
                       }
 
-                      return DropdownButtonFormField<String>(
-                        decoration: InputDecoration(
-                          labelText: "Select Major",
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        value: _selectedMajor, // Selected major value
-                        items: snapshot.data!.map((majorId) {
-                          return DropdownMenuItem(
-                            value: majorId,
-                            child: Text(majorId), // Display major ID (or change to name if needed)
+                      return CupertinoButton(
+                        child: Text(selectedMajor ?? "Select Major"),
+                        onPressed: () {
+                          showCupertinoModalPopup(
+                            context: context,
+                            builder: (context) => Container(
+                              height: 250,
+                              color: CupertinoColors.white,
+                              child: CupertinoPicker(
+                                itemExtent: 32,
+                                onSelectedItemChanged: (index) {
+                                  setState(() {
+                                    selectedMajor = snapshot.data![index];
+                                  });
+                                },
+                                children: snapshot.data!.map((major) => Text(major)).toList(),
+                              ),
+                            ),
                           );
-                        }).toList(),
-                        onChanged: (newValue) {
-                          setState(() {
-                            _selectedMajor = newValue; // Update selected major
-                          });
                         },
                       );
                     },
                   ),
                 ),
+                //Bio textbox
+                const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 25),
+                  child: Text(
+                      "Bio - Write something fun!",
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Colors.black,
+                      ),
+                    ),
+                ),
+                
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 25),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 20),
+                      child: CupertinoTextField(
+                        controller: _bioController,
+                        placeholder: "Your own bio!",
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: CupertinoColors.systemGrey),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
                 // Login button
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25),
                   child: GestureDetector(
-                    onTap: () {
+                    onTap: () async {
                       print("Email: ${_emailController.text}");
                       print("Password: ${_passwordController.text}");
-                      _signUp();
+                      bool success = await _signUp();
+                      if (success) {
+                        showCupertinoDialog(
+                          context: context,
+                          builder: (context) => CupertinoAlertDialog(
+                            title: Text("Success"),
+                            content: Text("Sign-up successful!"),
+                            actions: [
+                              CupertinoDialogAction(
+                                child: Text("Proceed to preferences"),
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  Navigator.pushReplacementNamed(context, "/mainlogin");
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      } else {
+                        showCupertinoDialog(
+                          context: context,
+                          builder: (context) => CupertinoAlertDialog(
+                            title: Text("Error"),
+                            content: Text("Error during signup. Please try again."),
+                            actions: [
+                              CupertinoDialogAction(
+                                child: Text("Ok"),
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      }
                     },
                     child: Container(
                       padding: const EdgeInsets.all(20),
@@ -245,7 +421,6 @@ class _UserRegisterState extends State<UserRegister> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }
