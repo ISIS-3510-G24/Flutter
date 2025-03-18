@@ -165,6 +165,22 @@ Future<bool> signIn(String email, String password) async {
       }
     }
 
+   Future<String?> getUserMajor() async {
+    try {
+      final userId = getCurrentUserId();
+      if (userId == null) return null;
+
+      final doc = await _firestore.collection('User').doc(userId).get();
+      if (doc.exists) {
+        return doc.data()?['major'] as String?;
+      }
+      return null;
+    } catch (e) {
+      print("Error getting user major: $e");
+      return null;
+    }
+  }
+
 
 
 
