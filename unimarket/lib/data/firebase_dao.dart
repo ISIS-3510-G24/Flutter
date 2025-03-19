@@ -284,7 +284,7 @@ Future<bool> createUser(String email, String password, String bio, String major,
   
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<DELETE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-=======
+
 
   //PRODUCTS
 
