@@ -25,7 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final isLoginSuccessful = await _firebaseDAO.signIn(email, password);
 
     if (isLoginSuccessful && mounted) {
-      Navigator.pushReplacementNamed(context, '/preferences');
+      Navigator.pushReplacementNamed(context, '/home');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

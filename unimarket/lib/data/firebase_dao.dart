@@ -233,6 +233,48 @@ Future<bool> createUser(String email, String password, String bio, String displa
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<CREATE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
+//Helper function for sendPreferencesToFirebase
+List<String> getPreferenceCodes(Set<String> selectedPreferences) {
+    final Map<String, List<String>> preferenceCodes = {
+  'Academics and Education': ['Academics', 'Education'],
+  'Technology, Electronics and Engineering': ['Technology', 'Electronics','Engineering'],
+  'Art and Design': ['Art', 'Design'],
+  'Handcrafts': ['Handcrafts'],
+  'Fashion and Accessories': ['Fashion', 'Accessories'],
+  'Sports and Wellness': ['Sports', 'Wellness'],
+  'Entertainment': ['Entertainment'],
+  'Home and Decoration': ['Home','Decoration'],
+  'Other':['Other']
+};
+  List<String> codes = [];
+  for (String preference in selectedPreferences) {
+    if (preferenceCodes.containsKey(preference)) {
+      codes.addAll(preferenceCodes[preference]!);
+    }
+  }
+  return codes;
+}
+
+Future<bool> sendPreferencesToFirebase ( Set<String> selectedPreferences)async {
+  final userId = getCurrentUserId();
+    if (userId == null) {
+      print("No user is currently logged in.");
+      return false;
+    }
+ List<String> preferences = getPreferenceCodes(selectedPreferences);
+
+  try {
+    await _firestore.collection('User').doc(userId).update({
+      'preferences': preferences,
+    });
+    print("Preferences updated successfully.");
+    return true;
+  } catch (e) {
+    print("Error updating preferences: $e");
+    return false;
+  }
+}
+
 //... gulp.
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<UPDATE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
