@@ -53,5 +53,11 @@
 	<true/>
 	<key>firebase_performance_collection_enabled</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>We need access to Bluetooth to advertise as a seller device.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>We need access to Bluetooth to advertise as a seller device.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We need access to your location to scan for nearby devices.</string>
 </dict>
 </plist>

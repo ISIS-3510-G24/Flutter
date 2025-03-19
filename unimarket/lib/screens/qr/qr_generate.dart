@@ -2,6 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:unimarket/data/firebase_dao.dart';
+import 'package:unimarket/screens/ble_scan/seller_ble_advertiser.dart';
+
 
 class QrGenerate extends StatefulWidget {
   const QrGenerate({super.key});
@@ -13,6 +15,7 @@ class QrGenerate extends StatefulWidget {
 class _QrGenerateState extends State<QrGenerate> {
   //Aplica el patrón de DAO
   final FirebaseDAO _firebaseDAO = FirebaseDAO(); 
+  final SellerBLEAdvertiser _sellerBLEAdvertiser = SellerBLEAdvertiser();
   Map<String, Map<String, dynamic>>? _productsWithHashes;
   bool _isLoading = true;
 
@@ -38,39 +41,43 @@ class _QrGenerateState extends State<QrGenerate> {
   }
 
   void _showQrPopup(String hashConfirm) {
-  showCupertinoDialog(
-    context: context,
-    builder: (context) {
-      return CupertinoAlertDialog(
-        content: Container(
-          color: CupertinoColors.white, 
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min, 
-            children: [
-              
-              SizedBox(
-                width: 200, 
-                height: 200, 
-                child: PrettyQrView.data(
-                  data: hashConfirm,
-                  errorCorrectLevel: QrErrorCorrectLevel.M,
+    
+    _sellerBLEAdvertiser.startAdvertising();
+
+    showCupertinoDialog(
+      context: context,
+      builder: (context) {
+        return CupertinoAlertDialog(
+          content: Container(
+            color: CupertinoColors.white,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 200,
+                  height: 200,
+                  child: PrettyQrView.data(
+                    data: hashConfirm,
+                    errorCorrectLevel: QrErrorCorrectLevel.M,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              CupertinoButton(
-                child: const Text('Close'),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              ),
-            ],
+                const SizedBox(height: 20),
+                CupertinoButton(
+                  child: const Text('Close'),
+                  onPressed: () {
+                    
+                    _sellerBLEAdvertiser.stopAdvertising();
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

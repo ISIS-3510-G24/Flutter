@@ -279,7 +279,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         _buildSettingItem(context, "Wishlist", route: '/wishlist'),
                         _buildSettingItem(context, "Edit Profile", route: '/edit-profile'),
                         _buildSettingItem(context, "Validate a product delivery (Seller)", route: '/genQR'),
-                        _buildSettingItem(context, "Receive and validate a product (Buyer)", route: '/scanQR'),
+                        _buildSettingItem(context, "Receive and validate a product (Buyer)", route: '/BLEscan'),
                         _buildSettingItem(context, "Log Out", logout: true),
 
                         const SizedBox(height: 20),

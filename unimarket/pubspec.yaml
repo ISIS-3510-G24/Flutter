@@ -60,6 +60,11 @@ dependencies:
   uuid: ^4.5.1
   image_picker: ^1.1.2
 
+  #sensor dependencies
+  flutter_blue_plus: ^1.35.3 
+  permission_handler: ^11.0.1 
+  flutter_ble_peripheral: ^1.0.0
+
 
    
   
