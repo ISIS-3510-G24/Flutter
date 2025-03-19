@@ -5,7 +5,7 @@ class ClientBLEScanner {
   bool isSellerNearby = false;
 
   void startScan() {
-    FlutterBluePlus.startScan(timeout: Duration(seconds: 4));
+    FlutterBluePlus.startScan(timeout: Duration(seconds: 30));
 
     FlutterBluePlus.scanResults.listen((results) {
       for (ScanResult result in results) {
