@@ -8,22 +8,25 @@ import 'package:unimarket/models/user_model.dart';
 import 'package:unimarket/screens/product/product_detail_screen.dart';
 import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:firebase_in_app_messaging/firebase_in_app_messaging.dart';
 
 class UserProfileScreen extends StatefulWidget {
+  
   final String userId;
   final UserModel? initialUserData; // Optional initial data to avoid loading
 
   const UserProfileScreen({
-    Key? key, 
+    super.key, 
     required this.userId,
     this.initialUserData,
-  }) : super(key: key);
+  });
 
   @override
-  _UserProfileScreenState createState() => _UserProfileScreenState();
+  UserProfileScreenState createState() => UserProfileScreenState();
 }
 
-class _UserProfileScreenState extends State<UserProfileScreen> {
+class UserProfileScreenState extends State<UserProfileScreen> {
+  final FirebaseInAppMessaging fiam = FirebaseInAppMessaging.instance;
   UserModel? user;
   final UserService _userService = UserService();
   List<ProductModel> userProducts = [];
@@ -44,16 +47,21 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   Future<void> _loadUserData() async {
     try {
-      
       final userData = await _firebaseDAO.getUserById(widget.userId);
-      
+
       if (mounted) {
         setState(() {
           user = userData;
         });
-        
+
         // After user data is loaded, load their products
         _loadUserProducts();
+
+        // Si se completa el hasGreatReviews, mandar el mensaje a in app messaging
+        bool hasGreatReviews = await _firebaseDAO.checkSellerReviews(widget.userId);
+        if (hasGreatReviews) {
+          fiam.triggerEvent('great_reviews');
+        }
       }
     } catch (e) {
       print("Error loading user data: $e");

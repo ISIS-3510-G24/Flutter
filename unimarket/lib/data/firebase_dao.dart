@@ -228,21 +228,22 @@ Future<bool> createUser(String email, String password, String bio, String displa
   }
 
 
-  Future<bool> _checkSellerReviews(String sellerId) async {
+  Future<bool> checkSellerReviews(String sellerId) async {
   try {
-    // Obtener las 3 reseñas mas recientes
+    // Obtener las 3 reseñas mas recientes excluyendo el placeholder
     QuerySnapshot reviewSnapshot = await FirebaseFirestore.instance
-        .collection('users')
+        .collection('User')
         .doc(sellerId)
         .collection('reviews')
-        .orderBy('timestamp', descending: true) // Sort by timestamp (newest first)
-        .limit(3) // Limit to 3 reviews
+        .where(FieldPath.documentId, isNotEqualTo: 'placeholder')
+        .orderBy('createdAt', descending: true) 
+        .limit(3) 
         .get();
 
-    // Check if all 3 reviews have a score above 3
+    // Revisar que las 3 sean ratings mayores a 3
     bool allReviewsAbove3 = reviewSnapshot.docs.every((doc) {
       final reviewData = doc.data() as Map<String, dynamic>;
-      final score = reviewData['score'] as int; // Assuming 'score' is the field for review score
+      final score = reviewData['rating'] as int; 
       return score > 3;
     });
 
