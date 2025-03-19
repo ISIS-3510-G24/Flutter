@@ -1,14 +1,13 @@
 import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/models/product_model.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class ProductService {
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
 
   // Fetch all products
-  Future<List<ProductModel>> fetchProducts() async {
+  Future<List<ProductModel>> fetchAllProducts() async {
     try {
-      // Get raw product data from FirebaseDAO
+      // Get raw product data from FirebaseDAO without any filter
       final List<Map<String, dynamic>> rawProducts = await _firebaseDAO.getAllProducts();
       
       // Convert raw data to ProductModel objects
@@ -18,7 +17,33 @@ class ProductService {
       
       return products;
     } catch (e) {
-      print('Error fetching products in ProductService: $e');
+      print('Error fetching all products in ProductService: $e');
+      // Return empty list on error
+      return [];
+    }
+  }
+
+  // Fetch products based on user's major
+  Future<List<ProductModel>> fetchProductsByMajor() async {
+    try {
+      // Get the user's major
+      final String? userMajor = await _firebaseDAO.getUserMajor();
+      if (userMajor == null) {
+        print('User major not found');
+        return [];
+      }
+
+      // Get raw product data from FirebaseDAO with the user's major as filter
+      final List<Map<String, dynamic>> rawProducts = await _firebaseDAO.getAllProducts(filter: userMajor);
+      
+      // Convert raw data to ProductModel objects
+      final List<ProductModel> products = rawProducts.map((productData) {
+        return ProductModel.fromMap(productData, docId: productData['id']);
+      }).toList();
+      
+      return products;
+    } catch (e) {
+      print('Error fetching products by major in ProductService: $e');
       // Return empty list on error
       return [];
     }

@@ -22,6 +22,41 @@ Future<bool> signIn(String email, String password) async {
     }
   }
 
+Future<bool> createUser(String email, String password, String bio, String displayName, String major )async {
+    try {
+      
+       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password.trim(),
+      );
+      String uid = userCredential.user!.uid;
+      await _firestore.collection("User").doc(uid).set({
+      "email": email,
+      "displayName": displayName,
+      "bio": bio,
+      "major": major,
+      "profilePicture": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/Default_pfp.svg/2048px-Default_pfp.svg.png",
+      "ratingAverage": 0,
+      "reviewsCount": 0,
+      "updatedAt": FieldValue.serverTimestamp(),
+      "createdAt": FieldValue.serverTimestamp(),  
+    });
+
+    await _firestore.collection("User").doc(uid).collection("wishlist").doc("placeholder").set({
+      "message": "Placeholder wishlist",
+    });
+
+    await _firestore.collection("User").doc(uid).collection("reviews").doc("placeholder").set({
+      "message": "Placeholder review",
+    });
+      print("User creation successful");
+      return true; 
+    } catch (e) {
+      print("User creation failed: $e");
+      return false;
+    }
+  }
+
 
 
 
@@ -33,9 +68,15 @@ Future<bool> signIn(String email, String password) async {
     return _auth.currentUser?.uid;
   }
 
-  Future<List<Map<String, dynamic>>> getAllProducts() async {
+  Future<List<Map<String, dynamic>>> getAllProducts({String? filter}) async {
     try {
-      QuerySnapshot querySnapshot = await _firestore.collection('Product').get();
+      Query query = _firestore.collection('Product');
+
+      if (filter != null && filter.isNotEmpty) {
+        query = query.where('majorID', isEqualTo: filter);
+      }
+
+      QuerySnapshot querySnapshot = await query.get();
       return querySnapshot.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
     } catch (e) {
       print("Error getting products: $e");
@@ -146,6 +187,17 @@ Future<bool> signIn(String email, String password) async {
     }
   }
 
+
+  Future<List<String>> fetchMajors() async {
+  try {
+    final querySnapshot = await _firestore.collection('majors').get();
+    return querySnapshot.docs.map((doc) => doc.id).toList();
+  } catch (e) {
+    print("Error fetching majors: $e");
+    return [];
+  }
+}
+
   Future<OrderModel?> getOrderById(String orderId) async {
       try {
         final doc = await _firestore.collection('orders').doc(orderId).get();
@@ -159,10 +211,69 @@ Future<bool> signIn(String email, String password) async {
       }
     }
 
+   Future<String?> getUserMajor() async {
+    try {
+      final userId = getCurrentUserId();
+      if (userId == null) return null;
+
+      final doc = await _firestore.collection('User').doc(userId).get();
+      if (doc.exists) {
+        return doc.data()?['major'] as String?;
+      }
+      return null;
+    } catch (e) {
+      print("Error getting user major: $e");
+      return null;
+    }
+  }
+
+
 
 
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<CREATE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+//Helper function for sendPreferencesToFirebase
+List<String> getPreferenceCodes(Set<String> selectedPreferences) {
+    final Map<String, List<String>> preferenceCodes = {
+  'Academics and Education': ['Academics', 'Education'],
+  'Technology, Electronics and Engineering': ['Technology', 'Electronics','Engineering'],
+  'Art and Design': ['Art', 'Design'],
+  'Handcrafts': ['Handcrafts'],
+  'Fashion and Accessories': ['Fashion', 'Accessories'],
+  'Sports and Wellness': ['Sports', 'Wellness'],
+  'Entertainment': ['Entertainment'],
+  'Home and Decoration': ['Home','Decoration'],
+  'Other':['Other']
+};
+  List<String> codes = [];
+  for (String preference in selectedPreferences) {
+    if (preferenceCodes.containsKey(preference)) {
+      codes.addAll(preferenceCodes[preference]!);
+    }
+  }
+  return codes;
+}
+
+Future<bool> sendPreferencesToFirebase ( Set<String> selectedPreferences)async {
+  final userId = getCurrentUserId();
+    if (userId == null) {
+      print("No user is currently logged in.");
+      return false;
+    }
+ List<String> preferences = getPreferenceCodes(selectedPreferences);
+
+  try {
+    await _firestore.collection('User').doc(userId).update({
+      'preferences': preferences,
+    });
+    print("Preferences updated successfully.");
+    return true;
+  } catch (e) {
+    print("Error updating preferences: $e");
+    return false;
+  }
+}
 
 //... gulp.
 

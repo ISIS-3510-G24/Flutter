@@ -5,7 +5,7 @@ import 'package:unimarket/screens/onboarding/splash_screen.dart';
 import 'package:unimarket/screens/home/home_screen.dart';
 import 'package:unimarket/screens/onboarding/introduction_screen.dart';
 import 'package:unimarket/screens/onboarding/preferences_screen.dart'; 
-import 'package:unimarket/screens/auth/login_screen.dart';
+import 'package:unimarket/screens/auth/auth_validator.dart';
 import 'package:unimarket/screens/product/product_detail_screen.dart';
 import 'package:unimarket/screens/profile/edit_profile_screen.dart';
 import 'package:unimarket/screens/profile/wishlist_screen.dart'; 
@@ -29,8 +29,8 @@ class Routes {
         return CupertinoPageRoute(builder: (_) => const PreferencesScreen()); 
       case '/mainlogin':
         return CupertinoPageRoute(builder: (_) => const MainLogin());
-      case '/login':
-        return CupertinoPageRoute(builder: (_) => const LoginScreen());
+      case '/authval':
+        return CupertinoPageRoute(builder: (_) => const AuthValidator());
       case '/genQR':
         return CupertinoPageRoute(builder: (_) => const QrGenerate());
       case '/scanQR':

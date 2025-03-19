@@ -28,5 +28,11 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSUserDefaults</key>
+    <dict>
+        <key>ApplicationGroupContainerIdentifier</key>
+        <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    </dict>
+	
 </dict>
 </plist>

@@ -4,7 +4,8 @@ import 'package:unimarket/data/firebase_dao.dart';
 
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final VoidCallback showRegisterPage;
+  const LoginScreen({super.key, required this.showRegisterPage});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -24,7 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final isLoginSuccessful = await _firebaseDAO.signIn(email, password);
 
     if (isLoginSuccessful && mounted) {
-      Navigator.pushReplacementNamed(context, '/preferences');
+      Navigator.pushReplacementNamed(context, '/home');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -168,11 +169,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: GoogleFonts.poppins(),
                     ),
                     const SizedBox(width: 5),
-                    Text(
-                      "Register now",
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
+                    GestureDetector(
+                      onTap: widget.showRegisterPage,
+                      child: Text(
+                        "Register now",
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
                       ),
                     ),
                   ],

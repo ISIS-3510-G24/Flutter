@@ -1,7 +1,8 @@
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
+//Esta es la clase que revisa si el dispositivo ya está registrado en firebase,
+//si está, pasa directo a home, si no, va a la doble pantalla de login + sign in
 class MainLogin extends StatelessWidget {
   const MainLogin({super.key});
 
@@ -15,12 +16,12 @@ class MainLogin extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.active) {
           if (snapshot.hasData) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              Navigator.pushReplacementNamed(context, '/preferences');
+              Navigator.pushReplacementNamed(context, '/home');
             });
            
           } else {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                Navigator.pushReplacementNamed(context, '/login');
+                Navigator.pushReplacementNamed(context, '/authval');
               });
             
           }
