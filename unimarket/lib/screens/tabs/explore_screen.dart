@@ -1,3 +1,4 @@
+import 'package:firebase_performance/firebase_performance.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -31,6 +32,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<void> _loadProducts() async {
+
+      // Create a trace for the product loading operation
+  final Trace productLoadTrace = FirebasePerformance.instance.newTrace('products_fetch_time');
+  
+  // Start the trace
+  await productLoadTrace.start();
+  
     try {
       List<ProductModel> allProducts = await _productService.fetchAllProducts();
       List<ProductModel> filteredProducts = await _productService.fetchProductsByMajor();
@@ -48,6 +56,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
           _isLoading = false;
         });
       }
+    }
+    finally {
+       await productLoadTrace.stop();
     }
   }
 

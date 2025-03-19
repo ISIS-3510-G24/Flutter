@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_performance/firebase_performance.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:unimarket/core/firebase_options.dart';
 import 'package:unimarket/core/routes.dart';  
@@ -15,6 +16,9 @@ void main() async {
 
   FirebaseFirestore.instance.settings = 
     Settings(persistenceEnabled: true, cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED);
+
+  FirebasePerformance performance = FirebasePerformance.instance;
+  await performance.setPerformanceCollectionEnabled(true);
 
   FlutterError.onError = (errorDetails) {
       FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
