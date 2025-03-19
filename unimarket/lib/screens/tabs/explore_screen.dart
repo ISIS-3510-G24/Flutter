@@ -31,36 +31,43 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _loadProducts();
   }
 
-  Future<void> _loadProducts() async {
 
-      // Create a trace for the product loading operation
+  Future<void> _loadProducts() async {
+  // Create a trace for the product loading operation
   final Trace productLoadTrace = FirebasePerformance.instance.newTrace('products_fetch_time');
   
   // Start the trace
   await productLoadTrace.start();
   
-    try {
-      List<ProductModel> allProducts = await _productService.fetchAllProducts();
-      List<ProductModel> filteredProducts = await _productService.fetchProductsByMajor();
-      if (mounted) {
-        setState(() {
-          _allProducts = allProducts;
-          _filteredProducts = filteredProducts;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      print("Error loading products: $e");
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+  try {
+    List<ProductModel> allProducts = await _productService.fetchAllProducts();
+    List<ProductModel> filteredProducts = await _productService.fetchProductsByMajor();
+    
+    // Add metrics for the number of products fetched
+    productLoadTrace.setMetric('all_products_count', allProducts.length.toInt());
+    productLoadTrace.setMetric('filtered_products_count', filteredProducts.length.toInt());
+    
+    if (mounted) {
+      setState(() {
+        _allProducts = allProducts;
+        _filteredProducts = filteredProducts;
+        _isLoading = false;
+      });
     }
-    finally {
-       await productLoadTrace.stop();
+  } catch (e) {
+    // Add an attribute for error if it occurs
+    productLoadTrace.putAttribute('error', e.toString());
+    print("Error loading products: $e");
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
     }
+  } finally {
+    // Stop the trace - this will send the data to Firebase
+    await productLoadTrace.stop();
   }
+}
 
   String _formatPrice(double price) {
     // Convert to integer to remove decimal part
