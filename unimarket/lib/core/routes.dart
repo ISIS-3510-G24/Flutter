@@ -11,6 +11,7 @@ import 'package:unimarket/screens/profile/edit_profile_screen.dart';
 import 'package:unimarket/screens/profile/wishlist_screen.dart'; 
 
 import 'package:unimarket/screens/qr/qr_generate.dart';
+import 'package:unimarket/screens/qr/qr_scan.dart';
 
 //Para anadir pantalla nueva le agregan el import y ponen un case abajo.
 
@@ -32,6 +33,8 @@ class Routes {
         return CupertinoPageRoute(builder: (_) => const LoginScreen());
       case '/genQR':
         return CupertinoPageRoute(builder: (_) => const QrGenerate());
+      case '/scanQR':
+        return CupertinoPageRoute(builder: (_) => const QrScan());
       case '/BLEscan':
         return CupertinoPageRoute(builder: (_) => const ClientScreenScan());
       case '/wishlist': 
