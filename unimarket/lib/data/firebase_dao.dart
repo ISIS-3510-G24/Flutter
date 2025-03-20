@@ -2,8 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:unimarket/models/order_model.dart';
 import 'package:unimarket/models/user_model.dart';
-import 'package:unimarket/models/find_model.dart'; // Add this line to import FindModel
-import 'package:unimarket/models/offer_model.dart'; // Add this line to import OfferModel
+import 'package:unimarket/models/find_model.dart'; 
+import 'package:unimarket/models/offer_model.dart'; 
 
 class FirebaseDAO {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -666,7 +666,7 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
   }
 }
 
-//======find and offer functions
+//======find and offer methods========
   Future<List<FindModel>> getFinds() async {
     try {
       final snapshot = await _firestore.collection('finds').get();
