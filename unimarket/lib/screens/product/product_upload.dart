@@ -187,7 +187,9 @@ class _UploadProductScreenState extends State<UploadProductScreen> {
           productData['classID'] = classId;
         }
       }
-      
+      //Actualizar los label counters del producto
+      _firebaseDAO.updateProductPlacementMetrics(_labels);
+
       // Create the product
       final productId = await _firebaseDAO.createProduct(productData);
       

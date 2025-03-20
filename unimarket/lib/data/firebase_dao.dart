@@ -254,6 +254,17 @@ Future<bool> createUser(String email, String password, String bio, String displa
   }
 }
 
+Future<List<String>> getLabelsByOrder(String orderId) async {
+  DocumentSnapshot orderSnapshot = await _firestore.collection('orders').doc(orderId).get();
+  if (!orderSnapshot.exists) return [];
+  String productId = orderSnapshot.get('productID');
+
+  DocumentSnapshot productSnapshot = await _firestore.collection('Product').doc(productId).get();
+  if (!productSnapshot.exists) return [];
+
+  return List<String>.from(productSnapshot.get('labels') ?? []);
+}
+
 
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<CREATE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -379,6 +390,7 @@ void updatePurchaseMetrics(List<String> labels) {
   purchaseCountRef.set(updates, SetOptions(merge: true));
 }
 //Metodo para sumar 1 a cada label cuando se filtra por ese label
+//TODO: Implementar filtrar por labels
 void updateFilterMetrics(String label) {
   FirebaseFirestore.instance
       .collection('label_metrics')

@@ -11,4 +11,10 @@ class OrderService {
   Future<OrderModel?> getOrderById(String orderId) async {
     return await _firebaseDAO.getOrderById(orderId);
   }
+
+  Future<void> updateProductLabelMetrics (String orderId) async{
+    List<String> labelsqueried = await _firebaseDAO.getLabelsByOrder(orderId);
+    _firebaseDAO.updatePurchaseMetrics(labelsqueried);
+    
+  }
 }
