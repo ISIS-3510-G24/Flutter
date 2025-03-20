@@ -2,9 +2,11 @@ import 'package:unimarket/widgets/dropdowns/custom_dropdown_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
-// IMPORTAMOS ConfirmProductScreen
 import 'package:unimarket/screens/upload/confirm_product_screen.dart';
+import 'package:unimarket/screens/find_and_offer_screens/find_screen.dart';
+import 'package:unimarket/models/find_model.dart';
+import 'package:unimarket/models/offer_model.dart';
+import 'package:unimarket/services/find_service.dart';
 
 import 'package:unimarket/theme/app_colors.dart';
 
@@ -17,52 +19,38 @@ class FindAndOfferScreen extends StatefulWidget {
 
 class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   String _selectedCategory = "All requests"; 
-
-  // Ejemplo de datos para “From your major”
-  final List<Map<String, String>> _majorItems = [
-    {
-      "title": "Computer",
-      "subtitle": "Lenovo",
-      "imageUrl": "https://via.placeholder.com/400x300.png?text=Lenovo+Laptop",
-      "dateTag": "MAR 05",
-    },
-    {
-      "title": "USB",
-      "subtitle": "Type C",
-      "imageUrl": "https://via.placeholder.com/400x300.png?text=Type+C+USB",
-      "dateTag": "MAR 07",
-    },
-    {
-      "title": "Tablet",
-      "subtitle": "iPad Air",
-      "imageUrl": "https://via.placeholder.com/400x300.png?text=iPad+Air",
-      "dateTag": "MAR 09",
-    },
-  ];
-
-  // Ejemplo: “Your wishlist”
+  final FindService _findService = FindService();
+  List<FindModel> _finds = [];
+  bool _isLoading = true;
   final List<Map<String, String>> _wishlistItems = [
-    {
-      "title": "Set pink rulers",
-      "subtitle": "pink reference",
-    },
-    {
-      "title": "Pink scissors",
-      "subtitle": "Any reference",
-    },
+    {"title": "Wishlist Item 1", "subtitle": "Description 1"},
+    {"title": "Wishlist Item 2", "subtitle": "Description 2"},
+  ];
+  final List<Map<String, String>> _sellingItems = [
+    {"title": "Selling Item 1", "subtitle": "Description 1"},
+    {"title": "Selling Item 2", "subtitle": "Description 2"},
   ];
 
-  // Ejemplo: “Selling out”
-  final List<Map<String, String>> _sellingItems = [
-    {
-      "title": "Smartphone",
-      "subtitle": "Samsung Galaxy S21",
-    },
-    {
-      "title": "Headphones",
-      "subtitle": "Sony WH-1000XM4",
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadFinds();
+  }
+
+  Future<void> _loadFinds() async {
+    try {
+      final finds = await _findService.getFinds();
+      setState(() {
+        _finds = finds;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print("Error fetching finds: $e");
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -78,35 +66,37 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
           children: [
             // ---- CONTENIDO PRINCIPAL SCROLLEABLE ----
             Positioned.fill(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 80),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildTopRow(),
-                    // “From your major”
-                    _buildSectionHeader(
-                      title: "All",
-                      onSeeMore: () => debugPrint("See more: All"),
-                    ),
-                    _buildMajorHorizontalList(),
+              child: _isLoading
+                  ? const Center(child: CupertinoActivityIndicator())
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.only(bottom: 80),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTopRow(),
+                          // “From your major”
+                          _buildSectionHeader(
+                            title: "All",
+                            onSeeMore: () => debugPrint("See more: All"),
+                          ),
+                          _buildMajorHorizontalList(),
 
-                    // “Your wishlist”
-                    _buildSectionHeader(
-                      title: "Your wishlist",
-                      onSeeMore: () => debugPrint("See more: Your wishlist"),
-                    ),
-                    _buildVerticalList(_wishlistItems, showBuyButton: false),
+                          // “Your wishlist”
+                          _buildSectionHeader(
+                            title: "Your wishlist",
+                            onSeeMore: () => debugPrint("See more: Your wishlist"),
+                          ),
+                          _buildVerticalList(_wishlistItems, showBuyButton: false),
 
-                    // “Selling out”
-                    _buildSectionHeader(
-                      title: "Selling out",
-                      onSeeMore: () => debugPrint("See more: Selling out"),
+                          // “Selling out”
+                          _buildSectionHeader(
+                            title: "Selling out",
+                            onSeeMore: () => debugPrint("See more: Selling out"),
+                          ),
+                          _buildVerticalList(_sellingItems, showBuyButton: true),
+                        ],
+                      ),
                     ),
-                    _buildVerticalList(_sellingItems, showBuyButton: true),
-                  ],
-                ),
-              ),
             ),
 
             // ---- BOTÓN FLOTANTE ----
@@ -231,18 +221,34 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _majorItems.length,
+        itemCount: _finds.isNotEmpty ? _finds.length : 5, // Mostrar 5 tarjetas vacías si no hay datos
         separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
-          final item = _majorItems[index];
-          return _buildMajorCard(item);
+          if (_finds.isNotEmpty) {
+            final find = _finds[index];
+            return FutureBuilder<List<OfferModel>>(
+              future: _findService.getOffersForFind(find.id),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CupertinoActivityIndicator());
+                }
+                if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+                  return _buildMajorCard(find, null);
+                }
+                final offer = snapshot.data!.first;
+                return _buildMajorCard(find, offer);
+              },
+            );
+          } else {
+            return _buildEmptyCard();
+          }
         },
       ),
     );
   }
 
   /// Tarjeta horizontal
-  Widget _buildMajorCard(Map<String, String> item) {
+  Widget _buildMajorCard(FindModel find, OfferModel? offer) {
     return Container(
       width: 160,
       height: 210,
@@ -253,24 +259,22 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Imagen
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-            child: Image.network(
-              item["imageUrl"] ?? "",
-              height: 100,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (ctx, error, stack) => Container(
-                height: 100,
-                width: double.infinity,
-                color: AppColors.lightGreyBackground,
-                child: const Icon(CupertinoIcons.photo),
-              ),
+          // Ícono por defecto
+          Container(
+            height: 100,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: AppColors.lightGreyBackground,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            ),
+            child: const Icon(
+              CupertinoIcons.photo,
+              size: 50,
+              color: CupertinoColors.systemGrey,
             ),
           ),
           // Etiqueta de fecha
-          if (item["dateTag"] != null)
+          if (find.timestamp != null)
             Padding(
               padding: const EdgeInsets.only(top: 6, left: 8),
               child: Container(
@@ -280,7 +284,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  item["dateTag"]!,
+                  "${find.timestamp.month}/${find.timestamp.day}",
                   style: GoogleFonts.inter(
                     fontSize: 10,
                     color: AppColors.primaryBlue,
@@ -292,7 +296,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Text(
-              item["title"] ?? "",
+              find.id,
               style: GoogleFonts.inter(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
@@ -302,7 +306,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
-              item["subtitle"] ?? "",
+              offer?.description ?? find.description,
               style: GoogleFonts.inter(
                 fontSize: 12,
                 color: CupertinoColors.systemGrey,
@@ -318,8 +322,17 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                   child: CupertinoButton(
                     padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2), // Reducir el padding
                     color: AppColors.primaryBlue,
-                    borderRadius: BorderRadius.circular(20),
-                    onPressed: () => debugPrint("Find ${item["title"]}"),
+                    borderRadius: BorderRadius.circular(30),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (ctx) => FindsScreen(
+                            find: find,
+                          ),
+                        ),
+                      );
+                    },
                     child: Text(
                       "Find",
                       style: GoogleFonts.inter(
@@ -334,8 +347,126 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                   child: CupertinoButton(
                     padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2), // Reducir el padding
                     color: AppColors.primaryBlue,
-                    borderRadius: BorderRadius.circular(20),
-                    onPressed: () => debugPrint("Offer ${item["title"]}"),
+                    borderRadius: BorderRadius.circular(30),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (ctx) => const ConfirmProductScreen(
+                            postType: "offer",
+                          ),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      "Offer",
+                      style: GoogleFonts.inter(
+                        fontSize: 8, // Reducir el tamaño de la fuente
+                        color: CupertinoColors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Tarjeta vacía
+  Widget _buildEmptyCard() {
+    return Container(
+      width: 160,
+      height: 210,
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemGrey6,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Ícono por defecto
+          Container(
+            height: 100,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: AppColors.lightGreyBackground,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            ),
+            child: const Icon(
+              CupertinoIcons.photo,
+              size: 50,
+              color: CupertinoColors.systemGrey,
+            ),
+          ),
+          // Etiqueta de fecha
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.primaryBlue.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                "N/A",
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  color: AppColors.primaryBlue,
+                ),
+              ),
+            ),
+          ),
+          // Título y subtítulo
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Text(
+              "N/A",
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              "N/A",
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: CupertinoColors.systemGrey,
+              ),
+            ),
+          ),
+          // Botones “Find” y “Offer”
+          Padding(
+            padding: const EdgeInsets.all(2.0), // Reducir el padding
+            child: Row(
+              children: [
+                Expanded(
+                  child: CupertinoButton(
+                    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2), // Reducir el padding
+                    color: AppColors.primaryBlue,
+                    borderRadius: BorderRadius.circular(30),
+                    onPressed: () {},
+                    child: Text(
+                      "Find",
+                      style: GoogleFonts.inter(
+                        fontSize: 8, // Reducir el tamaño de la fuente
+                        color: CupertinoColors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 2), // Reducir el espacio entre los botones
+                Expanded(
+                  child: CupertinoButton(
+                    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2), // Reducir el padding
+                    color: AppColors.primaryBlue,
+                    borderRadius: BorderRadius.circular(30),
+                    onPressed: () {},
                     child: Text(
                       "Offer",
                       style: GoogleFonts.inter(
@@ -373,7 +504,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
           ),
           child: Row(
             children: [
-              // Imagen placeholder
+              // Ícono por defecto
               Container(
                 width: 50,
                 height: 50,
