@@ -5,6 +5,7 @@ import 'package:unimarket/theme/app_colors.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:unimarket/screens/payment/payment_screen.dart'; // Importa PaymentScreen
+import 'package:unimarket/services/product_service.dart'; // Importa ProductService
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -16,11 +17,16 @@ class OrdersScreen extends StatefulWidget {
 class _OrdersScreenState extends State<OrdersScreen> {
   int _selectedTab = 1; // Inicia en "Buying"
   List<Map<String, dynamic>> buyingProducts = [];
+  List<Map<String, dynamic>> historyProducts = [];
+  List<Map<String, dynamic>> sellingProducts = [];
+  final ProductService _productService = ProductService(); // Instancia de ProductService
 
   @override
   void initState() {
     super.initState();
     _fetchBuyingOrders();
+    _fetchHistoryOrders();
+    _fetchSellingOrders();
   }
 
   Future<void> _fetchBuyingOrders() async {
@@ -34,25 +40,128 @@ class _OrdersScreenState extends State<OrdersScreen> {
       final snapshot = await FirebaseFirestore.instance
           .collection('orders')
           .where('buyerID', isEqualTo: user.uid)
+          .where('status', whereIn: ['Delivered', 'Purchased'])
           .get();
 
+      final List<Map<String, dynamic>> orders = await Future.wait(snapshot.docs.map((doc) async {
+        final product = await _productService.getProductById(doc['productID']);
+        return {
+          "orderId": doc.id,
+          "productId": doc['productID'],
+          "name": product != null ? product.title : "Product ID: ${doc['productID']}",
+          "details": "Order Date: ${doc['orderDate'].toDate()}",
+          "status": doc['status'],
+          "action": doc['status'] == "Delivered" ? "Help" : "Complete",
+          "image": product != null && product.imageUrls.isNotEmpty ? product.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
+          "price": _formatPrice(doc['price']),
+        };
+      }).toList());
+
       setState(() {
-        buyingProducts = snapshot.docs.map((doc) {
-          return {
-            "orderId": doc.id,
-            "productId": doc['productID'],
-            "name": "Product ID: ${doc['productID']}",
-            "details": "Order Date: ${doc['orderDate'].toDate()}",
-            "status": doc['status'],
-            "action": doc['status'] == "Delivered" ? "Help" : "Complete",
-            "image": "assets/svgs/ImagePlaceHolder.svg",
-            "price": doc['price'].toString(),
-          };
-        }).toList();
+        buyingProducts = orders;
       });
     } catch (e) {
       print("Error fetching orders: $e");
     }
+  }
+
+  Future<void> _fetchHistoryOrders() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("User is not authenticated");
+      return;
+    }
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('buyerID', isEqualTo: user.uid)
+          .where('status', isEqualTo: 'Completed')
+          .get();
+
+      final List<Map<String, dynamic>> orders = await Future.wait(snapshot.docs.map((doc) async {
+        final product = await _productService.getProductById(doc['productID']);
+        return {
+          "orderId": doc.id,
+          "productId": doc['productID'],
+          "name": product != null ? product.title : "Product ID: ${doc['productID']}",
+          "details": "Order Date: ${doc['orderDate'].toDate()}",
+          "status": doc['status'],
+          "action": "Help",
+          "image": product != null && product.imageUrls.isNotEmpty ? product.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
+          "price": _formatPrice(doc['price']),
+        };
+      }).toList());
+
+      setState(() {
+        historyProducts = orders;
+      });
+    } catch (e) {
+      print("Error fetching history orders: $e");
+    }
+  }
+
+  Future<void> _fetchSellingOrders() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("User is not authenticated");
+      return;
+    }
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('sellerID', isEqualTo: user.uid)
+          .get();
+
+      final List<Map<String, dynamic>> orders = await Future.wait(snapshot.docs.map((doc) async {
+        final product = await _productService.getProductById(doc['productID']);
+        return {
+          "orderId": doc.id,
+          "productId": doc['productID'],
+          "name": product != null ? product.title : "Product ID: ${doc['productID']}",
+          "details": "Order Date: ${doc['orderDate'].toDate()}",
+          "status": doc['status'],
+          "action": "Modify",
+          "image": product != null && product.imageUrls.isNotEmpty ? product.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
+          "price": _formatPrice(doc['price']),
+        };
+      }).toList());
+
+      setState(() {
+        sellingProducts = orders;
+      });
+    } catch (e) {
+      print("Error fetching selling orders: $e");
+    }
+  }
+
+  String _formatPrice(dynamic price) {
+    int wholePart = price.toInt();
+    String priceString = wholePart.toString();
+    String result = '';
+
+    if (priceString.length > 6) {
+      result = priceString[0] + "'";
+      String remainingDigits = priceString.substring(1);
+      for (int i = 0; i < remainingDigits.length; i++) {
+        result += remainingDigits[i];
+        int positionFromRight = remainingDigits.length - 1 - i;
+        if (positionFromRight % 3 == 0 && i < remainingDigits.length - 1) {
+          result += '.';
+        }
+      }
+    } else {
+      for (int i = 0; i < priceString.length; i++) {
+        result += priceString[i];
+        int positionFromRight = priceString.length - 1 - i;
+        if (positionFromRight % 3 == 0 && i < priceString.length - 1) {
+          result += '.';
+        }
+      }
+    }
+
+    return "$result \$";
   }
 
   List<Map<String, dynamic>> _getCurrentProducts() {
@@ -67,26 +176,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return [];
     }
   }
-
-  final List<Map<String, String>> historyProducts = [
-    {
-      "name": "Linoleum Sheets",
-      "details": "Black / M",
-      "status": "Completed",
-      "action": "Help",
-      "image": "assets/svgs/ImagePlaceHolder.svg",
-    },
-  ];
-
-  final List<Map<String, String>> sellingProducts = [
-    {
-      "name": "MD Board",
-      "details": "Black / M",
-      "price": "\$88.000",
-      "action": "Modify",
-      "image": "assets/svgs/ImagePlaceHolder.svg",
-    },
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -179,11 +268,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: SvgPicture.asset(
+              child: Image.network(
                 product["image"]!,
                 width: 100,
                 height: 100,
                 fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return SvgPicture.asset(
+                    "assets/svgs/ImagePlaceHolder.svg",
+                    width: 100,
+                    height: 100,
+                    fit: BoxFit.cover,
+                  );
+                },
               ),
             ),
             const SizedBox(width: 10),
