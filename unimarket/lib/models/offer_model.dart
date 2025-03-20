@@ -8,7 +8,7 @@ class OfferModel {
   final String status;
   final DateTime timestamp;
   final String userId;
-  final String username;
+  final String userName;
 
   OfferModel({
     required this.id,
@@ -18,7 +18,7 @@ class OfferModel {
     required this.status,
     required this.timestamp,
     required this.userId,
-    required this.username,
+    required this.userName,
   });
 
   factory OfferModel.fromFirestore(Map<String, dynamic> data, String id) {
@@ -26,11 +26,15 @@ class OfferModel {
       id: id,
       description: data['description'] ?? '',
       image: data['image'] ?? '',
-      price: data['price'] ?? 0.0,
+      price: data['price'] is int 
+          ? (data['price'] as int).toDouble() 
+          : (data['price'] ?? 0.0),
       status: data['status'] ?? '',
-      timestamp: (data['timestamp'] as Timestamp).toDate(),
+      timestamp: data['timestamp'] != null 
+          ? (data['timestamp'] as Timestamp).toDate() 
+          : DateTime.now(),
       userId: data['userId'] ?? '',
-      username: data['username'] ?? '',
+      userName: data['userName'] ?? '',
     );
   }
 }

@@ -667,17 +667,26 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
 }
 
 //======find and offer methods========
+// Find and Offer methods with improved error handling
   Future<List<FindModel>> getFind() async {
     try {
       print("Fetching find from Firestore...");
-      final snapshot = await _firestore.collection('find').get();
-      print("Fetched ${snapshot.docs.length} find.");
-      return snapshot.docs.map((doc) {
-        print("Find ID: ${doc.id}, Data: ${doc.data()}");
-        return FindModel.fromFirestore(doc.data(), doc.id);
-      }).toList();
+      final snapshot = await _firestore.collection('finds').get();
+      print("Fetched ${snapshot.docs.length} finds.");
+      
+      List<FindModel> finds = [];
+      for (var doc in snapshot.docs) {
+        try {
+          print("Processing find ID: ${doc.id}, Data: ${doc.data()}");
+          finds.add(FindModel.fromFirestore(doc.data(), doc.id));
+        } catch (e) {
+          print("Error parsing find with ID ${doc.id}: $e");
+          // Continue to next document instead of failing entire query
+        }
+      }
+      return finds;
     } catch (e) {
-      print("Error fetching the find object: $e");
+      print("Error fetching the find objects: $e");
       return [];
     }
   }
@@ -685,15 +694,52 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
   Future<List<OfferModel>> getOffersForFind(String findId) async {
     try {
       print("Fetching offers for find ID: $findId from Firestore...");
-      final snapshot = await _firestore.collection('find').doc(findId).collection('offers').get();
+      final snapshot = await _firestore.collection('finds').doc(findId).collection('offers').get();
       print("Fetched ${snapshot.docs.length} offers for find ID: $findId.");
-      return snapshot.docs.map((doc) {
-        print("Offer ID: ${doc.id}, Data: ${doc.data()}");
-        return OfferModel.fromFirestore(doc.data(), doc.id);
-      }).toList();
+      
+      List<OfferModel> offers = [];
+      for (var doc in snapshot.docs) {
+        try {
+          print("Processing offer ID: ${doc.id}, Data: ${doc.data()}");
+          offers.add(OfferModel.fromFirestore(doc.data(), doc.id));
+        } catch (e) {
+          print("Error parsing offer with ID ${doc.id}: $e");
+          // Continue to next document instead of failing entire query
+        }
+      }
+      return offers;
     } catch (e) {
       print("Error fetching offers for find ID $findId: $e");
       return [];
     }
   }
+
+// Get finds by major
+  Future<List<FindModel>> getFindsByMajor(String major) async {
+    try {
+      print("Fetching finds for major: $major from Firestore...");
+      final snapshot = await _firestore
+          .collection('finds')
+          .where('major', isEqualTo: major)
+          .get();
+      
+      print("Fetched ${snapshot.docs.length} finds for major: $major");
+      
+      List<FindModel> finds = [];
+      for (var doc in snapshot.docs) {
+        try {
+          print("Processing find ID: ${doc.id}, Data: ${doc.data()}");
+          finds.add(FindModel.fromFirestore(doc.data(), doc.id));
+        } catch (e) {
+          print("Error parsing find with ID ${doc.id}: $e");
+          // Continue to next document instead of failing entire query
+        }
+      }
+      return finds;
+    } catch (e) {
+      print("Error fetching finds by major: $e");
+      return [];
+    }
+  }
+  
 }
