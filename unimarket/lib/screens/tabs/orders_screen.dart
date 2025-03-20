@@ -16,11 +16,13 @@ class OrdersScreen extends StatefulWidget {
 class _OrdersScreenState extends State<OrdersScreen> {
   int _selectedTab = 1; // Inicia en "Buying"
   List<Map<String, dynamic>> buyingProducts = [];
+  List<Map<String, dynamic>> historyProducts = [];
 
   @override
   void initState() {
     super.initState();
     _fetchBuyingOrders();
+    _fetchHistoryOrders();
   }
 
   Future<void> _fetchBuyingOrders() async {
@@ -34,6 +36,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       final snapshot = await FirebaseFirestore.instance
           .collection('orders')
           .where('buyerID', isEqualTo: user.uid)
+          .where('status', whereIn: ['Delivered', 'Purchased'])
           .get();
 
       setState(() {
@@ -55,6 +58,39 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
+  Future<void> _fetchHistoryOrders() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("User is not authenticated");
+      return;
+    }
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('buyerID', isEqualTo: user.uid)
+          .where('status', isEqualTo: 'Completed')
+          .get();
+
+      setState(() {
+        historyProducts = snapshot.docs.map((doc) {
+          return {
+            "orderId": doc.id,
+            "productId": doc['productID'],
+            "name": "Product ID: ${doc['productID']}",
+            "details": "Order Date: ${doc['orderDate'].toDate()}",
+            "status": doc['status'],
+            "action": "Help",
+            "image": "assets/svgs/ImagePlaceHolder.svg",
+            "price": doc['price'].toString(),
+          };
+        }).toList();
+      });
+    } catch (e) {
+      print("Error fetching history orders: $e");
+    }
+  }
+
   List<Map<String, dynamic>> _getCurrentProducts() {
     switch (_selectedTab) {
       case 0:
@@ -67,16 +103,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return [];
     }
   }
-
-  final List<Map<String, String>> historyProducts = [
-    {
-      "name": "Linoleum Sheets",
-      "details": "Black / M",
-      "status": "Completed",
-      "action": "Help",
-      "image": "assets/svgs/ImagePlaceHolder.svg",
-    },
-  ];
 
   final List<Map<String, String>> sellingProducts = [
     {
