@@ -18,6 +18,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   int _selectedTab = 1; // Inicia en "Buying"
   List<Map<String, dynamic>> buyingProducts = [];
   List<Map<String, dynamic>> historyProducts = [];
+  List<Map<String, dynamic>> sellingProducts = [];
   final ProductService _productService = ProductService(); // Instancia de ProductService
 
   @override
@@ -25,6 +26,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     super.initState();
     _fetchBuyingOrders();
     _fetchHistoryOrders();
+    _fetchSellingOrders();
   }
 
   Future<void> _fetchBuyingOrders() async {
@@ -99,6 +101,41 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
+  Future<void> _fetchSellingOrders() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("User is not authenticated");
+      return;
+    }
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('sellerID', isEqualTo: user.uid)
+          .get();
+
+      final List<Map<String, dynamic>> orders = await Future.wait(snapshot.docs.map((doc) async {
+        final product = await _productService.getProductById(doc['productID']);
+        return {
+          "orderId": doc.id,
+          "productId": doc['productID'],
+          "name": product != null ? product.title : "Product ID: ${doc['productID']}",
+          "details": "Order Date: ${doc['orderDate'].toDate()}",
+          "status": doc['status'],
+          "action": "Modify",
+          "image": product != null && product.imageUrls.isNotEmpty ? product.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
+          "price": doc['price'].toString(),
+        };
+      }).toList());
+
+      setState(() {
+        sellingProducts = orders;
+      });
+    } catch (e) {
+      print("Error fetching selling orders: $e");
+    }
+  }
+
   List<Map<String, dynamic>> _getCurrentProducts() {
     switch (_selectedTab) {
       case 0:
@@ -111,16 +148,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return [];
     }
   }
-
-  final List<Map<String, String>> sellingProducts = [
-    {
-      "name": "MD Board",
-      "details": "Black / M",
-      "price": "\$88.000",
-      "action": "Modify",
-      "image": "assets/svgs/ImagePlaceHolder.svg",
-    },
-  ];
 
   @override
   Widget build(BuildContext context) {
