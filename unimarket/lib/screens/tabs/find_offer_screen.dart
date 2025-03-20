@@ -39,7 +39,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
 
   Future<void> _loadFinds() async {
     try {
-      final finds = await _findService.getFinds();
+      final finds = await _findService.getFind();
       setState(() {
         _finds = finds;
         _isLoading = false;
