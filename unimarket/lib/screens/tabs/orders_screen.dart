@@ -53,7 +53,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           "status": doc['status'],
           "action": doc['status'] == "Delivered" ? "Help" : "Complete",
           "image": product != null && product.imageUrls.isNotEmpty ? product.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
-          "price": doc['price'].toString(),
+          "price": _formatPrice(doc['price']),
         };
       }).toList());
 
@@ -89,7 +89,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           "status": doc['status'],
           "action": "Help",
           "image": product != null && product.imageUrls.isNotEmpty ? product.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
-          "price": doc['price'].toString(),
+          "price": _formatPrice(doc['price']),
         };
       }).toList());
 
@@ -124,7 +124,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           "status": doc['status'],
           "action": "Modify",
           "image": product != null && product.imageUrls.isNotEmpty ? product.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
-          "price": doc['price'].toString(),
+          "price": _formatPrice(doc['price']),
         };
       }).toList());
 
@@ -134,6 +134,34 @@ class _OrdersScreenState extends State<OrdersScreen> {
     } catch (e) {
       print("Error fetching selling orders: $e");
     }
+  }
+
+  String _formatPrice(dynamic price) {
+    int wholePart = price.toInt();
+    String priceString = wholePart.toString();
+    String result = '';
+
+    if (priceString.length > 6) {
+      result = priceString[0] + "'";
+      String remainingDigits = priceString.substring(1);
+      for (int i = 0; i < remainingDigits.length; i++) {
+        result += remainingDigits[i];
+        int positionFromRight = remainingDigits.length - 1 - i;
+        if (positionFromRight % 3 == 0 && i < remainingDigits.length - 1) {
+          result += '.';
+        }
+      }
+    } else {
+      for (int i = 0; i < priceString.length; i++) {
+        result += priceString[i];
+        int positionFromRight = priceString.length - 1 - i;
+        if (positionFromRight % 3 == 0 && i < priceString.length - 1) {
+          result += '.';
+        }
+      }
+    }
+
+    return "$result \$";
   }
 
   List<Map<String, dynamic>> _getCurrentProducts() {
