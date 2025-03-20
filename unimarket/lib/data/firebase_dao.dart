@@ -367,6 +367,35 @@ Future<bool> sendPreferencesToFirebase ( Set<String> selectedPreferences)async {
       rethrow; 
     }
   }
+//Metodo para sumar 1 a cada label cuando se compra un producto
+void updatePurchaseMetrics(List<String> labels) {
+  DocumentReference purchaseCountRef = FirebaseFirestore.instance
+      .collection('label_metrics')
+      .doc('purchase_count');
+  Map<String, dynamic> updates = {};
+  for (String label in labels) {
+    updates[label] = FieldValue.increment(1);
+  }
+  purchaseCountRef.set(updates, SetOptions(merge: true));
+}
+//Metodo para sumar 1 a cada label cuando se filtra por ese label
+void updateFilterMetrics(String label) {
+  FirebaseFirestore.instance
+      .collection('label_metrics')
+      .doc('filter_count')
+      .set({label: FieldValue.increment(1)}, SetOptions(merge: true));
+}
+//Metodo para sumar 1 a cada label cuando se genera un producto
+void updateProductPlacementMetrics(List<String> labels) {
+  DocumentReference purchaseCountRef = FirebaseFirestore.instance
+      .collection('label_metrics')
+      .doc('product_placement_count');
+  Map<String, dynamic> updates = {};
+  for (String label in labels) {
+    updates[label] = FieldValue.increment(1);
+  }
+  purchaseCountRef.set(updates, SetOptions(merge: true));
+}
 
 
 
