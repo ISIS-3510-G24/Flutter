@@ -1,13 +1,12 @@
-import 'package:unimarket/widgets/dropdowns/custom_dropdown_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
-// IMPORTAMOS ConfirmProductScreen
-import 'package:unimarket/screens/upload/confirm_product_screen.dart';
-
-import 'package:unimarket/screens/tabs/offer_screen.dart';
+import 'package:unimarket/widgets/dropdowns/custom_dropdown_picker.dart';
+import 'package:unimarket/screens/find_and_offer_screens/find_screen.dart';
+import 'package:unimarket/screens/find_and_offer_screens/offer_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:unimarket/models/find_and_offer_model.dart';
+import 'package:unimarket/services/find_and_offer_service.dart';
 
 class FindAndOfferScreen extends StatefulWidget {
   const FindAndOfferScreen({Key? key}) : super(key: key);
@@ -17,10 +16,13 @@ class FindAndOfferScreen extends StatefulWidget {
 }
 
 class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
-  bool isFindSelected = true; 
-  String _selectedCategory = "All requests"; 
+  bool isFindSelected = true;
+  String _selectedCategory = "All requests";
+  final FindAndOfferService _findAndOfferService = FindAndOfferService();
+  List<FindModel> _finds = [];
+  bool _isLoading = true;
 
-  // Ejemplo de datos para “From your major”
+  // Ejemplo de datos para “All”
   final List<Map<String, String>> _majorItems = [
     {
       "title": "Computer",
@@ -67,6 +69,39 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _loadFinds();
+  }
+
+  Future<void> _loadFinds() async {
+    setState(() => _isLoading = true);
+    final findsData = await _findAndOfferService.getAllFinds();
+    setState(() {
+      _finds = findsData.map((data) => FindModel.fromFirestore(data, data['id'])).toList();
+      _isLoading = false;
+    });
+  }
+
+  void _navigateToFindDetail(FindModel find) {
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (context) => FindScreen(find: find),
+      ),
+    );
+  }
+
+  void _navigateToCreateOffer(FindModel find) {
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (context) => OfferScreen(find: find),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
@@ -86,10 +121,10 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildTopRow(),
-                    // “From your major”
+                    // “All”
                     _buildSectionHeader(
-                      title: "From your major",
-                      onSeeMore: () => debugPrint("See more: From your major"),
+                      title: "All",
+                      onSeeMore: () => debugPrint("See more: All"),
                     ),
                     _buildMajorHorizontalList(),
 
@@ -128,28 +163,49 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                 ),
                 onPressed: () {
                   if (isFindSelected) {
-                    // En modo FIND, abrimos la misma pantalla pero con postType = "find"
+                    // En modo FIND, abrimos la pantalla para crear una nueva solicitud
                     Navigator.push(
                       context,
                       CupertinoPageRoute(
-                        builder: (ctx) => const ConfirmProductScreen(
-                          postType: "find", 
-                          // si tienes una imageUrl, puedes pasarla
+                        builder: (ctx) => FindScreen(
+                          find: FindModel(
+                            id: '',
+                            title: '',
+                            description: '',
+                            image: '',
+                            labels: [],
+                            offerCount: '',
+                            status: '',
+                            timestamp: DateTime.now(),
+                            userId: '',
+                            userName: '',
+                            upvoteCount: 0,
+                          ),
                         ),
                       ),
                     );
                   } else {
-                    // En modo OFFER, abrimos la misma pantalla pero con postType = "offer"
+                    // En modo OFFER, abrimos la pantalla para crear una nueva oferta
                     Navigator.push(
                       context,
                       CupertinoPageRoute(
-                        builder: (ctx) => const ConfirmProductScreen(
-                          postType: "offer",
+                        builder: (ctx) => OfferScreen(
+                          find: FindModel(
+                            id: '',
+                            title: '',
+                            description: '',
+                            image: '',
+                            labels: [],
+                            offerCount: '',
+                            status: '',
+                            timestamp: DateTime.now(),
+                            userId: '',
+                            userName: '',
+                            upvoteCount: 0,
+                          ),
                         ),
                       ),
                     );
-                    // O si prefieres OfferScreen, lo dejas:
-                    // Navigator.push(context, CupertinoPageRoute(builder: (ctx) => const OfferScreen()));
                   }
                 },
               ),
@@ -279,7 +335,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
     );
   }
 
-  /// Lista horizontal (From your major)
+  /// Lista horizontal (All)
   Widget _buildMajorHorizontalList() {
     return SizedBox(
       height: 210,
@@ -305,87 +361,107 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
         color: CupertinoColors.systemGrey6,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Imagen
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-            child: Image.network(
-              item["imageUrl"] ?? "",
-              height: 100,
-              width: double.infinity,
-              fit: BoxFit.fill,
-              errorBuilder: (ctx, error, stack) => Container(
-                height: 90,
+      child: SingleChildScrollView( // Envolver en SingleChildScrollView
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Imagen
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              child: Image.network(
+                item["imageUrl"] ?? "",
+                height: 100,
                 width: double.infinity,
-                color: AppColors.lightGreyBackground,
-                child: const Icon(CupertinoIcons.photo),
+                fit: BoxFit.fill,
+                errorBuilder: (ctx, error, stack) => Container(
+                  height: 90,
+                  width: double.infinity,
+                  color: AppColors.lightGreyBackground,
+                  child: const Icon(CupertinoIcons.photo),
+                ),
               ),
             ),
-          ),
-          // Etiqueta de fecha
-          if (item["dateTag"] != null)
+            // Etiqueta de fecha
+            if (item["dateTag"] != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6, left: 8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryBlue.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    item["dateTag"]!,
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: AppColors.primaryBlue,
+                    ),
+                  ),
+                ),
+              ),
+            // Título y subtítulo
             Padding(
-              padding: const EdgeInsets.only(top: 6, left: 8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryBlue.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Text(
+                item["title"] ?? "",
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
                 ),
-                child: Text(
-                  item["dateTag"]!,
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    color: AppColors.primaryBlue,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                item["subtitle"] ?? "",
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: CupertinoColors.systemGrey,
+                ),
+              ),
+            ),
+            // Botones “Find” y “Offer”
+            Padding(
+              padding: const EdgeInsets.all(4.0), // Reducir el padding
+              child: Row(
+                children: [
+                  Expanded(
+                    child: CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), // Reducir el padding
+                      color: AppColors.primaryBlue,
+                      borderRadius: BorderRadius.circular(20),
+                      onPressed: () => debugPrint("Find ${item["title"]}"),
+                      child: Text(
+                        "Find",
+                        style: GoogleFonts.inter(
+                          fontSize: 10, // Reducir el tamaño de la fuente
+                          color: CupertinoColors.white,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ),
-          // Título y subtítulo
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Text(
-              item["title"] ?? "",
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              item["subtitle"] ?? "",
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: CupertinoColors.systemGrey,
-              ),
-            ),
-          ),
-          // Botón “Buy”
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: SizedBox(
-              height: 32,
-              width: double.infinity,
-              child: CupertinoButton(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                color: AppColors.primaryBlue,
-                borderRadius: BorderRadius.circular(20),
-                onPressed: () => debugPrint("Buy ${item["title"]}"),
-                child: Text(
-                  "Buy",
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: CupertinoColors.white,
+                  const SizedBox(width: 4), // Reducir el espacio entre los botones
+                  Expanded(
+                    child: CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), // Reducir el padding
+                      color: AppColors.primaryBlue,
+                      borderRadius: BorderRadius.circular(20),
+                      onPressed: () => debugPrint("Offer ${item["title"]}"),
+                      child: Text(
+                        "Offer",
+                        style: GoogleFonts.inter(
+                          fontSize: 10, // Reducir el tamaño de la fuente
+                          color: CupertinoColors.white,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -452,9 +528,9 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   color: AppColors.primaryBlue,
                   borderRadius: BorderRadius.circular(20),
-                  onPressed: () => debugPrint("Buy ${item["title"]}"),
+                  onPressed: () => debugPrint("Find ${item["title"]}"),
                   child: Text(
-                    "Buy",
+                    "Find",
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       color: CupertinoColors.white,
