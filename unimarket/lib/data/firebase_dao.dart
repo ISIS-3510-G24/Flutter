@@ -667,34 +667,33 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
 }
 
 //======find and offer methods========
-Future<List<FindModel>> getFinds() async {
-  try {
-    print("Fetching finds from Firestore...");
-    final snapshot = await _firestore.collection('finds').get();
-    print("Fetched ${snapshot.docs.length} finds.");
-    return snapshot.docs.map((doc) {
-      print("Find ID: ${doc.id}, Data: ${doc.data()}");
-      return FindModel.fromFirestore(doc.data(), doc.id);
-    }).toList();
-  } catch (e) {
-    print("Error fetching finds: $e");
-    return [];
+  Future<List<FindModel>> getFind() async {
+    try {
+      print("Fetching find from Firestore...");
+      final snapshot = await _firestore.collection('find').get();
+      print("Fetched ${snapshot.docs.length} find.");
+      return snapshot.docs.map((doc) {
+        print("Find ID: ${doc.id}, Data: ${doc.data()}");
+        return FindModel.fromFirestore(doc.data(), doc.id);
+      }).toList();
+    } catch (e) {
+      print("Error fetching the find object: $e");
+      return [];
+    }
   }
-}
 
-Future<List<OfferModel>> getOffersForFind(String findId) async {
-  try {
-    print("Fetching offers for find ID: $findId from Firestore...");
-    final snapshot = await _firestore.collection('finds').doc(findId).collection('offers').get();
-    print("Fetched ${snapshot.docs.length} offers for find ID: $findId.");
-    return snapshot.docs.map((doc) {
-      print("Offer ID: ${doc.id}, Data: ${doc.data()}");
-      return OfferModel.fromFirestore(doc.data(), doc.id);
-    }).toList();
-  } catch (e) {
-    print("Error fetching offers for find ID $findId: $e");
-    return [];
+  Future<List<OfferModel>> getOffersForFind(String findId) async {
+    try {
+      print("Fetching offers for find ID: $findId from Firestore...");
+      final snapshot = await _firestore.collection('find').doc(findId).collection('offers').get();
+      print("Fetched ${snapshot.docs.length} offers for find ID: $findId.");
+      return snapshot.docs.map((doc) {
+        print("Offer ID: ${doc.id}, Data: ${doc.data()}");
+        return OfferModel.fromFirestore(doc.data(), doc.id);
+      }).toList();
+    } catch (e) {
+      print("Error fetching offers for find ID $findId: $e");
+      return [];
+    }
   }
-}
-
 }
