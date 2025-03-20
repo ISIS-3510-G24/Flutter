@@ -228,6 +228,31 @@ Future<bool> createUser(String email, String password, String bio, String displa
   }
 
 
+  Future<bool> checkSellerReviews(String sellerId) async {
+  try {
+    // Obtener las 3 reseñas mas recientes excluyendo el placeholder
+    QuerySnapshot reviewSnapshot = await FirebaseFirestore.instance
+        .collection('User')
+        .doc(sellerId)
+        .collection('reviews')
+        .where(FieldPath.documentId, isNotEqualTo: 'placeholder')
+        .orderBy('createdAt', descending: true) 
+        .limit(3) 
+        .get();
+
+    // Revisar que las 3 sean ratings mayores a 3
+    bool allReviewsAbove3 = reviewSnapshot.docs.every((doc) {
+      final reviewData = doc.data() as Map<String, dynamic>;
+      final score = reviewData['rating'] as int; 
+      return score > 3;
+    });
+
+    return allReviewsAbove3;
+  } catch (e) {
+    print("Error fetching reviews: $e");
+    return false;
+  }
+}
 
 
 
