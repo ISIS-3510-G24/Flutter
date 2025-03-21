@@ -41,4 +41,21 @@ class FindService {
       labels: labels,
     );
   }
+
+  // Create a new offer
+  Future<void> createOffer({
+    required String findId,
+    required String userName,
+    required String description,
+    String? image,
+    required double price, 
+  }) async {
+    await _firebaseDAO.createOffer(
+      findId: findId,
+      userName: userName,
+      description: description,
+      image: image,
+      price: price,
+    );
+  }
 }
