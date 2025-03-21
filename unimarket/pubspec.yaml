@@ -65,6 +65,9 @@ dependencies:
   permission_handler: ^11.0.1 
   flutter_ble_peripheral: ^1.0.0
 
+  #animations
+  flutter_spinkit: ^5.2.1
+
 
    
   
