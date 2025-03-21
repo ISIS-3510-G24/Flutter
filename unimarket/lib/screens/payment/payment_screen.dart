@@ -1,7 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:unimarket/screens/home/home_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/services/order_service.dart';
+import 'package:unimarket/screens/tabs/orders_screen.dart'; // Importa OrdersScreen
 
 class PaymentScreen extends StatelessWidget {
   final String productId;
@@ -41,10 +43,6 @@ class PaymentScreen extends StatelessWidget {
                   _buildStepIndicator("Your bag", true),
                   const SizedBox(width: 20), 
                   _buildStepIndicator("Payment", true, active: true),
-                  const SizedBox(width: 20), 
-                  _buildStepIndicator("Shipping", false),
-                  const SizedBox(width: 20), 
-                  _buildStepIndicator("Review", false),
                 ],
               ),
               const SizedBox(height: 20),
@@ -80,13 +78,18 @@ class PaymentScreen extends StatelessWidget {
                       ),
                     ),
                     onPressed: () async {
-                      //Actualizar las metricas de labels
+                      // Actualizar las métricas de labels
                       _orderService.updateProductLabelMetrics(orderId);
                       // Actualizar el estado del producto en Firestore usando el servicio
                       await _orderService.updateOrderStatusToPaid(orderId);
 
-                      // Navegar a la siguiente pantalla de revisión
-                      Navigator.pop(context);
+                      // Navegar a la pantalla de revisión
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (context) => ReviewScreen(),
+                        ),
+                      );
                     },
                   ),
                 ),
@@ -203,6 +206,75 @@ class PaymentScreen extends StatelessWidget {
             style: GoogleFonts.inter(fontSize: 14),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class ReviewScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: Text(
+          "Review",
+          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+        ),
+      ),
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(
+                  CupertinoIcons.check_mark_circled_solid,
+                  color: AppColors.primaryBlue,
+                  size: 100,
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  "Pago exitoso",
+                  style: GoogleFonts.inter(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryBlue,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  "Tu pago ha sido procesado exitosamente.",
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    color: CupertinoColors.systemGrey,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 40),
+                CupertinoButton(
+                  color: AppColors.primaryBlue,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Text(
+                    "Aceptar",
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.bold,
+                      color: CupertinoColors.white,
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      CupertinoPageRoute(builder: (context) => OrdersScreen()),
+                      (route) => false,
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
