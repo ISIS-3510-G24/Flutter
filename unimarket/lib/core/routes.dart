@@ -6,7 +6,6 @@ import 'package:unimarket/screens/home/home_screen.dart';
 import 'package:unimarket/screens/onboarding/introduction_screen.dart';
 import 'package:unimarket/screens/onboarding/preferences_screen.dart'; 
 import 'package:unimarket/screens/auth/auth_validator.dart';
-import 'package:unimarket/screens/product/product_detail_screen.dart';
 import 'package:unimarket/screens/profile/edit_profile_screen.dart';
 import 'package:unimarket/screens/profile/wishlist_screen.dart'; 
 
