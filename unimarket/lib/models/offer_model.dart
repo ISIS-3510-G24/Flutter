@@ -24,17 +24,26 @@ class OfferModel {
   factory OfferModel.fromFirestore(Map<String, dynamic> data, String id) {
     return OfferModel(
       id: id,
-      description: data['description'] ?? '',
-      image: data['image'] ?? '',
-      price: data['price'] is int 
-          ? (data['price'] as int).toDouble() 
-          : (data['price'] ?? 0.0),
-      status: data['status'] ?? '',
-      timestamp: data['timestamp'] != null 
-          ? (data['timestamp'] as Timestamp).toDate() 
-          : DateTime.now(),
-      userId: data['userId'] ?? '',
-      userName: data['userName'] ?? '',
+      description: data['description'],
+      image: data['image'],
+      price: data['price'],
+      status: data['status'],
+      timestamp: (data['timestamp'] as Timestamp).toDate(),
+      userId: data['userId'],
+      userName: data['userName'],
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'description': description,
+      'image': image,
+      'price': price,
+      'status': status,
+      'timestamp': timestamp,
+      'userId': userId,
+      'userName': userName,
+    };
   }
 }
