@@ -7,7 +7,7 @@ import 'package:unimarket/screens/find_and_offer_screens/find_screen.dart';
 import 'package:unimarket/models/find_model.dart';
 import 'package:unimarket/models/offer_model.dart';
 import 'package:unimarket/services/find_service.dart';
-
+import 'package:unimarket/screens/upload/create_offer_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
 class FindAndOfferScreen extends StatefulWidget {
@@ -202,10 +202,8 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                   Navigator.push(
                     context,
                     CupertinoPageRoute(
-                      builder: (ctx) => FindsScreen(
-                        find: find,
+                      builder: (ctx) => CreateOfferScreen(findId: find.id)
                       ),
-                    ),
                   );
                 },
                 child: const Icon(
@@ -743,9 +741,7 @@ Widget _buildMajorCard(FindModel find, OfferModel? offer) {
                       Navigator.push(
                         context,
                         CupertinoPageRoute(
-                          builder: (ctx) => const ConfirmProductScreen(
-                            postType: "offer",
-                          ),
+                          builder: (ctx) => CreateOfferScreen(findId: find.id)
                         ),
                       );
                     },
