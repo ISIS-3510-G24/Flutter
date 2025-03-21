@@ -24,4 +24,21 @@ class FindService {
   Future<List<OfferModel>> getOffersForFind(String findId) async {
     return await _firebaseDAO.getOffersForFind(findId);
   }
+
+  // Create a new find
+  Future<void> createFind({
+    required String title,
+    required String description,
+    String? image,
+    required String major,
+    required List<String> labels,
+  }) async {
+    await _firebaseDAO.createFind(
+      title: title,
+      description: description,
+      image: image,
+      major: major,
+      labels: labels,
+    );
+  }
 }
