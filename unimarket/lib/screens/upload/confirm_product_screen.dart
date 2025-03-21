@@ -198,8 +198,9 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
                 ),
                 const SizedBox(height: 32),
                 Center(
-                  child: CupertinoButton.filled(
+                  child: CupertinoButton(
                     onPressed: _submitFind,
+                    color: Color.fromARGB(255, 96, 201, 245), // Fondo azul claro
                     child: const Text(
                       "Submit",
                       style: TextStyle(color: CupertinoColors.white),
