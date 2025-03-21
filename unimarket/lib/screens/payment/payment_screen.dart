@@ -236,7 +236,7 @@ class ReviewScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  "Pago exitoso",
+                  "Successful payment",
                   style: GoogleFonts.inter(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -245,7 +245,7 @@ class ReviewScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  "Tu pago ha sido procesado exitosamente.",
+                  "Your payment has been processed successfully",
                   style: GoogleFonts.inter(
                     fontSize: 16,
                     color: CupertinoColors.systemGrey,
@@ -257,7 +257,7 @@ class ReviewScreen extends StatelessWidget {
                   color: AppColors.primaryBlue,
                   borderRadius: BorderRadius.circular(12),
                   child: Text(
-                    "Aceptar",
+                    "Accept",
                     style: GoogleFonts.inter(
                       fontWeight: FontWeight.bold,
                       color: CupertinoColors.white,
@@ -266,7 +266,7 @@ class ReviewScreen extends StatelessWidget {
                   onPressed: () {
                     Navigator.pushAndRemoveUntil(
                       context,
-                      CupertinoPageRoute(builder: (context) => OrdersScreen()),
+                      CupertinoPageRoute(builder: (context) => HomeScreen()),
                       (route) => false,
                     );
                   },
