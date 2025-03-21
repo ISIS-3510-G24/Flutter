@@ -5,13 +5,13 @@ import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/models/class_model.dart'; // You'll need to create this
 
 class UploadProductScreen extends StatefulWidget {
-  const UploadProductScreen({Key? key}) : super(key: key);
+  const UploadProductScreen({super.key});
 
   @override
-  _UploadProductScreenState createState() => _UploadProductScreenState();
+  UploadProductScreenState createState() => UploadProductScreenState();
 }
 
-class _UploadProductScreenState extends State<UploadProductScreen> {
+class UploadProductScreenState extends State<UploadProductScreen> {
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
 
   String? _tempSelectedMajor; // Temporarily store selected major
@@ -41,6 +41,7 @@ class _UploadProductScreenState extends State<UploadProductScreen> {
     super.initState();
     _fetchAvailableMajors();
   }
+  
   
   @override
   void dispose() {

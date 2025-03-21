@@ -352,22 +352,6 @@ Future<bool> sendPreferencesToFirebase ( Set<String> selectedPreferences)async {
   }
 }
 
-
-
-
-  Future<void> updateOrderStatusPurchased(String orderId) async {
-    try {
-      final orderRef = _firestore.collection('orders').doc(orderId);
-      await orderRef.update({
-        'status': 'Purchased',
-      });
-      print("Order $orderId status updated to 'Purchased'.");
-    } catch (e) {
-      print("Error updating order status: $e");
-      rethrow; 
-    }
-  }
-
   Future<void> updateOrderStatus(String orderId, String status) async {
     try {
       final orderRef = _firestore.collection('orders').doc(orderId);

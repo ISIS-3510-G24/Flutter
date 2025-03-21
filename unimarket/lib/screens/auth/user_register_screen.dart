@@ -21,7 +21,22 @@ class _UserRegisterState extends State<UserRegister> {
   final TextEditingController _confirmpasswordController = TextEditingController();
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
 
-
+  
+void _showErrorAlert(String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
 
   
   @override
@@ -41,9 +56,27 @@ class _UserRegisterState extends State<UserRegister> {
     final passwordConfirm = _confirmpasswordController.text;
 
     if (selectedMajor == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select a major")),
-      );
+      _showErrorAlert('Please select a major');
+      return false;
+    }
+    if (email.trim().isEmpty) {
+      _showErrorAlert('Please type in your email address');
+      return false;
+    }
+    if (!email.trim().contains("@") || !email.trim().contains(".co")){
+      _showErrorAlert("Please type in a valid email address");
+      return false;
+    }
+    if (bio.trim().isEmpty) {
+      _showErrorAlert('Please write something for your bio');
+      return false;
+    }
+    if (displayName.trim().isEmpty) {
+      _showErrorAlert('Please type the name you want others to see you with');
+      return false;
+    }
+    if (password.trim().isEmpty || passwordConfirm.trim().isEmpty) {
+      _showErrorAlert('Please type in your password and its confirmation');
       return false;
     }
 
@@ -357,23 +390,7 @@ class _UserRegisterState extends State<UserRegister> {
                             ],
                           ),
                         );
-                      } else {
-                        showCupertinoDialog(
-                          context: context,
-                          builder: (context) => CupertinoAlertDialog(
-                            title: Text("Error"),
-                            content: Text("Error during signup. Please try again."),
-                            actions: [
-                              CupertinoDialogAction(
-                                child: Text("Ok"),
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                },
-                              ),
-                            ],
-                          ),
-                        );
-                      }
+                      } 
                     },
                     child: Container(
                       padding: const EdgeInsets.all(20),
