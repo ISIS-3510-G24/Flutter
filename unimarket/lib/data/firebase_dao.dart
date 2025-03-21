@@ -741,5 +741,34 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
       return [];
     }
   }
-  
+
+   Future<void> createFind({
+    required String title,
+    required String description,
+    String? image,
+    required String major,
+    required List<String> labels,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception("User is not authenticated");
+    }
+
+    final find = FindModel(
+      id: _firestore.collection('finds').doc().id,
+      title: title,
+      description: description,
+      image: image ?? '',
+      labels: labels,
+      major: major,
+      offerCount: 1,
+      status: 'active',
+      timestamp: DateTime.now(),
+      upvoteCount: 0,
+      userId: user.uid,
+      userName: user.displayName ?? 'Anonymous',
+    );
+
+    await _firestore.collection('finds').doc(find.id).set(find.toMap());
+  }
 }
