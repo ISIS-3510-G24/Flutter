@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/data/firebase_dao.dart';
@@ -27,12 +28,20 @@ class _LoginScreenState extends State<LoginScreen> {
     if (isLoginSuccessful && mounted) {
       Navigator.pushReplacementNamed(context, '/home');
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Login failed. Please check your credentials.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Login Failed'),
+        content: Text("Please check your credentials and try again"),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+
     }
   }
 
