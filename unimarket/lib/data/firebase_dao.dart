@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:unimarket/models/order_model.dart';
 import 'package:unimarket/models/user_model.dart';
+import 'package:unimarket/models/find_model.dart'; 
+import 'package:unimarket/models/offer_model.dart'; 
 
 class FirebaseDAO {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -689,4 +691,135 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
   }
 }
 
+//======find and offer methods========
+// Find and Offer methods with improved error handling
+  Future<List<FindModel>> getFind() async {
+    try {
+      print("Fetching find from Firestore...");
+      final snapshot = await _firestore.collection('finds').get();
+      print("Fetched ${snapshot.docs.length} finds.");
+      
+      List<FindModel> finds = [];
+      for (var doc in snapshot.docs) {
+        try {
+          print("Processing find ID: ${doc.id}, Data: ${doc.data()}");
+          finds.add(FindModel.fromFirestore(doc.data(), doc.id));
+        } catch (e) {
+          print("Error parsing find with ID ${doc.id}: $e");
+          // Continue to next document instead of failing entire query
+        }
+      }
+      return finds;
+    } catch (e) {
+      print("Error fetching the find objects: $e");
+      return [];
+    }
+  }
+
+  Future<List<OfferModel>> getOffersForFind(String findId) async {
+    try {
+      print("Fetching offers for find ID: $findId from Firestore...");
+      final snapshot = await _firestore.collection('finds').doc(findId).collection('offers').get();
+      print("Fetched ${snapshot.docs.length} offers for find ID: $findId.");
+      
+      List<OfferModel> offers = [];
+      for (var doc in snapshot.docs) {
+        try {
+          print("Processing offer ID: ${doc.id}, Data: ${doc.data()}");
+          offers.add(OfferModel.fromFirestore(doc.data(), doc.id));
+        } catch (e) {
+          print("Error parsing offer with ID ${doc.id}: $e");
+          // Continue to next document instead of failing entire query
+        }
+      }
+      return offers;
+    } catch (e) {
+      print("Error fetching offers for find ID $findId: $e");
+      return [];
+    }
+  }
+
+// Get finds by major
+  Future<List<FindModel>> getFindsByMajor(String major) async {
+    try {
+      print("Fetching finds for major: $major from Firestore...");
+      final snapshot = await _firestore
+          .collection('finds')
+          .where('major', isEqualTo: major)
+          .get();
+      
+      print("Fetched ${snapshot.docs.length} finds for major: $major");
+      
+      List<FindModel> finds = [];
+      for (var doc in snapshot.docs) {
+        try {
+          print("Processing find ID: ${doc.id}, Data: ${doc.data()}");
+          finds.add(FindModel.fromFirestore(doc.data(), doc.id));
+        } catch (e) {
+          print("Error parsing find with ID ${doc.id}: $e");
+          // Continue to next document instead of failing entire query
+        }
+      }
+      return finds;
+    } catch (e) {
+      print("Error fetching finds by major: $e");
+      return [];
+    }
+  }
+
+   Future<void> createFind({
+    required String title,
+    required String description,
+    String? image,
+    required String major,
+    required List<String> labels,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception("User is not authenticated");
+    }
+
+    final find = FindModel(
+      id: _firestore.collection('finds').doc().id,
+      title: title,
+      description: description,
+      image: image ?? '',
+      labels: labels,
+      major: major,
+      offerCount: 1,
+      status: 'active',
+      timestamp: DateTime.now(),
+      upvoteCount: 0,
+      userId: user.uid,
+      userName: user.displayName ?? 'Anonymous',
+    );
+
+    await _firestore.collection('finds').doc(find.id).set(find.toMap());
+  }
+
+  Future<void> createOffer({
+    required String findId,
+    required String userName,
+    required String description,
+    String? image,
+    required double price, 
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception("User is not authenticated");
+    }
+
+    final offer = OfferModel(
+      id: _firestore.collection('finds').doc(findId).collection('offers').doc().id,
+      userName: userName,
+      description: description,
+      image: image ?? '',
+      price: price, 
+      status: 'pending',
+      timestamp: DateTime.now(),
+      userId: user.uid,
+    );
+
+    await _firestore.collection('finds').doc(findId).collection('offers').doc(offer.id).set(offer.toMap());
+  }
 }

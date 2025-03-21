@@ -1,303 +1,246 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:unimarket/services/find_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
-import 'package:unimarket/services/product_service.dart';
-import 'package:unimarket/models/product_model.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class ConfirmProductScreen extends StatefulWidget {
-  final String? imageUrl;
-  final String postType; 
-  // "find" or "offer"
+  final String postType; // "find" o "offer"
 
-  const ConfirmProductScreen({
-    Key? key,
-    this.imageUrl,
-    required this.postType,
-  }) : super(key: key);
+  const ConfirmProductScreen({Key? key, required this.postType}) : super(key: key);
 
   @override
-  State<ConfirmProductScreen> createState() => _ConfirmProductScreenState();
+  _ConfirmProductScreenState createState() => _ConfirmProductScreenState();
 }
 
 class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
-  final TextEditingController _characteristicsController = TextEditingController();
-  final TextEditingController _priceController = TextEditingController();
-  final ProductService _productService = ProductService();
-  bool _isLoading = false;
+  final TextEditingController _imageController = TextEditingController();
+  final FindService _findService = FindService();
+
+  List<String> _majors = [];
+  String _selectedMajor = "";
+  final List<String> _labels = [
+    "Academics", "Accessories", "Art", "Decoration", "Design", "Education", 
+    "Electronics", "Engineering", "Entertainment", "Fashion", "Handcrafts", 
+    "Home", "Other", "Sports", "Technology", "Wellness"
+  ];
+  final List<String> _selectedLabels = [];
 
   @override
-  void dispose() {
-    _titleController.dispose();
-    _descriptionController.dispose();
-    _characteristicsController.dispose();
-    _priceController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _loadMajors();
+  }
+
+  Future<void> _loadMajors() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance.collection('majors').get();
+      final majors = snapshot.docs.map((doc) => doc.id).toList();
+      setState(() {
+        _majors = majors;
+        if (_majors.isNotEmpty) {
+          _selectedMajor = _majors[0];
+        }
+      });
+    } catch (e) {
+      print("Error loading majors: $e");
+    }
+  }
+
+  void _submitFind() async {
+    final title = _titleController.text;
+    final description = _descriptionController.text;
+    final image = _imageController.text;
+
+    if (title.isEmpty || description.isEmpty || _selectedMajor.isEmpty || _selectedLabels.isEmpty) {
+      // Mostrar un mensaje de error si los campos están vacíos
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text("Error"),
+          content: const Text("Please fill in all required fields."),
+          actions: [
+            CupertinoDialogAction(
+              child: const Text("OK"),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    try {
+      await _findService.createFind(
+        title: title,
+        description: description,
+        image: image,
+        major: _selectedMajor,
+        labels: _selectedLabels, // Use the selected labels
+      );
+
+      // Navegar de regreso después de crear el find
+      Navigator.pop(context);
+    } catch (e) {
+      print("Error creating find: $e");
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text("Error"),
+          content: const Text("Failed to create find. Please try again later."),
+          actions: [
+            CupertinoDialogAction(
+              child: const Text("OK"),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Check if it's a FIND or an OFFER
-    final bool isFind = (widget.postType == "find");
-
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        leading: CupertinoNavigationBarBackButton(
-          color: AppColors.primaryBlue,
-          onPressed: () => Navigator.pop(context),
-        ),
         middle: Text(
-          isFind ? "Confirm Request" : "Confirm Offer",
+          "New Find",
           style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+        ),
+        leading: CupertinoButton(
+          padding: EdgeInsets.zero,
+          child: const Icon(CupertinoIcons.back),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
       child: SafeArea(
-        child: Stack(
-          children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Column(
-                children: [
-                  // Image preview (or placeholder)
-                  Container(
-                    height: 200,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: CupertinoColors.systemGrey4, width: 1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: widget.imageUrl != null
-                        ? Image.network(
-                            widget.imageUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
-                              CupertinoIcons.photo,
-                              size: 60,
-                            ),
-                          )
-                        : const Center(
-                            child: Icon(CupertinoIcons.photo, size: 60),
-                          ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Button to retake image
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
-                    child: Text(
-                      "Retake Image",
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        color: AppColors.primaryBlue,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Text fields
-                  _buildTextField(
-                    _titleController,
-                    isFind ? "Name of the request" : "Title of the product",
-                    isFind ? "Enter request name" : "Enter product title",
-                  ),
-                  const SizedBox(height: 8),
-                  _buildTextField(
-                    _descriptionController,
-                    "Description",
-                    "Enter description",
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 8),
-                  _buildTextField(
-                    _characteristicsController,
-                    "Characteristics",
-                    "Enter characteristics",
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 8),
-                  _buildTextField(
-                    _priceController,
-                    "Price",
-                    isFind ? "Desired price" : "Enter price",
-                    keyboardType: TextInputType.number,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // "Confirm" button (text changes based on FIND or OFFER)
-                  SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: CupertinoButton(
-                      color: AppColors.primaryBlue,
-                      borderRadius: BorderRadius.circular(8),
-                      onPressed: _isLoading ? null : _onConfirm,
-                      child: Text(
-                        isFind ? "Confirm Request" : "Confirm Product",
-                        style: GoogleFonts.inter(
-                          color: CupertinoColors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Loading indicator
-            if (_isLoading)
-              Container(
-                color: CupertinoColors.systemBackground.withOpacity(0.7),
-                child: const Center(
-                  child: CupertinoActivityIndicator(),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CupertinoTextField(
+                  controller: _titleController,
+                  placeholder: "Title",
+                  padding: const EdgeInsets.all(16),
                 ),
-              ),
-          ],
+                const SizedBox(height: 16),
+                CupertinoTextField(
+                  controller: _descriptionController,
+                  placeholder: "Description",
+                  padding: const EdgeInsets.all(16),
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 16),
+                CupertinoTextField(
+                  controller: _imageController,
+                  placeholder: "Image URL (optional)",
+                  padding: const EdgeInsets.all(16),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  "Select Major",
+                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () => _showMajorPicker(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.systemGrey6,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _selectedMajor.isEmpty ? "Select Major" : _selectedMajor,
+                          style: GoogleFonts.inter(fontSize: 16, color: AppColors.primaryBlue),
+                        ),
+                        const Icon(CupertinoIcons.chevron_down, color: AppColors.primaryBlue),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  "Select Labels",
+                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Material(
+                  child: ListView(
+                    shrinkWrap: true,
+                    physics: NeverScrollableScrollPhysics(),
+                    children: _labels.map((label) {
+                      return CheckboxListTile(
+                        activeColor: AppColors.primaryBlue,
+                        title: Text(label),
+                        value: _selectedLabels.contains(label),
+                        onChanged: (bool? value) {
+                          setState(() {
+                            if (value == true) {
+                              _selectedLabels.add(label);
+                            } else {
+                              _selectedLabels.remove(label);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 32),
+                Center(
+                  child: CupertinoButton(
+                    onPressed: _submitFind,
+                    color: Color.fromARGB(255, 96, 201, 245), // Fondo azul claro
+                    child: const Text(
+                      "Submit",
+                      style: TextStyle(color: CupertinoColors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  // Method to handle confirmation and upload to Firebase
-  Future<void> _onConfirm() async {
-    final bool isFind = (widget.postType == "find");
-    
-    // Validate inputs
-    if (_titleController.text.isEmpty || _descriptionController.text.isEmpty || _priceController.text.isEmpty) {
-      _showErrorDialog("Please fill in all required fields");
-      return;
-    }
-    
-    // Parse price
-    double price;
-    try {
-      price = double.parse(_priceController.text);
-    } catch (e) {
-      _showErrorDialog("Please enter a valid price");
-      return;
-    }
-    
-    // Get current user ID
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) {
-      _showErrorDialog("You must be logged in to upload a product");
-      return;
-    }
-    
-    setState(() => _isLoading = true);
-    
-    try {
-      // Create a new product
-      final product = ProductModel(
-        classId: "2427", // Using a fixed class ID for now
-        createdAt: DateTime.now(),
-        description: _descriptionController.text,
-        imageUrls: widget.imageUrl != null ? [widget.imageUrl!] : [],
-        labels: ["Arts & Crafts"], // Using a fixed label for now
-        majorID: "DISO", // Using a fixed major ID for now
-        price: price,
-        sellerID: currentUser.uid,
-        status: "Available",
-        title: _titleController.text,
-        updatedAt: DateTime.now(),
-      );
-      
-      // Upload product to Firestore
-      final productId = await _productService.createProduct(product);
-      
-      if (productId != null) {
-        // Show success dialog
-        _showSuccessDialog();
-      } else {
-        _showErrorDialog("Failed to create product");
-      }
-    } catch (e) {
-      _showErrorDialog("An error occurred: $e");
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  // Show success dialog
-  void _showSuccessDialog() {
-    showCupertinoDialog(
+  void _showMajorPicker(BuildContext context) {
+    showCupertinoModalPopup(
       context: context,
-      builder: (BuildContext context) {
-        return CupertinoAlertDialog(
-          title: const Text("Success"),
-          content: const Text("Your product has been uploaded successfully!"),
-          actions: [
-            CupertinoDialogAction(
-              child: const Text("OK"),
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.of(context).pop(); // Close screen
-              },
+      builder: (ctx) => Container(
+        height: 250,
+        color: CupertinoColors.systemBackground,
+        child: Column(
+          children: [
+            Expanded(
+              child: CupertinoPicker(
+                itemExtent: 32,
+                onSelectedItemChanged: (index) {
+                  setState(() {
+                    _selectedMajor = _majors[index];
+                  });
+                },
+                children: _majors.map((major) => Text(major, style: TextStyle(color: AppColors.primaryBlue))).toList(),
+              ),
+            ),
+            CupertinoButton(
+              child: const Text("Done"),
+              onPressed: () => Navigator.pop(ctx),
             ),
           ],
-        );
-      },
-    );
-  }
-
-  // Show error dialog
-  void _showErrorDialog(String message) {
-    showCupertinoDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return CupertinoAlertDialog(
-          title: const Text("Error"),
-          content: Text(message),
-          actions: [
-            CupertinoDialogAction(
-              child: const Text("OK"),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildTextField(
-    TextEditingController controller,
-    String label,
-    String placeholder, {
-    TextInputType keyboardType = TextInputType.text,
-    int maxLines = 1,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 15,
-            fontWeight: FontWeight.bold,
-          ),
         ),
-        const SizedBox(height: 5),
-        CupertinoTextField(
-          controller: controller,
-          placeholder: placeholder,
-          keyboardType: keyboardType,
-          padding: const EdgeInsets.all(12),
-          maxLines: maxLines,
-          decoration: BoxDecoration(
-            border: Border.all(color: CupertinoColors.systemGrey4, width: 1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          style: GoogleFonts.inter(fontSize: 14),
-        ),
-      ],
+      ),
     );
   }
 }
