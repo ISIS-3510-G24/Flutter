@@ -771,4 +771,30 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
 
     await _firestore.collection('finds').doc(find.id).set(find.toMap());
   }
+
+  Future<void> createOffer({
+    required String findId,
+    required String userName,
+    required String description,
+    String? image,
+    required double price, 
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception("User is not authenticated");
+    }
+
+    final offer = OfferModel(
+      id: _firestore.collection('finds').doc(findId).collection('offers').doc().id,
+      userName: userName,
+      description: description,
+      image: image ?? '',
+      price: price, 
+      status: 'pending',
+      timestamp: DateTime.now(),
+      userId: user.uid,
+    );
+
+    await _firestore.collection('finds').doc(findId).collection('offers').doc(offer.id).set(offer.toMap());
+  }
 }
