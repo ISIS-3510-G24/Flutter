@@ -50,7 +50,7 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
         userName: userName,
         description: description,
         image: image,
-        price: price, // Usar double
+        price: price.toInt(), // Convert double to int
       );
 
       // Navegar de regreso después de crear la oferta

@@ -4,7 +4,7 @@ class OfferModel {
   final String id;
   final String description;
   final String image;
-  final double price;
+  final int price;
   final String status;
   final DateTime timestamp;
   final String userId;

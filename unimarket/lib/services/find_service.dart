@@ -48,7 +48,7 @@ class FindService {
     required String userName,
     required String description,
     String? image,
-    required double price, 
+    required int price, 
   }) async {
     await _firebaseDAO.createOffer(
       findId: findId,

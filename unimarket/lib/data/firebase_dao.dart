@@ -843,7 +843,7 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
     required String userName,
     required String description,
     String? image,
-    required double price, 
+    required int price, 
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -855,7 +855,7 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
       userName: userName,
       description: description,
       image: image ?? '',
-      price: price, 
+      price: price, // Use int
       status: 'pending',
       timestamp: DateTime.now(),
       userId: user.uid,
