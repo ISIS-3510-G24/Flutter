@@ -40,7 +40,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       final snapshot = await FirebaseFirestore.instance
           .collection('orders')
           .where('buyerID', isEqualTo: user.uid)
-          .where('status', whereIn: ['Delivered', 'Purchased'])
+          .where('status', whereIn: ['Delivered', 'Purchased', 'Unpaid'])
           .get();
 
       final List<Map<String, dynamic>> orders = await Future.wait(snapshot.docs.map((doc) async {
@@ -51,7 +51,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           "name": product != null ? product.title : "Product ID: ${doc['productID']}",
           "details": "Order Date: ${doc['orderDate'].toDate()}",
           "status": doc['status'],
-          "action": doc['status'] == "Delivered" ? "Help" : "Complete",
+          "action": doc['status'] == "Delivered" ? "Help" : doc['status'] == "Unpaid" ? "Complete" : "",
           "image": product != null && product.imageUrls.isNotEmpty ? product.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
           "price": _formatPrice(doc['price']),
         };
@@ -328,30 +328,29 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ),
             ],
             const SizedBox(width: 10),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: product["action"] == "Complete"
-                  ? () {
-                      Navigator.push(
-                        context,
-                        CupertinoPageRoute(
-                          builder: (context) => PaymentScreen(
-                            productId: product["productId"],
-                            orderId: product["orderId"],
-                          ),
-                        ),
-                      );
-                    }
-                  : null,
-              child: Text(
-                product["action"]!,
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primaryBlue,
+            if (_selectedTab == 1 && product["status"] == "Unpaid")
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    CupertinoPageRoute(
+                      builder: (context) => PaymentScreen(
+                        productId: product["productId"],
+                        orderId: product["orderId"],
+                      ),
+                    ),
+                  );
+                },
+                child: Text(
+                  "Complete",
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryBlue,
+                  ),
                 ),
               ),
-            ),
             if (_selectedTab == 2) ...[
               const SizedBox(width: 10),
               CupertinoButton(
