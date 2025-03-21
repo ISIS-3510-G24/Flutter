@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/models/find_model.dart';
 import 'package:unimarket/models/offer_model.dart';
 import 'package:unimarket/screens/upload/confirm_product_screen.dart';
+import 'package:unimarket/screens/upload/create_offer_screen.dart';
 import 'package:unimarket/services/find_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
@@ -298,9 +299,7 @@ class _FindsScreenState extends State<FindsScreen> {
               Navigator.push(
                 context,
                 CupertinoPageRoute(
-                  builder: (ctx) => const ConfirmProductScreen(
-                    postType: "offer",
-                  ),
+                  builder: (ctx) => CreateOfferScreen(findId: widget.find.id),
                 ),
               );
             },
