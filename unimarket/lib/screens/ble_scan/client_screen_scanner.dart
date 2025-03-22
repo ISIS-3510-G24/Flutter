@@ -1,6 +1,9 @@
 import 'package:flutter/cupertino.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/screens/ble_scan/client_BLE_Scanner.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:flutter_spinkit/flutter_spinkit.dart';
+
 
 class ClientScreenScan extends StatefulWidget {
   const ClientScreenScan({super.key});
@@ -41,29 +44,50 @@ class ClientScreenState extends State<ClientScreenScan> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      
-      navigationBar: CupertinoNavigationBar(
-        middle: Text('Go near your product seller to continue'),
+  
+@override
+Widget build(BuildContext context) {
+  return CupertinoPageScaffold(
+    navigationBar: CupertinoNavigationBar(
+      middle: Text('Go near your product seller to continue'),
+    ),
+    child: Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CupertinoButton(
+            onPressed: _isButtonEnabled
+                ? () {
+                    Navigator.pushNamed(context, '/scanQR');
+                  }
+                : null,
+            color: _isButtonEnabled ? AppColors.primaryBlue : CupertinoColors.inactiveGray,
+            child: Text('Proceed to Scan QR'),
+          ),
+          SizedBox(height: 20),
+          if (!_isButtonEnabled)
+            Text(
+                    "Scanning for the seller's device...",
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                      color: Color(0x00000000),
+                    ),
+                  )
+          else
+          Text(
+                    "Device Found!",
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                      color: Color(0x00000000),
+                    ),
+                  ),
+          if (!_isButtonEnabled)
+            SpinKitSpinningLines(color: AppColors.primaryBlue,size: 60.0), 
+        ],
       ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CupertinoButton(
-              onPressed: _isButtonEnabled
-                  ? () {
-                      Navigator.pushNamed(context, '/scanQR');
-                    }
-                  : null,
-              color: _isButtonEnabled ? AppColors.primaryBlue: CupertinoColors.inactiveGray,
-              child: Text('Proceed to Scan QR'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+    ),
+  );
+}
 }
