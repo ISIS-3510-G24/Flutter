@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/theme/app_colors.dart';
-import 'package:unimarket/models/class_model.dart'; // You'll need to create this
+import 'package:unimarket/models/class_model.dart';
+import 'package:image_picker/image_picker.dart';
 
 class UploadProductScreen extends StatefulWidget {
   const UploadProductScreen({super.key});
@@ -13,6 +16,7 @@ class UploadProductScreen extends StatefulWidget {
 
 class UploadProductScreenState extends State<UploadProductScreen> {
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
+  
 
   String? _tempSelectedMajor; // Temporarily store selected major
   bool _isClassLoading = false;
@@ -21,7 +25,7 @@ class UploadProductScreenState extends State<UploadProductScreen> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
-  final TextEditingController _imageUrlController = TextEditingController();
+  XFile? _selectedImage;
   
   String _selectedMajor = "No major"; // Default value
   String _selectedClass = "No class"; // Default value for class
@@ -48,7 +52,7 @@ class UploadProductScreenState extends State<UploadProductScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
-    _imageUrlController.dispose();
+    //_selectedImage?.dispose();
     super.dispose();
   }
   
@@ -115,6 +119,14 @@ class UploadProductScreenState extends State<UploadProductScreen> {
     });
   }
 }
+  Future<void> _pickImage() async {
+  XFile? image = await _firebaseDAO.pickImage(ImageSource.gallery);
+  if (image != null) {
+    setState(() {
+      _selectedImage = image;
+    });
+  }
+}
   
   // Toggle label selection
   void _toggleLabel(String label) {
@@ -129,84 +141,87 @@ class UploadProductScreenState extends State<UploadProductScreen> {
   
   // Submit the form
   Future<void> _submitForm() async {
-    // Basic validation
-    if (_titleController.text.trim().isEmpty) {
-      _showErrorAlert('Please enter a title');
-      return;
-    }
-    
-    if (_descriptionController.text.trim().isEmpty) {
-      _showErrorAlert('Please enter a description');
-      return;
-    }
-    
-    if (_priceController.text.trim().isEmpty || 
-        int.tryParse(_priceController.text.trim()) == null) {
-      _showErrorAlert('Please enter a valid price');
-      return;
-    }
-    
-    setState(() {
-      _isLoading = true;
-    });
-    
-    try {
-      // Prepare the product data
-      Map<String, dynamic> productData = {
-        'title': _titleController.text.trim(),
-        'description': _descriptionController.text.trim(),
-        'price': int.parse(_priceController.text.trim()),
-        'sellerID': _firebaseDAO.getCurrentUserId(),
-        'status': 'Available', // Always set to Available as default
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'labels': _labels,
-      };
-      
-      // Add image URL if provided
-      if (_imageUrlController.text.trim().isNotEmpty) {
-        productData['imageUrls'] = [_imageUrlController.text.trim()];
-      }
-      
-      // Only add majorID if not "No major"
-      if (_selectedMajor != "No major") {
-        productData['majorID'] = _selectedMajor;
-      }
-      
-      // Only add classID if not "No class"
-      if (_selectedClass != "No class") {
-        // Find the class ID that matches the selected class name
-        String? classId;
-        for (var classItem in _availableClasses) {
-          if (classItem['name'] == _selectedClass || classItem['id'] == _selectedClass) {
-            classId = classItem['id'];
-            break;
-          }
-        }
-        
-        if (classId != null) {
-          productData['classID'] = classId;
-        }
-      }
-      //Actualizar los label counters del producto
-      _firebaseDAO.updateProductPlacementMetrics(_labels);
-
-      // Create the product
-      final productId = await _firebaseDAO.createProduct(productData);
-      
-      if (productId != null) {
-        _showSuccessAlert('Product uploaded successfully!');
-      } else {
-        _showErrorAlert('Failed to upload product');
-      }
-    } catch (e) {
-      _showErrorAlert('Error: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
+  if (_titleController.text.trim().isEmpty) {
+    _showErrorAlert('Please enter a title');
+    return;
   }
+  
+  if (_descriptionController.text.trim().isEmpty) {
+    _showErrorAlert('Please enter a description');
+    return;
+  }
+  
+  if (_priceController.text.trim().isEmpty || int.tryParse(_priceController.text.trim()) == null) {
+    _showErrorAlert('Please enter a valid price');
+    return;
+  }
+  
+  setState(() {
+    _isLoading = true;
+  });
+  
+  try {
+    String? imageUrl;
+    
+    // Upload image if selected
+    if (_selectedImage != null) {
+      imageUrl = await _firebaseDAO.uploadImageToStorage(_selectedImage!);
+      if (imageUrl == null) {
+        throw Exception('Failed to upload image');
+      }
+    }
+
+    // Prepare product data
+    Map<String, dynamic> productData = {
+      'title': _titleController.text.trim(),
+      'description': _descriptionController.text.trim(),
+      'price': int.parse(_priceController.text.trim()),
+      'sellerID': _firebaseDAO.getCurrentUserId(),
+      'status': 'Available',
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'labels': _labels,
+    };
+    
+    if (imageUrl != null) {
+      productData['imageUrls'] = [imageUrl]; // Store the uploaded image URL
+    }
+    
+    if (_selectedMajor != "No major") {
+      productData['majorID'] = _selectedMajor;
+    }
+    
+    if (_selectedClass != "No class") {
+      String? classId;
+      for (var classItem in _availableClasses) {
+        if (classItem['name'] == _selectedClass || classItem['id'] == _selectedClass) {
+          classId = classItem['id'];
+          break;
+        }
+      }
+      if (classId != null) {
+        productData['classID'] = classId;
+      }
+    }
+
+    _firebaseDAO.updateProductPlacementMetrics(_labels);
+
+    final productId = await _firebaseDAO.createProduct(productData);
+
+    if (productId != null) {
+      _showSuccessAlert('Product uploaded successfully!');
+    } else {
+      _showErrorAlert('Failed to upload product');
+    }
+  } catch (e) {
+    _showErrorAlert('Error: $e');
+  } finally {
+    setState(() {
+      _isLoading = false;
+    });
+  }
+}
+
   
   void _showErrorAlert(String message) {
     showCupertinoDialog(
@@ -308,17 +323,22 @@ class UploadProductScreenState extends State<UploadProductScreen> {
                 ),
                 const SizedBox(height: 16),
                 
-                // Image URL
-                const Text('Image URL', 
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+                // Image upload
+                const Text('Product Image', style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                CupertinoTextField(
-                  controller: _imageUrlController,
-                  placeholder: 'Enter URL to product image',
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: CupertinoColors.systemGrey4),
-                    borderRadius: BorderRadius.circular(8),
+                GestureDetector(
+                  onTap: _pickImage, // Open image picker
+                  child: Container(
+                    height: 150,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: CupertinoColors.systemGrey4),
+                      borderRadius: BorderRadius.circular(8),
+                      color: CupertinoColors.systemGrey6,
+                    ),
+                    child: _selectedImage != null
+                        ? Image.file(File(_selectedImage!.path), fit: BoxFit.cover)
+                        : const Center(child: Icon(CupertinoIcons.camera, size: 50, color: CupertinoColors.systemGrey)),
                   ),
                 ),
                 const SizedBox(height: 16),

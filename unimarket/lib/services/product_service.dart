@@ -64,10 +64,7 @@ class ProductService {
     }
   }
   
-  // Upload product image
-  Future<String?> uploadProductImage(String filePath) async {
-    return await _firebaseDAO.uploadProductImage(filePath);
-  }
+
   
   // Get product by ID
   Future<ProductModel?> getProductById(String productId) async {

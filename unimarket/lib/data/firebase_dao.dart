@@ -1,13 +1,20 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:unimarket/models/order_model.dart';
 import 'package:unimarket/models/user_model.dart';
 import 'package:unimarket/models/find_model.dart'; 
 import 'package:unimarket/models/offer_model.dart'; 
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+
 
 class FirebaseDAO {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final ImagePicker _picker = ImagePicker();
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<AUTH OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 Future<bool> signIn(String email, String password) async {
@@ -313,6 +320,27 @@ Future<bool> sendPreferencesToFirebase ( Set<String> selectedPreferences)async {
   }
 }
 
+
+Future<String?> uploadImageToStorage(XFile image) async {
+    try {
+      //Nombre dependiente del tiempo de upload para que no hayan duplicados
+      String fileName = DateTime.now().millisecondsSinceEpoch.toString();
+      Reference ref = _storage.ref().child('product_images/$fileName.jpg');
+      UploadTask uploadTask = ref.putFile(File(image.path));
+
+      TaskSnapshot snapshot = await uploadTask;
+      String downloadUrl = await snapshot.ref.getDownloadURL();
+      return downloadUrl;
+    } catch (e) {
+      print("Error uploading image: $e");
+      return null;
+    }
+  }
+
+  Future<XFile?> pickImage(ImageSource source) async {
+    return await _picker.pickImage(source: source);
+  }
+
 //... gulp.
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<UPDATE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -416,14 +444,6 @@ Future<String?> createProduct(Map<String, dynamic> productData) async {
   }
 }
 
-// Method to upload an image and get URL
-// Note: This is a placeholder. You'll need to implement actual image upload using Firebase Storage
-Future<String?> uploadProductImage(String filePath) async {
-  // Implementation for image upload to Firebase Storage
-  // Return the download URL
-  // For now, it returns a placeholder
-  return null;
-}
 
 // Method to get product details by ID
 Future<Map<String, dynamic>?> getProductById(String productId) async {
