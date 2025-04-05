@@ -28,11 +28,20 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 
+dependency_overrides:
+  http: ^1.0.0
+  universal_io: ^2.2.0
+  uuid: ^3.0.7
+
 dependencies:
   cupertino_progress_bar: ^0.2.0
   flutter:
     sdk: flutter
+  
   shared_preferences: ^2.0.6
+  algolia: ^1.1.2
+  path_provider: ^2.1.1
+  
   
 
   # The following adds the Cupertino Icons font to your application.
