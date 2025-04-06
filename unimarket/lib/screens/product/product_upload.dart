@@ -1,8 +1,11 @@
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/theme/app_colors.dart';
-import 'package:unimarket/models/class_model.dart'; // You'll need to create this
+import 'package:unimarket/models/class_model.dart';
+import 'package:unimarket/screens/upload/product_camera_screen.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class UploadProductScreen extends StatefulWidget {
   const UploadProductScreen({super.key});
@@ -16,12 +19,13 @@ class UploadProductScreenState extends State<UploadProductScreen> {
 
   String? _tempSelectedMajor; // Temporarily store selected major
   bool _isClassLoading = false;
+  File? _productImage;
+  String? _imageUrl;
   
   // Form fields
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
-  final TextEditingController _imageUrlController = TextEditingController();
   
   String _selectedMajor = "No major"; // Default value
   String _selectedClass = "No class"; // Default value for class
@@ -42,14 +46,31 @@ class UploadProductScreenState extends State<UploadProductScreen> {
     _fetchAvailableMajors();
   }
   
-  
   @override
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
-    _imageUrlController.dispose();
     super.dispose();
+  }
+  
+  // Handle image capture from camera screen
+  void _handleImageCaptured(File image, String? downloadUrl) {
+    setState(() {
+      _productImage = image;
+      _imageUrl = downloadUrl;
+    });
+  }
+  
+  // Navigate to camera screen
+  void _navigateToCameraScreen() async {
+    await Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (context) => ProductCameraScreen(
+          onImageCaptured: _handleImageCaptured,
+        ),
+      ),
+    );
   }
   
   // Fetch majors from Firestore
@@ -80,43 +101,43 @@ class UploadProductScreenState extends State<UploadProductScreen> {
   
   // Fetch classes for the selected major
   Future<void> _fetchClassesForMajor(String majorId) async {
-  if (majorId == "No major") {
-    setState(() {
-      _availableClasses = [];
-      _availableClassNames = ["No class"];
-      _selectedClass = "No class";
-    });
-    return;
-  }
-  
-  setState(() {
-    _isClassLoading = true; // Only set class loading to true, not the entire screen
-  });
-  
-  try {
-    List<Map<String, dynamic>> classes = await _firebaseDAO.getClassesForMajor(majorId);
-    
-    // Extract class names and add default option
-    List<String> classNames = ["No class"];
-    for (var classItem in classes) {
-      classNames.add(classItem['name'] ?? classItem['id']);
+    if (majorId == "No major") {
+      setState(() {
+        _availableClasses = [];
+        _availableClassNames = ["No class"];
+        _selectedClass = "No class";
+      });
+      return;
     }
-    
-    setState(() {
-      _availableClasses = classes;
-      _availableClassNames = classNames;
-      _selectedClass = "No class"; // Reset selection when major changes
-    });
-  } catch (e) {
-    _showErrorAlert('Error loading classes: $e');
-  } finally {
-    setState(() {
-      _isClassLoading = false;
-    });
-  }
-}
   
-  // Toggle label selection
+    setState(() {
+      _isClassLoading = true; // Only set class loading to true, not the entire screen
+    });
+  
+    try {
+      List<Map<String, dynamic>> classes = await _firebaseDAO.getClassesForMajor(majorId);
+      
+      // Extract class names and add default option
+      List<String> classNames = ["No class"];
+      for (var classItem in classes) {
+        classNames.add(classItem['name'] ?? classItem['id']);
+      }
+      
+      setState(() {
+        _availableClasses = classes;
+        _availableClassNames = classNames;
+        _selectedClass = "No class"; // Reset selection when major changes
+      });
+    } catch (e) {
+      _showErrorAlert('Error loading classes: $e');
+    } finally {
+      setState(() {
+        _isClassLoading = false;
+      });
+    }
+  }
+  
+// Toggle label selection
   void _toggleLabel(String label) {
     setState(() {
       if (_labels.contains(label)) {
@@ -164,8 +185,8 @@ class UploadProductScreenState extends State<UploadProductScreen> {
       };
       
       // Add image URL if provided
-      if (_imageUrlController.text.trim().isNotEmpty) {
-        productData['imageUrls'] = [_imageUrlController.text.trim()];
+      if (_imageUrl != null) {
+        productData['imageUrls'] = [_imageUrl];
       }
       
       // Only add majorID if not "No major"
@@ -257,6 +278,49 @@ class UploadProductScreenState extends State<UploadProductScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Image Selection Section
+                const Text('Product Image', 
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: _navigateToCameraScreen,
+                  child: Container(
+                    width: double.infinity,
+                    height: 200,
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.systemGrey6,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: CupertinoColors.systemGrey4),
+                    ),
+                    child: _productImage != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            _productImage!,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(
+                              CupertinoIcons.camera,
+                              size: 50,
+                              color: CupertinoColors.systemGrey,
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Tap to take a photo',
+                              style: TextStyle(
+                                color: CupertinoColors.systemGrey,
+                              ),
+                            ),
+                          ],
+                        ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                
                 // Title
                 const Text('Product Title *', 
                   style: TextStyle(fontWeight: FontWeight.bold)),
@@ -301,21 +365,6 @@ class UploadProductScreenState extends State<UploadProductScreen> {
                   ),
                   padding: const EdgeInsets.all(12),
                   keyboardType: const TextInputType.numberWithOptions(decimal: false),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: CupertinoColors.systemGrey4),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
-                // Image URL
-                const Text('Image URL', 
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                CupertinoTextField(
-                  controller: _imageUrlController,
-                  placeholder: 'Enter URL to product image',
-                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     border: Border.all(color: CupertinoColors.systemGrey4),
                     borderRadius: BorderRadius.circular(8),

@@ -1145,15 +1145,22 @@ PODS:
     - abseil/meta/type_traits
     - abseil/xcprivacy
   - abseil/xcprivacy (1.20240116.2)
+  - arkit_plugin (0.0.1):
+    - Flutter
+    - GLTFSceneKit
   - BoringSSL-GRPC (0.0.36):
     - BoringSSL-GRPC/Implementation (= 0.0.36)
     - BoringSSL-GRPC/Interface (= 0.0.36)
   - BoringSSL-GRPC/Implementation (0.0.36):
     - BoringSSL-GRPC/Interface (= 0.0.36)
   - BoringSSL-GRPC/Interface (0.0.36)
+  - camera_avfoundation (0.0.1):
+    - Flutter
   - cloud_firestore (5.6.5):
     - Firebase/Firestore (= 11.8.0)
     - firebase_core
+    - Flutter
+  - device_info_plus (0.0.1):
     - Flutter
   - Firebase/Analytics (11.8.0):
     - Firebase/Core
@@ -1329,6 +1336,7 @@ PODS:
   - flutter_blue_plus_darwin (0.0.2):
     - Flutter
     - FlutterMacOS
+  - GLTFSceneKit (0.3.0)
   - GoogleAppMeasurement (11.8.0):
     - GoogleAppMeasurement/AdIdSupport (= 11.8.0)
     - GoogleUtilities/AppDelegateSwizzler (~> 8.0)
@@ -1522,7 +1530,10 @@ PODS:
     - FlutterMacOS
 
 DEPENDENCIES:
+  - arkit_plugin (from `.symlinks/plugins/arkit_plugin/ios`)
+  - camera_avfoundation (from `.symlinks/plugins/camera_avfoundation/ios`)
   - cloud_firestore (from `.symlinks/plugins/cloud_firestore/ios`)
+  - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
   - firebase_analytics (from `.symlinks/plugins/firebase_analytics/ios`)
   - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
@@ -1563,6 +1574,7 @@ SPEC REPOS:
     - FirebaseSessions
     - FirebaseSharedSwift
     - FirebaseStorage
+    - GLTFSceneKit
     - GoogleAppMeasurement
     - GoogleDataTransport
     - GoogleMLKit
@@ -1582,8 +1594,14 @@ SPEC REPOS:
     - RecaptchaInterop
 
 EXTERNAL SOURCES:
+  arkit_plugin:
+    :path: ".symlinks/plugins/arkit_plugin/ios"
+  camera_avfoundation:
+    :path: ".symlinks/plugins/camera_avfoundation/ios"
   cloud_firestore:
     :path: ".symlinks/plugins/cloud_firestore/ios"
+  device_info_plus:
+    :path: ".symlinks/plugins/device_info_plus/ios"
   firebase_analytics:
     :path: ".symlinks/plugins/firebase_analytics/ios"
   firebase_auth:
@@ -1617,8 +1635,11 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   abseil: d121da9ef7e2ff4cab7666e76c5a3e0915ae08c3
+  arkit_plugin: 2c387e26e137de4bd1fc16ec2fabd05c84c5a817
   BoringSSL-GRPC: ca6a8e5d04812fce8ffd6437810c2d46f925eaeb
+  camera_avfoundation: 04b44aeb14070126c6529e5ab82cc7c9fca107cf
   cloud_firestore: e61acbf808607d2c88ee32b00cd3aec027b38b3c
+  device_info_plus: 21fcca2080fbcd348be798aa36c3e5ed849eefbe
   Firebase: d80354ed7f6df5f9aca55e9eb47cc4b634735eaf
   firebase_analytics: 4e93dbe66872104d28ae9750fec1800e1fd66858
   firebase_auth: 9ebbd83276bf977dea1c74dfc199acf9d2a2f42f
@@ -1649,6 +1670,7 @@ SPEC CHECKSUMS:
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   flutter_ble_peripheral: 6241cd70cab105c88472f4260976ee7292523909
   flutter_blue_plus_darwin: 09444a26fb6bdef523e55b68fc1c59af5a877ea6
+  GLTFSceneKit: d1b437c514ba2aed5555afb0fddd64e030612d57
   GoogleAppMeasurement: fc0817122bd4d4189164f85374e06773b9561896
   GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
   GoogleMLKit: eff9e23ec1d90ea4157a1ee2e32a4f610c5b3318
