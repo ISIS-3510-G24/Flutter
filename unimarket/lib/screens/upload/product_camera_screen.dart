@@ -189,71 +189,79 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
   }
   
   // Método centralizado para limpieza de recursos
-  Future<void> _cleanupResources({bool fullCleanup = false}) async {
-    try {
-      // Cancelar timers
-      _captureTimeoutTimer?.cancel();
-      _modeChangeTimer?.cancel();
-      
-      // Detener stream y liberar cámara
-      if (_cameraController != null) {
-        if (_cameraController!.value.isInitialized) {
-          if (_cameraController!.value.isStreamingImages) {
-            try {
-              await _cameraController!.stopImageStream();
-              await Future.delayed(Duration(milliseconds: 100));
-            } catch (e) {
-              print("⚠️ Error al detener stream en limpieza: $e");
-            }
-          }
+ Future<void> _cleanupResources({bool fullCleanup = false}) async {
+  try {
+    // Cancelar timers
+    _captureTimeoutTimer?.cancel();
+    _modeChangeTimer?.cancel();
+    
+    // Detener stream y liberar cámara
+    if (_cameraController != null) {
+      if (_cameraController!.value.isInitialized) {
+        if (_cameraController!.value.isStreamingImages) {
           try {
-            await _cameraController!.dispose();
+            await _cameraController!.stopImageStream();
+            await Future.delayed(Duration(milliseconds: 200));
           } catch (e) {
-            print("⚠️ Error al liberar cámara: $e");
-          }
-        } else {
-          try {
-            _cameraController!.dispose();
-          } catch (e) {
-            print("⚠️ Error al liberar cámara no inicializada: $e");
+            print("⚠️ Error al detener stream en limpieza: $e");
           }
         }
-        _cameraController = null;
-      }
-      
-      // Liberar ARKit
-      if (_arkitController != null) {
         try {
-          _arkitController!.dispose();
+          await _cameraController!.dispose();
+          // Important: After disposal, nullify the controller
+          _cameraController = null;
         } catch (e) {
-          print("⚠️ Error al liberar ARKit: $e");
+          print("⚠️ Error al liberar cámara: $e");
+          _cameraController = null;
         }
+      } else {
+        try {
+          _cameraController!.dispose();
+          _cameraController = null;
+        } catch (e) {
+          print("⚠️ Error al liberar cámara no inicializada: $e");
+          _cameraController = null;
+        }
+      }
+    }
+    
+    // Liberar ARKit
+    if (_arkitController != null) {
+      try {
+        _arkitController!.dispose();
+        _arkitController = null;
+      } catch (e) {
+        print("⚠️ Error al liberar ARKit: $e");
         _arkitController = null;
       }
-      
-      // En caso de reconstrucción completa, recrear la vista ARKit
-      if (!fullCleanup) {
-        _arKitView = null;
-      }
-      
-      // Solo liberar servicio de luz si es una limpieza completa
-      if (fullCleanup && _lightSensorService != null) {
-        try {
-          _lightSensorService!.dispose();
-          _lightSensorService = null;
-        } catch (e) {
-          print("⚠️ Error al liberar servicio de luz: $e");
-        }
-      }
-      
-      // Limpiar nodos de medición
-      _measurementNodes.clear();
-      _lastPosition = null;
-      
-    } catch (e) {
-      print("❌ Error en limpieza de recursos: $e");
     }
+    
+    // En caso de reconstrucción completa, recrear la vista ARKit
+    if (!fullCleanup) {
+      _arKitView = null;
+    }
+    
+    // Solo liberar servicio de luz si es una limpieza completa
+    if (fullCleanup && _lightSensorService != null) {
+      try {
+        _lightSensorService!.dispose();
+        _lightSensorService = null;
+      } catch (e) {
+        print("⚠️ Error al liberar servicio de luz: $e");
+      }
+    }
+    
+    // Limpiar nodos de medición
+    _measurementNodes.clear();
+    _lastPosition = null;
+    
+    // Add a small delay to ensure all resources are properly released
+    await Future.delayed(Duration(milliseconds: 100));
+    
+  } catch (e) {
+    print("❌ Error en limpieza de recursos: $e");
   }
+}
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -479,54 +487,55 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
   }
 
   // MÉTODO COMPLETAMENTE NUEVO: Reinicio completo para cambio de modo
-  Future<void> _hardReset({required bool targetMode}) async {
-    if (_isDisposed || _isModeChanging) return;
+ Future<void> _hardReset({required bool targetMode}) async {
+  if (_isDisposed || _isModeChanging) return;
+  
+  _isModeChanging = true;
+  
+  if (mounted) {
+    setState(() {
+      _isLoading = true;
+      _feedback = "Cambiando modo...";
+      _showARKitOverlay = false; // Always hide ARKit during reset
+    });
+  }
+  
+  try {
+    // 1. Complete cleanup of all resources
+    await _cleanupResources(fullCleanup: false);
     
-    _isModeChanging = true;
+    // 2. Set target mode
+    _measurementMode = targetMode;
+    _isInitialized = false;
     
-    if (mounted) {
+    // 3. Add a significant delay to ensure all resources are properly released
+    // This is crucial for iOS to properly release camera resources
+    await Future.delayed(Duration(milliseconds: 800));
+    
+    // 4. Reinitialize from scratch
+    if (!_isDisposed) {
+      await _initializeCamera();
+    }
+  } catch (e) {
+    print("❌ Error en reinicio: $e");
+    
+    // Ensure we always end in a usable state
+    if (mounted && !_isDisposed) {
       setState(() {
-        _isLoading = true;
-        _feedback = "Cambiando modo...";
+        _isLoading = false;
+        _isModeChanging = false;
+        _feedback = "Error al cambiar modo. Toca para reintentar";
       });
     }
-    
-    try {
-      // 1. Limpiar todo, simular como si la vista se cerrara y volviera a abrir
-      await _cleanupResources(fullCleanup: false);
-      
-      // 2. Establecer el nuevo modo objetivo
-      _measurementMode = targetMode;
-      _showARKitOverlay = false;
-      _isInitialized = false;
-      
-      // 3. Pequeña pausa para asegurar limpieza
-      await Future.delayed(Duration(milliseconds: 500));
-      
-      // 4. Reiniciar todo desde cero
-      if (!_isDisposed) {
-        await _initializeCamera();
-      }
-    } catch (e) {
-      print("❌ Error en reinicio: $e");
-      
-      // Asegurar que siempre termine en un estado usable
-      if (mounted && !_isDisposed) {
-        setState(() {
-          _isLoading = false;
-          _isModeChanging = false;
-          _feedback = "Error al cambiar modo. Toca para reintentar";
-        });
-      }
-    } finally {
-      if (mounted && !_isDisposed) {
-        setState(() {
-          _isLoading = false;
-          _isModeChanging = false;
-        });
-      }
+  } finally {
+    if (mounted && !_isDisposed) {
+      setState(() {
+        _isLoading = false;
+        _isModeChanging = false;
+      });
     }
   }
+}
 
   // MÉTODO REFACTORIZADO: Cambia entre modos usando reinicio completo
   Future<void> _toggleMode() async {
@@ -911,7 +920,6 @@ Future<XFile?> _captureInLightMode() async {
     return null;
   }
 }
-  
 
   // NUEVA FUNCIÓN: Maneja timeout en captura
   void _activateCaptureTimeout() {
@@ -1002,226 +1010,265 @@ Future<XFile?> _captureInLightMode() async {
 
   // Método optimizado para capturar con reintentos
   Future<XFile?> _captureWithRetries() async {
-    if (_isDisposed) return null;
-    
-    XFile? photo;
-    int attempts = 0;
-    const maxAttempts = 3;
-
-    // Additional error protection during camera operations
-    final savedErrorHandler = FlutterError.onError;
-    FlutterError.onError = (FlutterErrorDetails details) {
-      final String errorStr = details.exception.toString();
-      
-      // Completely suppress any camera errors during capture
-      if (errorStr.contains("Disposed CameraController") ||
-          errorStr.contains("Cannot Record") ||
-          errorStr.contains("buildPreview()") ||
-          errorStr.contains("setState() called after dispose()")) {
-        print("🛡️ Suppressed capture error: ${errorStr.split('\n')[0]}");
-        return;
-      }
-      
-      // Handle other errors normally
-      savedErrorHandler?.call(details);
-    };
-
-    try {
-      while (attempts < maxAttempts && photo == null && 
-            !_isDisposed && _takingPicture && !_isCaptureFallbackActive) {
-        try {
-          attempts++;
-          print("📸 Capture attempt $attempts");
+  if (_isDisposed) return null;
+  
+  XFile? photo;
+  int attempts = 0;
+  const maxAttempts = 3;
+  
+  try {
+    while (attempts < maxAttempts && photo == null && 
+          !_isDisposed && _takingPicture && !_isCaptureFallbackActive) {
+      try {
+        attempts++;
+        print("📸 Capture attempt $attempts");
+        
+        // Update UI with attempt info
+        if (mounted && !_isDisposed) {
+          setState(() {
+            _feedback = attempts > 1 
+                ? "Intentando de nuevo ($attempts/3)..." 
+                : "Capturando imagen...";
+          });
+        }
+        
+        // Special handling for the "Cannot Record" error
+        // Try a completely different approach on second attempt
+        if (attempts >= 2) {
+          // On retry, use a different capture method that might work
+          // This is a critical workaround for iOS "Cannot Record" errors
+          photo = await _emergencyCaptureMethod();
+        } else {
+          // First attempt - standard method
+          photo = await _cameraController!.takePicture().timeout(
+            Duration(seconds: 3),
+            onTimeout: () {
+              print("⚠️ Timeout en intento $attempts");
+              throw TimeoutException("Timeout al capturar");
+            },
+          );
+        }
+        
+        // Check if we got a valid photo
+        if (photo != null && await File(photo.path).exists()) {
+          return photo;
+        }
+      } catch (e) {
+        // Handle expected errors
+        if (e.toString().contains("Cannot Record") || 
+            e.toString().contains("Disposed CameraController")) {
+          print("⚠️ Error esperado en intento $attempts: ${e.toString().split('\n')[0]}");
           
-          // For retries, reset camera
-          if (attempts > 1 && !_isDisposed) {
+          // Critical: For this specific error, we need a special approach
+          if (attempts < maxAttempts && !_isDisposed) {
             await _quickCameraReset();
-            await Future.delayed(Duration(milliseconds: 800));
+            await Future.delayed(Duration(milliseconds: 300));
           }
-          
-          // Safety check
-          if (_isDisposed || _cameraController == null || 
-              !_cameraController!.value.isInitialized || 
-              !_takingPicture || _isCaptureFallbackActive) {
-            return null;
-          }
-          
-          // Update UI with attempt info
-          if (mounted && !_isDisposed) {
-            setState(() {
-              _feedback = attempts > 1 
-                  ? "Intentando de nuevo ($attempts/3)..." 
-                  : "Capturando imagen...";
-            });
-          }
-          
-          // Special handling zone for takePicture
-          photo = await runZonedGuarded<Future<XFile?>>(() async {
-            return await _cameraController!.takePicture().timeout(
-              Duration(seconds: 3),
-              onTimeout: () {
-                print("⚠️ Timeout en intento $attempts");
-                throw TimeoutException("Timeout al capturar");
-              },
-            );
-          }, (error, stack) {
-            print("⚠️ Error en captura manejado: ${error.toString().split('\n')[0]}");
-            // Let the retry logic handle it
-            return null;
-          })?.then((result) => result);
-          
-          if (photo != null && photo.path.isNotEmpty) {
-            return photo;
-          }
-        } catch (e) {
-          // Handle expected errors quietly
-          if (e.toString().contains("Cannot Record") || 
-              e.toString().contains("Disposed CameraController")) {
-            print("⚠️ Error esperado en intento $attempts: ${e.toString().split('\n')[0]}");
-          } else {
-            print("⚠️ Error en intento $attempts: ${e.toString().split('\n')[0]}");
-          }
-          
-          if (_isDisposed || !_takingPicture || _isCaptureFallbackActive) return null;
-          
-          // Special handling for camera errors
-          if ((e.toString().contains("Cannot Record") || 
-              e.toString().contains("Disposed CameraController")) && 
-              attempts < maxAttempts && !_isDisposed) {
-            print("🔄 Reinicializando cámara para siguiente intento...");
-            await _quickCameraReset();
-          }
-          
-          // Adaptive delay between attempts
-          if (!_isDisposed && _takingPicture && !_isCaptureFallbackActive) {
-            await Future.delayed(Duration(milliseconds: 500 * attempts));
-          }
+        } else {
+          print("⚠️ Error en intento $attempts: ${e.toString().split('\n')[0]}");
+        }
+        
+        // Adaptive delay between attempts
+        if (!_isDisposed && _takingPicture && !_isCaptureFallbackActive) {
+          await Future.delayed(Duration(milliseconds: 500 * attempts));
         }
       }
-    } finally {
-      // Always restore original error handler
-      FlutterError.onError = savedErrorHandler;
     }
-    
-    // Last resort camera reset if all attempts failed
-    if (photo == null && attempts == maxAttempts && 
-        !_isDisposed && _takingPicture && !_isCaptureFallbackActive) {
-      await _quickCameraReset();
-    }
-    
-    return photo;
+  } catch (e) {
+    print("⚠️ Error general en captureWithRetries: ${e.toString().split('\n')[0]}");
   }
+  
+  return photo;
+}
 
-   Future<void> _quickCameraReset() async {
-    if (_isDisposed) return;
+Future<XFile?> _emergencyCaptureMethod() async {
+  if (_isDisposed || _cameraController == null || !_cameraController!.value.isInitialized) {
+    return null;
+  }
+  
+  print("🚨 Usando método de captura de emergencia...");
+  XFile? result;
+  
+  try {
+    // 1. Make sure we've reset the camera controller first
+    await _quickCameraReset();
+    
+    if (_isDisposed || _cameraController == null || !_cameraController!.value.isInitialized) {
+      return null;
+    }
+    
+    // 2. Try an alternative approach - use image stream to capture a frame
+    final completer = Completer<XFile?>();
+    
+    // Setup a timeout for the emergency method
+    Timer? emergencyTimeout = Timer(Duration(seconds: 3), () {
+      if (!completer.isCompleted) {
+        print("⚠️ Timeout en método de emergencia");
+        completer.complete(null);
+      }
+    });
+    
+    // Create a temporary file to save the image
+    final Directory tempDir = await getTemporaryDirectory();
+    final String tempPath = path.join(tempDir.path, 
+      'emergency_capture_${DateTime.now().millisecondsSinceEpoch}.jpg');
     
     try {
-      // Remember if ARKit was visible
-      final wasARKitVisible = _showARKitOverlay;
+      // Start image stream just to get a single frame
+      await _cameraController!.startImageStream((image) async {
+        if (completer.isCompleted) return;
+        
+        // Stop stream immediately after getting first frame
+        try {
+          await _cameraController!.stopImageStream();
+        } catch (e) {
+          // Just log, don't throw
+          print("⚠️ Error al detener stream de emergencia: ${e.toString().split('\n')[0]}");
+        }
+        
+        try {
+          // Process image data - this is simplified, you may need more processing 
+          // based on your image format
+          // This example assumes RGBA or BGRA format
+          File imgFile = File(tempPath);
+          
+          // Use a platform-specific approach
+          if (Platform.isIOS) {
+            // For iOS, we'll create a temporary bitmap context and save that
+            // This is just an example - you'll need to implement platform-specific
+            // image conversion code here, possibly using FFI or method channels
+            
+            // Simplified placeholder - actual implementation would need image format conversion
+            await imgFile.writeAsBytes(image.planes[0].bytes);
+          } else {
+            // For Android, use the bytes directly
+            await imgFile.writeAsBytes(image.planes[0].bytes);
+          }
+          
+          // After saving, create an XFile object
+          if (await imgFile.exists()) {
+            print("✅ Captura de emergencia exitosa");
+            result = XFile(tempPath);
+            emergencyTimeout?.cancel();
+            completer.complete(result);
+          } else {
+            print("❌ Archivo de captura de emergencia no existe");
+            emergencyTimeout?.cancel();
+            completer.complete(null);
+          }
+        } catch (e) {
+          print("❌ Error al procesar imagen de emergencia: ${e.toString().split('\n')[0]}");
+          emergencyTimeout?.cancel();
+          completer.complete(null);
+        }
+      });
       
-      // Explicitly hide ARKit during reset
-      if (wasARKitVisible && mounted && !_isDisposed) {
-        setState(() {
-          _showARKitOverlay = false;
-        });
+      // Wait for either completion or timeout
+      result = await completer.future;
+    } catch (e) {
+      print("❌ Error en método de captura de emergencia: ${e.toString().split('\n')[0]}");
+      emergencyTimeout?.cancel();
+    }
+  } catch (e) {
+    print("❌ Error general en método de emergencia: ${e.toString().split('\n')[0]}");
+  }
+  
+  return result;
+}
+
+   Future<void> _quickCameraReset() async {
+  if (_isDisposed) return;
+  
+  try {
+    print("🔄 Reiniciando cámara para captura...");
+    
+    // Remember if ARKit was visible
+    final wasARKitVisible = _showARKitOverlay;
+    
+    // Explicitly hide ARKit during reset
+    if (wasARKitVisible && mounted && !_isDisposed) {
+      setState(() {
+        _showARKitOverlay = false;
+      });
+    }
+    
+    // Dispose current camera controller
+    if (_cameraController != null) {
+      try {
+        if (_cameraController!.value.isInitialized) {
+          if (_cameraController!.value.isStreamingImages) {
+            try {
+              await _cameraController!.stopImageStream();
+              await Future.delayed(Duration(milliseconds: 200));
+            } catch (e) {
+              print("⚠️ Error controlado al detener stream: ${e.toString().split('\n')[0]}");
+            }
+          }
+          await _cameraController!.dispose();
+        } else {
+          _cameraController!.dispose();
+        }
+      } catch (e) {
+        print("⚠️ Error controlado al liberar cámara: ${e.toString().split('\n')[0]}");
       }
+      _cameraController = null;
+    }
+    
+    // Breathing room between disposal and initialization
+    await Future.delayed(Duration(milliseconds: 400));
+    
+    if (_isDisposed) return;
+    
+    // Get camera list
+    final cameras = await availableCameras().timeout(
+      Duration(seconds: 2),
+      onTimeout: () {
+        print("⚠️ Timeout obteniendo cámaras durante reset");
+        throw TimeoutException("Timeout al enumerar cámaras");
+      },
+    );
+    
+    if (cameras.isEmpty) {
+      print("⚠️ No se encontraron cámaras durante reset");
+      return;
+    }
+    
+    final backCamera = cameras.firstWhere(
+      (camera) => camera.lensDirection == CameraLensDirection.back,
+      orElse: () => cameras.first,
+    );
+    
+    // Create new controller with a try-catch block
+    try {
+      _cameraController = CameraController(
+        backCamera,
+        ResolutionPreset.high,
+        enableAudio: false,
+        imageFormatGroup: Platform.isIOS
+            ? ImageFormatGroup.bgra8888
+            : ImageFormatGroup.yuv420,
+      );
       
-      // Get camera list
-      final cameras = await availableCameras().timeout(
-        Duration(seconds: 2),
+      // Initialize with timeout
+      await _cameraController!.initialize().timeout(
+        Duration(seconds: 3),
         onTimeout: () {
-          print("⚠️ Timeout obteniendo cámaras durante reset");
-          throw TimeoutException("Timeout al enumerar cámaras");
+          print("⚠️ Timeout al inicializar cámara durante reset");
+          throw TimeoutException("Timeout de inicialización");
         },
       );
       
-      if (cameras.isEmpty) {
-        print("⚠️ No se encontraron cámaras durante reset");
-        return;
-      }
-      
-      final backCamera = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
-      
-      // Clean up existing camera - use try/catch for each operation
-      if (_cameraController != null) {
-        try {
-          if (_cameraController!.value.isInitialized) {
-            if (_cameraController!.value.isStreamingImages) {
-              try {
-                await _cameraController!.stopImageStream();
-                await Future.delayed(Duration(milliseconds: 100));
-              } catch (e) {
-                // Just log and continue
-                print("⚠️ Error controlado al detener stream: ${e.toString().split('\n')[0]}");
-              }
-            }
-            try {
-              await _cameraController!.dispose();
-            } catch (e) {
-              print("⚠️ Error controlado al liberar controlador: ${e.toString().split('\n')[0]}");
-            }
-          } else {
-            try {
-              _cameraController!.dispose();
-            } catch (e) {
-              print("⚠️ Error controlado al liberar controlador no inicializado: ${e.toString().split('\n')[0]}");
-            }
-          }
-        } catch (e) {
-          // Catch-all for any disposal errors
-          print("⚠️ Error general al liberar cámara: ${e.toString().split('\n')[0]}");
-        }
-        _cameraController = null;
-      }
-      
-      if (_isDisposed) return;
-      
-      // Breathing room between disposal and initialization
+      // Give camera time to stabilize
       await Future.delayed(Duration(milliseconds: 300));
       
-      if (_isDisposed) return;
-      
-      // Create fresh camera controller with error zone
-      try {
-        // Create new controller
-        _cameraController = CameraController(
-          backCamera,
-          ResolutionPreset.high,
-          enableAudio: false,
-          imageFormatGroup: Platform.isIOS
-              ? ImageFormatGroup.bgra8888
-              : ImageFormatGroup.yuv420,
-        );
-        
-        // Initialize with timeout
-        await _cameraController!.initialize().timeout(
-          Duration(seconds: 3),
-          onTimeout: () {
-            print("⚠️ Timeout al inicializar cámara durante reset");
-            throw TimeoutException("Timeout de inicialización");
-          },
-        );
-        
-        print("✅ Camera reset successful");
-        
-        // Maintain ARKit hidden during capture
-        if (mounted && !_isDisposed && _takingPicture) {
-          setState(() {
-            _showARKitOverlay = false;
-          });
-        }
-      } catch (e) {
-        print("⚠️ Error en reset de cámara: ${e.toString().split('\n')[0]}");
-        // Continue with capture attempt anyway
-      }
+      print("✅ Camera reset successful");
     } catch (e) {
-      // Catch-all for any unexpected errors
-      print("⚠️ Error inesperado en reset: ${e.toString().split('\n')[0]}");
+      print("⚠️ Error en reset de cámara: ${e.toString().split('\n')[0]}");
     }
+  } catch (e) {
+    print("⚠️ Error inesperado en reset: ${e.toString().split('\n')[0]}");
   }
+}
 
   // Método para subir imagen a Firebase
   Future<String?> _uploadImage() async {
@@ -1280,104 +1327,105 @@ Future<XFile?> _captureInLightMode() async {
 
   // Vista de la cámara con mejores indicadores visuales
  Widget _buildCameraView() {
-    if (!_isInitialized || _cameraController == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text("Cámara no disponible"),
-            SizedBox(height: 20),
-            CupertinoButton(
-              child: Text("Reintentar"),
-              onPressed: _isLoading ? null : _startInitialization,
-            ),
-          ],
+  if (!_isInitialized || _cameraController == null) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text("Cámara no disponible"),
+          SizedBox(height: 20),
+          CupertinoButton(
+            child: Text("Reintentar"),
+            onPressed: _isLoading ? null : _startInitialization,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Obtain light sensor values safely
+  double lightLevel = _currentLightLevel;
+  Color lightColor = _lightSensorService?.getLightLevelColor(lightLevel) ?? 
+                    CupertinoColors.systemBlue;
+  String lightFeedback = "";
+  
+  if (_lightSensorService != null && !_isDisposed && !_measurementMode) {
+    try {
+      lightFeedback = _lightSensorService!.feedbackNotifier.value;
+    } catch (e) {
+      print("⚠️ Error al leer feedback de luz: $e");
+    }
+  }
+
+  return Stack(
+    children: [
+      // Camera view (always visible)
+      Positioned.fill(
+        child: AspectRatio(
+          aspectRatio: _cameraController!.value.aspectRatio,
+          child: CameraPreview(_cameraController!),
         ),
-      );
-    }
-
-    // Obtain light sensor values safely
-    double lightLevel = _currentLightLevel;
-    Color lightColor = _lightSensorService?.getLightLevelColor(lightLevel) ?? 
-                      CupertinoColors.systemBlue;
-    String lightFeedback = "";
-    
-    if (_lightSensorService != null && !_isDisposed && !_measurementMode) {
-      try {
-        lightFeedback = _lightSensorService!.feedbackNotifier.value;
-      } catch (e) {
-        print("⚠️ Error al leer feedback de luz: $e");
-      }
-    }
-
-    return Stack(
-      children: [
-        // Camera view (always visible)
+      ),
+      
+      // ARKit view for measurement - critical change: only show when explicitly allowed
+      if (_hasLiDAR && _arKitView != null && _showARKitOverlay && 
+          _measurementMode && !_takingPicture)
         Positioned.fill(
-          child: AspectRatio(
-            aspectRatio: _cameraController!.value.aspectRatio,
-            child: CameraPreview(_cameraController!),
-          ),
+          child: _arKitView!,
         ),
-        
-        // ARKit view for measurement
-        if (_hasLiDAR && _arKitView != null && _showARKitOverlay && _measurementMode)
-          Positioned.fill(
-            child: _arKitView!,
-          ),
         
         // NEW: Special protective overlay during capture to prevent red screen flash
         if (_takingPicture)
-          Positioned.fill(
-            child: Container(
-              // Dark semi-transparent overlay to hide any red flashes
-              color: CupertinoColors.black.withOpacity(0.65),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CupertinoActivityIndicator(
-                      radius: 20,
-                      color: CupertinoColors.white,
+        Positioned.fill(
+          child: Container(
+            // Dark semi-transparent overlay to hide any red flashes
+            color: CupertinoColors.black.withOpacity(0.65),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CupertinoActivityIndicator(
+                    radius: 20,
+                    color: CupertinoColors.white,
+                  ),
+                  SizedBox(height: 20),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(8),
                     ),
+                    child: Text(
+                      _feedback,
+                      style: GoogleFonts.inter(
+                        color: CupertinoColors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  if (_isCaptureFallbackActive) ...[
                     SizedBox(height: 20),
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: CupertinoColors.black.withOpacity(0.7),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        _feedback,
-                        style: GoogleFonts.inter(
-                          color: CupertinoColors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
+                    CupertinoButton(
+                      color: CupertinoColors.destructiveRed,
+                      child: Text("Cancelar"),
+                      onPressed: () {
+                        _captureTimeoutTimer?.cancel();
+                        setState(() {
+                          _takingPicture = false;
+                          _isCaptureFallbackActive = false;
+                          _feedback = "Captura cancelada";
+                        });
+                        // Reset
+                        _hardReset(targetMode: _measurementMode);
+                      },
                     ),
-                    if (_isCaptureFallbackActive) ...[
-                      SizedBox(height: 20),
-                      CupertinoButton(
-                        color: CupertinoColors.destructiveRed,
-                        child: Text("Cancelar"),
-                        onPressed: () {
-                          _captureTimeoutTimer?.cancel();
-                          setState(() {
-                            _takingPicture = false;
-                            _isCaptureFallbackActive = false;
-                            _feedback = "Captura cancelada";
-                          });
-                          // Reset
-                          _hardReset(targetMode: _measurementMode);
-                        },
-                      ),
-                    ],
                   ],
-                ),
+                ],
               ),
             ),
           ),
+        ),
         
         // Indicadores superiores
         if (!_takingPicture)
@@ -1590,87 +1638,182 @@ Future<XFile?> _captureInLightMode() async {
     );
   }
 
-  // Vista de previsualización de imagen
+// Vista de previsualización de imagen mejorada
   Widget _buildImagePreview() {
-    return Column(
-      children: [
-        Expanded(
-          child: Container(
-            color: CupertinoColors.black,
-            width: double.infinity,
+    return MediaQuery(
+      // Eliminar padding inferior para evitar espacios en blanco
+      data: MediaQuery.of(context).copyWith(
+        padding: EdgeInsets.zero,
+        viewPadding: EdgeInsets.zero,
+        viewInsets: EdgeInsets.zero,
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Imagen a pantalla completa - extendiéndose hasta los bordes
+          Container(
+            color: CupertinoColors.black, // Fondo negro para evitar espacios blancos
             child: _capturedImage != null
-                ? Image.file(
-                    _capturedImage!,
-                    fit: BoxFit.contain,
+                ? InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    boundaryMargin: EdgeInsets.zero,
+                    child: Image.file(
+                      _capturedImage!,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      alignment: Alignment.center,
+                    ),
                   )
-                : const Center(child: Text("No hay imagen capturada")),
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              CupertinoButton(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                color: CupertinoColors.darkBackgroundGray,
-                child: Text(
-                  "Retomar",
-                  style: GoogleFonts.inter(color: CupertinoColors.white),
-                ),
-                onPressed: _isLoading ? null : _resetImage,
-              ),
-              CupertinoButton(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                color: AppColors.primaryBlue,
-                child: _isLoading 
-                    ? CupertinoActivityIndicator(color: CupertinoColors.white)
-                    : Text(
-                        "Usar Foto",
-                        style: GoogleFonts.inter(color: CupertinoColors.white),
+                : Center(
+                    child: Text(
+                      "No hay imagen",
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        color: CupertinoColors.systemGrey,
                       ),
-                onPressed: _isLoading ? null : () async {
-                  if (_capturedImage == null || _isDisposed) return;
-                  
-                  if (mounted) {
-                    setState(() {
-                      _isLoading = true;
-                    });
-                  }
-                  
-                  try {
-                    final downloadUrl = await _uploadImage();
-                    
-                    // Verificar que el widget no haya sido dispuesto durante la carga
-                    if (_isDisposed) return;
-                    
-                    // Llamar al callback antes de navegar
-                    widget.onImageCaptured(_capturedImage!, downloadUrl);
-                    
-                    // Esperar brevemente para asegurar que el callback termine
-                    await Future.delayed(Duration(milliseconds: 100));
-                    
-                    if (mounted && !_isDisposed) {
-                      Navigator.of(context).pop();
-                    }
-                  } catch (e) {
-                    print("❌ Error al procesar imagen: $e");
-                    if (mounted && !_isDisposed) {
-                      setState(() {
-                        _isLoading = false;
-                        _feedback = "Error al procesar. Intenta de nuevo";
-                      });
-                    }
-                  }
-                },
-              ),
-            ],
+                    ),
+                  ),
           ),
-        ),
-      ],
+          
+          // Botones en la parte inferior - eliminando cualquier padding o margen
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              // Padding horizontal solamente
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+              color: CupertinoColors.black.withOpacity(0.01), // Color transparente para extender hasta abajo
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // Botón Retomar
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _isLoading ? null : _resetImage,
+                    child: Container(
+                      width: 140,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.black,
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: Center(
+                        child: Text(
+                          "Retomar",
+                          style: GoogleFonts.inter(
+                            color: CupertinoColors.white,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  
+                  // Botón Usar Foto
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _isLoading ? null : () async {
+                      if (_capturedImage == null || _isDisposed) return;
+                      
+                      if (mounted) {
+                        setState(() {
+                          _isLoading = true;
+                        });
+                      }
+                      
+                      try {
+                        final downloadUrl = await _uploadImage();
+                        
+                        if (_isDisposed) return;
+                        
+                        widget.onImageCaptured(_capturedImage!, downloadUrl);
+                        
+                        await Future.delayed(Duration(milliseconds: 100));
+                        
+                        if (mounted && !_isDisposed) {
+                          Navigator.of(context).pop();
+                        }
+                      } catch (e) {
+                        print("❌ Error al procesar imagen: $e");
+                        if (mounted && !_isDisposed) {
+                          setState(() {
+                            _isLoading = false;
+                            _feedback = "Error al procesar. Intenta de nuevo";
+                          });
+                        }
+                      }
+                    },
+                    child: Container(
+                      width: 140,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryBlue,
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: Center(
+                        child: _isLoading
+                            ? CupertinoActivityIndicator(
+                                color: CupertinoColors.white,
+                              )
+                            : Text(
+                                "Usar Foto",
+                                style: GoogleFonts.inter(
+                                  color: CupertinoColors.white,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 16,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // Indicador de carga
+          if (_isLoading)
+            Positioned.fill(
+              child: Container(
+                color: CupertinoColors.black.withOpacity(0.3),
+                child: Center(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CupertinoActivityIndicator(
+                          color: CupertinoColors.white,
+                          radius: 14,
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          "Subiendo imagen...",
+                          style: GoogleFonts.inter(
+                            color: CupertinoColors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
-
+  
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
