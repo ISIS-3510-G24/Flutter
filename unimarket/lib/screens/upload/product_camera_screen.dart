@@ -10,6 +10,8 @@ import 'package:unimarket/services/firebase_storage_service.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:vector_math/vector_math_64.dart';
+import 'package:collection/collection.dart';
+import 'package:unimarket/services/light_sensor_service.dart';
 
 class ProductCameraScreen extends StatefulWidget {
   final Function(File, String?) onImageCaptured;
@@ -28,62 +30,57 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
   CameraController? _cameraController;
   ARKitController? _arkitController;
   FirebaseStorageService _storageService = FirebaseStorageService();
-
+  final LightSensorService _lightSensorService = LightSensorService();
+  
   bool _isInitialized = false;
+  bool _measurementMode = false; // Para controlar qué modo está activo
   bool _isLoading = true;
   bool _hasLiDAR = false;
   bool _takingPicture = false;
   bool _isProcessingImage = false;
-  // Controla si se muestra el overlay de ARKit
   bool _showARKitOverlay = true;
   File? _capturedImage;
   Widget? _arKitView;
 
-  // Variables para sensores
-  double? _distanceToObject;
-  double _lightLevel = 0.5;
+  // Variables para sensores y control
   String _feedback = '';
-
-  // Throttling: para limitar actualizaciones de luz y LiDAR
   DateTime? _lastLightUpdate;
-  DateTime? _lastLidarUpdate;
 
-  // Temporizador para mediciones periódicas (ARKit)
-  Timer? _measurementTimer;
+  // Variables para medición
+  Vector3? _lastPosition;
+  List<ARKitNode> _measurementNodes = [];
+  String _currentMeasurement = '';
 
-  @override
-  void initState() {
-    super.initState();
-    print("Iniciando ProductCameraScreen - comprobando ARKit y LiDAR");
-    WidgetsBinding.instance.addObserver(this);
+ @override
+void initState() {
+  super.initState();
+  print("📸 Iniciando ProductCameraScreen");
+  WidgetsBinding.instance.addObserver(this);
+  
+  // Asegurar inicialización limpia
+  _feedback = '';
+  _lastPosition = null;
+  _currentMeasurement = '';
+  _measurementNodes = [];
+  _measurementMode = false; // Iniciar en modo luz
+  
+  // Iniciar cámara
+  Future.microtask(() => _initializeCamera());
+}
 
-    Timer.periodic(Duration(seconds: 10), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      print("== VERIFICACIÓN PERIÓDICA DE ARKIT ==");
-      print("ARKit controller: ${_arkitController != null}");
-      print("Distancia actual: $_distanceToObject");
-      print("Feedback actual: $_feedback");
-      print("hasLiDAR: $_hasLiDAR");
-    });
-
-    _initializeCamera();
-  }
 
   void _initializeARKit() {
     _arKitView ??= ARKitSceneView(
-        onARKitViewCreated: _onARKitViewCreated,
-        configuration: ARKitConfiguration.worldTracking,
-        planeDetection: ARPlaneDetection.horizontal,
-      );
+      onARKitViewCreated: _onARKitViewCreated,
+      configuration: ARKitConfiguration.worldTracking,
+      enableTapRecognizer: true,
+      planeDetection: ARPlaneDetection.horizontal,
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _measurementTimer?.cancel();
 
     if (_cameraController != null && _cameraController!.value.isInitialized) {
       _cameraController!.stopImageStream().then((_) {
@@ -101,6 +98,9 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
     } catch (e) {
       print("Error al liberar ARKitController: $e");
     }
+    
+    // Liberar sensor de luz
+    _lightSensorService.dispose();
 
     super.dispose();
   }
@@ -112,7 +112,6 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
     }
     if (state == AppLifecycleState.inactive) {
       _cameraController?.dispose();
-      _measurementTimer?.cancel();
     } else if (state == AppLifecycleState.resumed) {
       _initializeCamera();
       if (_hasLiDAR && _arkitController == null) {
@@ -121,73 +120,213 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
     }
   }
 
-  Future<void> _initializeCamera() async {
-    _isLoading = true;
-    if (mounted) setState(() {});
+ 
+Future<void> _initializeCamera() async {
+  _isLoading = true;
+  if (mounted) setState(() {});
 
-    try {
-      // Verificar soporte de LiDAR
-      _hasLiDAR = await _checkLiDARSupport();
-      print("LiDAR detectado: $_hasLiDAR");
+  try {
+    // Verificar soporte de LiDAR
+    _hasLiDAR = await _checkLiDARSupport();
+    print("🔍 LiDAR detectado: $_hasLiDAR");
 
-      if (_hasLiDAR) {
-        print("Antes de cargar AR");
-        _initializeARKit();
-        print("Despues de cargar AR");
+    // No inicializar ARKit automáticamente, solo verificar si está disponible
+    // El ARKit se inicializará cuando el usuario cambie al modo de medición
 
-        _measurementTimer =
-            Timer.periodic(Duration(milliseconds: 500), (timer) {
-          _performPeriodicMeasurement();
-        });
-      }
-
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        _feedback = "No cameras found";
+    final cameras = await availableCameras();
+    if (cameras.isEmpty) {
+      setState(() {
         _isLoading = false;
-        if (mounted) setState(() {});
-        return;
+        _feedback = "No se encontraron cámaras";
+      });
+      return;
+    }
+
+    final backCamera = cameras.firstWhere(
+      (camera) => camera.lensDirection == CameraLensDirection.back,
+      orElse: () => cameras.first,
+    );
+
+    _cameraController = CameraController(
+      backCamera,
+      ResolutionPreset.high,
+      enableAudio: false,
+      imageFormatGroup: Platform.isIOS
+          ? ImageFormatGroup.bgra8888
+          : ImageFormatGroup.yuv420,
+    );
+
+    // Inicializar cámara y asegurar que sea exitoso
+    await _cameraController!.initialize();
+    
+    // Pequeña pausa para asegurar inicialización completa
+    await Future.delayed(Duration(milliseconds: 300));
+    
+    if (_cameraController!.value.isInitialized) {
+      // Iniciar modo luz por defecto
+      if (!_measurementMode) {
+        await _startLightMode();
       }
+    }
 
-      final backCamera = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
+    _isInitialized = true;
+    _isLoading = false;
+    if (mounted) setState(() {});
+  } catch (e) {
+    print("❌ Error completo al inicializar la cámara: $e");
+    _feedback = "Error initializing camera: $e";
+    _isLoading = false;
+    if (mounted) setState(() {});
+  }
+}
 
-      _cameraController = CameraController(
-        backCamera,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: Platform.isIOS
-            ? ImageFormatGroup.bgra8888
-            : ImageFormatGroup.yuv420,
-      );
-
-      await _cameraController!.initialize();
-
+Future<void> _startLightMode() async {
+  if (_cameraController == null || !_cameraController!.value.isInitialized) {
+    setState(() {
+      _feedback = "Cámara no inicializada";
+      _isLoading = false;
+    });
+    return;
+  }
   
-      if (_cameraController!.value.isInitialized) {
-        await _cameraController!.startImageStream(_processCameraImage);
-      }
-
-      _isInitialized = true;
-      _isLoading = false;
-      if (mounted) setState(() {});
+  try {
+    // Asegurar que ARKit está desactivado
+    setState(() {
+      _showARKitOverlay = false;
+    });
+    
+    // Garantizar que el stream está detenido antes de iniciar uno nuevo
+    if (_cameraController!.value.isStreamingImages) {
+      await _cameraController!.stopImageStream();
+      await Future.delayed(Duration(milliseconds: 200));
+    }
+    
+    // Iniciar nuevo stream con manejo de errores mejorado
+    try {
+      await _cameraController!.startImageStream(_processCameraImage);
+      print("✅ Stream de cámara para luz iniciado correctamente");
+      setState(() {
+        _feedback = "Modo sensor de luz activado";
+      });
     } catch (e) {
-      print("Error completo al inicializar la cámara: $e");
-      _feedback = "Error initializing camera: $e";
-      _isLoading = false;
-      if (mounted) setState(() {});
+      print("⚠️ Error al iniciar stream de cámara: $e");
+      setState(() {
+        _feedback = "Error con el sensor de luz";
+      });
+      
+      // Intento de recuperación
+      await Future.delayed(Duration(milliseconds: 500));
+      try {
+        if (!_cameraController!.value.isStreamingImages) {
+          await _cameraController!.startImageStream(_processCameraImage);
+          setState(() {
+            _feedback = "Modo luz recuperado";
+          });
+        }
+      } catch (retryError) {
+        print("⚠️ Error al reintentar stream: $retryError");
+      }
+    }
+  } catch (e) {
+    print("Error general en _startLightMode: $e");
+    setState(() {
+      _feedback = "Error en modo luz";
+    });
+  }
+}
+
+// Método para cambiar al modo medición
+Future<void> _startMeasurementMode() async {
+  if (!_hasLiDAR) {
+    setState(() {
+      _feedback = "LiDAR no disponible en este dispositivo";
+    });
+    return;
+  }
+  
+  // Detener el stream de cámara para ahorrar recursos
+  if (_cameraController != null && _cameraController!.value.isStreamingImages) {
+    await _cameraController!.stopImageStream();
+  }
+  
+  // Inicializar ARKit si no está inicializado
+  if (_arkitController == null) {
+    _initializeARKit();
+  }
+  
+  setState(() {
+    _feedback = "Modo medición activado. Toca para medir";
+    _showARKitOverlay = true;
+  });
+}
+
+Future<void> _toggleMode() async {
+  if (_isLoading) return;
+  
+  setState(() {
+    _isLoading = true;
+    _feedback = _measurementMode 
+        ? "Cambiando a modo luz..." 
+        : "Cambiando a modo medición...";
+  });
+  
+  try {
+    // Hacer una pausa para liberar recursos
+    await Future.delayed(Duration(milliseconds: 200));
+    
+    // Cambiar el modo
+    _measurementMode = !_measurementMode;
+    
+    // Asegurar que ARKit y la cámara se liberan adecuadamente
+    if (_measurementMode) {
+      // Cambiar a modo medición
+      if (_cameraController != null && _cameraController!.value.isStreamingImages) {
+        try {
+          await _cameraController!.stopImageStream();
+          await Future.delayed(Duration(milliseconds: 200));
+        } catch (e) {
+          print("Error al detener stream en cambio de modo: $e");
+        }
+      }
+      await _startMeasurementMode();
+    } else {
+      // Cambiar a modo luz
+      if (_arkitController != null) {
+        for (final node in _measurementNodes) {
+          try {
+            _arkitController?.remove(node.name);
+          } catch (e) {
+            print("Error al eliminar nodo ARKit: $e");
+          }
+        }
+        _measurementNodes.clear();
+        _lastPosition = null;
+        _currentMeasurement = '';
+      }
+      await Future.delayed(Duration(milliseconds: 300));
+      await _startLightMode();
+    }
+  } catch (e) {
+    print("❌ Error en _toggleMode: $e");
+    setState(() {
+      _feedback = "Error al cambiar modo: ${e.toString().substring(0, 50)}";
+    });
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
+}
+
 
   Future<bool> _checkLiDARSupport() async {
     try {
       final deviceInfo = DeviceInfoPlugin();
       final iosInfo = await deviceInfo.iosInfo;
 
-      print("Modelo de dispositivo: ${iosInfo.model}");
-      print("Todos los detalles del dispositivo: ${iosInfo.toString()}");
+      print("📱 Modelo de dispositivo: ${iosInfo.model}");
 
       final String model = iosInfo.modelName;
 
@@ -199,224 +338,159 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
               int.tryParse(model.split(' ').last) != null &&
               int.parse(model.split(' ').last) >= 2020);
 
-      print("¿Dispositivo compatible con LiDAR según modelo? $hasLiDAR");
+      print("¿Dispositivo compatible con LiDAR? $hasLiDAR");
       print("Modelo detectado: $model");
 
       return hasLiDAR;
     } catch (e) {
-      print("Error detallado al verificar soporte LiDAR: $e");
+      print("❌ Error detallado al verificar soporte LiDAR: $e");
       return false;
     }
   }
 
   void _processCameraImage(CameraImage image) {
-    // Throttling para sensor de luz: procesa solo cada 100 ms
-    final now = DateTime.now();
-    if (_lastLightUpdate != null &&
-        now.difference(_lastLightUpdate!) < Duration(milliseconds: 1000)) {
-      return;
-    }
-    _lastLightUpdate = now;
-
-    if (image.planes.isEmpty || _isProcessingImage || !mounted) return;
-    _isProcessingImage = true;
-
-    try {
-      double averageLuminance = 0.0;
-      int count = 0;
-
-      if (image.format.group == ImageFormatGroup.yuv420) {
-        final plane = image.planes[0];
-        for (int i = 0; i < plane.bytes.length; i += 10) {
-          averageLuminance += plane.bytes[i];
-          count++;
-        }
-      } else if (image.format.group == ImageFormatGroup.bgra8888) {
-        final plane = image.planes[0];
-        // Se muestrea cada 10 píxeles (cada píxel ocupa 4 bytes)
-        for (int i = 0; i < plane.bytes.length; i += 40) {
-          int b = plane.bytes[i];
-          int g = plane.bytes[i + 1];
-          int r = plane.bytes[i + 2];
-          int brightness = ((r + g + b) ~/ 3);
-          averageLuminance += brightness;
-          count++;
-        }
-      }
-
-      if (count > 0) {
-        averageLuminance = averageLuminance / count;
-      }
-      final double normalizedLightLevel = averageLuminance / 255.0;
-
-      if (mounted) {
-        setState(() {
-          _lightLevel = normalizedLightLevel;
-          // Actualiza feedback del sensor de luz
-          if (normalizedLightLevel < 0.2) {
-            _feedback = "Too dark, add more light";
-          } else if (normalizedLightLevel > 0.8) {
-            _feedback = "Too bright, reduce light";
-          } else {
-            _feedback = "Good lighting";
-          }
-        });
-      }
-    } catch (e) {
-      print("Error processing camera image: $e");
-    } finally {
-      _isProcessingImage = false;
-    }
+  // Throttling para reducir procesamiento
+  final now = DateTime.now();
+  if (_lastLightUpdate != null && 
+      now.difference(_lastLightUpdate!).inMilliseconds < 500) {
+    return;
   }
+  _lastLightUpdate = now;
+  
+  // Usar el servicio de luz para procesar la imagen
+  _lightSensorService.processCameraImage(image);
+  
+  // Actualizar UI con los resultados del sensor de manera explícita
+  if (mounted) {
+    setState(() {
+      // Obtener valor actual del notificador
+      final lightFeedback = _lightSensorService.feedbackNotifier.value;
+      _feedback = lightFeedback;
+      
+      // Imprimir para diagnóstico
+      print("📊 UI Feedback actualizado: $_feedback");
+    });
+  }
+}
 
   void _onARKitViewCreated(ARKitController controller) {
-    print("ARKit controller creado - esperando detección de planos");
-    print("_hasLiDAR: $_hasLiDAR");
+    print("🔍 ARKit controller creado");
     _arkitController = controller;
 
     if (mounted) {
       setState(() {
-        _feedback = "Apunta a una superficie plana cercana";
+        _feedback = "Toca para empezar a medir";
       });
     }
 
-    print("ARKit controller inicializado correctamente");
-
-    try {
-      print("ARKit configurado para detección de planos cercanos");
-    } catch (e) {
-      print("Error en configuración inicial de ARKit: $e");
-    }
-
-    try {
-      controller.onAddNodeForAnchor = (ARKitAnchor anchor) {
-        print("ARKit: Se detectó una ancla de tipo: ${anchor.runtimeType}");
-        if (anchor is ARKitPlaneAnchor) {
-          try {
-            _updateDistanceFeedback(anchor);
-            if (mounted) {
-              setState(() {
-                _feedback =
-                    "Superficie detectada a ${_distanceToObject?.toStringAsFixed(2)}m";
-              });
-            }
-            _addPlaneNode(anchor);
-          } catch (e) {
-            print("Error al procesar plano detectado: $e");
-          }
-        }
-      };
-
-      controller.onUpdateNodeForAnchor = (ARKitAnchor anchor) {
-        try {
-          if (anchor is ARKitPlaneAnchor && mounted) {
-            _updateDistanceFeedback(anchor);
-          }
-        } catch (e) {
-          print("Error al actualizar plano: $e");
-        }
-      };
-
-      controller.onError = (dynamic error) {
-        print("Error de ARKit: $error");
-        if (mounted) {
-          setState(() {
-            _feedback = "Error de ARKit: $error";
-          });
-        }
-      };
-    } catch (e) {
-      print("Error al configurar callbacks de ARKit: $e");
-    }
-  }
-
-  void _performPeriodicMeasurement() {
-    // Throttling para LiDAR: procesa solo cada 500 ms
-    final now = DateTime.now();
-    if (_lastLidarUpdate != null &&
-        now.difference(_lastLidarUpdate!) < Duration(milliseconds: 500)) {
-      return;
-    }
-    _lastLidarUpdate = now;
-
-    if (_arkitController == null || !mounted) return;
-
-    try {
-      _arkitController!.performHitTest(x: 0.5, y: 0.5).then((results) {
-        if (results.isNotEmpty) {
-          final hitResult = results.first;
-          final distance = hitResult.worldTransform.getColumn(3).z.abs();
-
-          if (mounted) {
-            setState(() {
-              _distanceToObject = distance;
-              if (distance < 0.3) {
-                _feedback = "Demasiado cerca del objeto";
-              } else if (distance > 1.5) {
-                _feedback = "Acércate más al objeto";
-              } else {
-                _feedback = "¡Distancia perfecta! Puedes tomar la foto";
-              }
-            });
-          }
-        }
-      }).catchError((e) {
-        print("Error en hitTest: $e");
-      });
-    } catch (e) {
-      print("Error en medición periódica: $e");
-    }
-  }
-
-  void _updateDistanceFeedback(ARKitPlaneAnchor anchor) {
-    try {
-      final Vector4 column = anchor.transform.getColumn(3);
-      final double distance = column.z.abs();
-
-      if (distance > 0 && distance < 5.0 && mounted) {
-        setState(() {
-          _distanceToObject = distance;
-          if (distance < 0.3) {
-            _feedback = "Demasiado cerca del objeto";
-          } else if (distance > 1.5) {
-            _feedback = "Acércate más al objeto";
-          } else {
-            _feedback = "¡Distancia perfecta! Puedes tomar la foto";
-          }
-        });
+    // Configurar el detector de toques
+    controller.onARTap = (List<ARKitTestResult> ar) {
+      final ARKitTestResult? point = ar.firstWhereOrNull(
+        (o) => o.type == ARKitHitTestResultType.featurePoint,
+      );
+      
+      if (point != null) {
+        _onARTapHandler(point);
       }
-    } catch (e) {
-      print("Error en _updateDistanceFeedback: $e");
-    }
+    };
   }
 
-  void _addPlaneNode(ARKitPlaneAnchor anchor) {
-    if (_arkitController == null) return;
-    try {
-      try {
-        _arkitController!.removeAnchor(anchor.identifier);
-      } catch (_) {}
-      final material = ARKitMaterial(
-        diffuse: ARKitMaterialProperty.color(
-          Color.fromRGBO(30, 150, 255, 0.5),
-        ),
-        doubleSided: true,
+  void _onARTapHandler(ARKitTestResult point) {
+    final position = Vector3(
+      point.worldTransform.getColumn(3).x,
+      point.worldTransform.getColumn(3).y,
+      point.worldTransform.getColumn(3).z,
+    );
+
+    // Crear una esfera en el punto tocado
+    final material = ARKitMaterial(
+      lightingModelName: ARKitLightingModel.constant,
+      diffuse: ARKitMaterialProperty.color(CupertinoColors.activeBlue),
+    );
+    
+    final sphere = ARKitSphere(
+      radius: 0.006,
+      materials: [material],
+    );
+    
+    final node = ARKitNode(
+      geometry: sphere,
+      position: position,
+    );
+    
+    _arkitController?.add(node);
+    _measurementNodes.add(node);
+
+    // Si ya tenemos un punto anterior, dibujar una línea entre los puntos
+    if (_lastPosition != null) {
+      final line = ARKitLine(
+        fromVector: _lastPosition!,
+        toVector: position,
       );
-      final plane = ARKitPlane(
-        width: anchor.extent.x,
-        height: anchor.extent.z,
-        materials: [material],
-      );
-      final planeNode = ARKitNode(
-        geometry: plane,
-        position: Vector3(anchor.center.x, 0, anchor.center.z),
-        eulerAngles: Vector3(3.14 / 2, 0, 0),
-      );
-      _arkitController!.add(planeNode, parentNodeName: anchor.nodeName);
-      print("Nodo de plano añadido para visualizar superficie detectada");
-    } catch (e) {
-      print("Error al añadir nodo de plano: $e");
+      
+      final lineNode = ARKitNode(geometry: line);
+      _arkitController?.add(lineNode);
+      _measurementNodes.add(lineNode);
+
+      // Calcular y mostrar la distancia
+      final distance = _calculateDistanceBetweenPoints(position, _lastPosition!);
+      final midPoint = _getMiddleVector(position, _lastPosition!);
+      _drawText(distance, midPoint);
+      
+      setState(() {
+        _currentMeasurement = distance;
+      });
     }
+
+    _lastPosition = position;
+  }
+
+  String _calculateDistanceBetweenPoints(Vector3 a, Vector3 b) {
+    final length = a.distanceTo(b);
+    return '${(length * 100).toStringAsFixed(2)} cm';
+  }
+
+  Vector3 _getMiddleVector(Vector3 a, Vector3 b) {
+    return Vector3((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+  }
+
+  void _drawText(String text, Vector3 point) {
+    final textGeometry = ARKitText(
+      text: text,
+      extrusionDepth: 1,
+      materials: [
+        ARKitMaterial(
+          diffuse: ARKitMaterialProperty.color(CupertinoColors.systemRed),
+        )
+      ],
+    );
+    
+    const scale = 0.001;
+    final vectorScale = Vector3(scale, scale, scale);
+    
+    final node = ARKitNode(
+      geometry: textGeometry,
+      position: point,
+      scale: vectorScale,
+    );
+    
+    _arkitController?.add(node);
+    _measurementNodes.add(node);
+  }
+
+  void _clearMeasurements() {
+    _lastPosition = null;
+    
+    for (final node in _measurementNodes) {
+      _arkitController?.remove(node.name);
+    }
+    
+    _measurementNodes.clear();
+    
+    setState(() {
+      _currentMeasurement = '';
+      _feedback = "Toca para empezar a medir";
+    });
   }
 
  Future<void> _takePicture() async {
@@ -426,245 +500,407 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
 
   setState(() {
     _takingPicture = true;
-    _showARKitOverlay = false;
+    _feedback = "Capturando imagen...";
   });
 
+  // Valores para guardar el estado actual y restaurarlo después
+  final bool wasMeasurementMode = _measurementMode;
+  final bool wasARKitVisible = _showARKitOverlay;
+
   try {
-    await _cameraController!.stopImageStream(); // 👈 Detenemos el stream
-    await Future.delayed(Duration(milliseconds: 300)); // 👈 Pequeña espera para asegurar el frame se actualice
+    // 1. Bloquear temporalmente tanto ARKit como el análisis de luz
+    setState(() {
+      _showARKitOverlay = false;
+    });
+    
+    // 2. Esperar a que la UI se actualice
+    await Future.delayed(Duration(milliseconds: 100));
+    
+    // 3. Método especial para liberar recursos de modo seguro antes de capturar
+    await _safelyPrepareForCapture();
+    
+    // 4. Tomar la foto
+    print("📸 Tomando foto...");
+    final XFile? photo = await _tryTakePictureWithRetry();
+    if (photo == null) {
+      throw Exception("No se pudo capturar la imagen después de varios intentos");
+    }
+    print("✅ Foto tomada correctamente");
 
-    final XFile photo = await _cameraController!.takePicture();
-
+    // 5. Procesar la imagen
     final Directory appDir = await getApplicationDocumentsDirectory();
     final String fileName = 'product_${DateTime.now().millisecondsSinceEpoch}.jpg';
     final String filePath = path.join(appDir.path, fileName);
 
+    print("💾 Guardando imagen en $filePath");
     final File savedImage = File(photo.path);
     final File newFile = await savedImage.copy(filePath);
+    print("✅ Imagen guardada");
 
-    setState(() {
-      _capturedImage = newFile;
-    });
+    // 6. Actualizar UI con la imagen capturada
+    if (mounted) {
+      setState(() {
+        _capturedImage = newFile;
+      });
+    }
   } catch (e) {
-    print("Error al tomar la foto: $e");
-    setState(() {
-      _feedback = "Error taking picture: $e";
-    });
+    print("❌ Error detallado al tomar la foto: $e");
+    print("Stack trace: ${StackTrace.current}");
+    
+    if (mounted) {
+      setState(() {
+        // Manejo seguro del mensaje de error para evitar errores de rango
+        String errorMessage = e.toString();
+        _feedback = "Error: " + (errorMessage.length > 40 ? 
+            errorMessage.substring(0, 40) + "..." : errorMessage);
+      });
+      
+      // Restaurar modo anterior tras el error
+      _safelyRestorePreviousMode(wasMeasurementMode, wasARKitVisible);
+    }
   } finally {
-    _takingPicture = false;
+    if (mounted) {
+      setState(() {
+        _takingPicture = false;
+      });
+    }
   }
 }
 
-
-  Future<String?> _uploadImage() async {
-    if (_capturedImage == null) {
-      setState(() {
-        _feedback = "No image to upload";
-      });
-      return null;
-    }
-    try {
-      setState(() {
-        _isLoading = true;
-      });
-      final downloadUrl =
-          await _storageService.uploadProductImage(_capturedImage!);
-      setState(() {
-        _isLoading = false;
-      });
-      return downloadUrl;
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _feedback = "Error uploading image: $e";
-      });
-      return null;
-    }
-  }
-
-  void _resetImage() {
+// El método _uploadImage debe estar al mismo nivel que _takePicture, no anidado dentro de él:
+Future<String?> _uploadImage() async {
+  if (_capturedImage == null) {
     setState(() {
-      _capturedImage = null;
-      // Reactivar overlay para volver a la vista en vivo
-      _showARKitOverlay = true;
+      _feedback = "No image to upload";
     });
+    return null;
   }
-
-  Color _getDistanceColor(double? distance) {
-    if (distance == null) return CupertinoColors.systemGrey;
-    if (distance < 0.3) return CupertinoColors.systemRed;
-    if (distance > 1.5) return CupertinoColors.systemOrange;
-    return CupertinoColors.activeGreen;
+  try {
+    setState(() {
+      _isLoading = true;
+    });
+    final downloadUrl =
+        await _storageService.uploadProductImage(_capturedImage!);
+    setState(() {
+      _isLoading = false;
+    });
+    return downloadUrl;
+  } catch (e) {
+    setState(() {
+      _isLoading = false;
+      _feedback = "Error uploading image: $e";
+    });
+    return null;
   }
+}
 
-  Color _getLightLevelColor(double lightLevel) {
-    if (lightLevel < 0.2) return CupertinoColors.systemRed;
-    if (lightLevel > 0.8) return CupertinoColors.systemOrange;
-    return CupertinoColors.activeGreen;
+// Nuevo método para intentar tomar una foto con reintentos
+Future<XFile?> _tryTakePictureWithRetry() async {
+  XFile? photo;
+  int attempts = 0;
+  const maxAttempts = 3;
+
+  while (attempts < maxAttempts && photo == null) {
+    try {
+      attempts++;
+      print("📸 Intento $attempts de tomar foto");
+      
+      // Si no es el primer intento, esperar un poco más
+      if (attempts > 1) {
+        await Future.delayed(Duration(milliseconds: 800));
+      }
+      
+      photo = await _cameraController!.takePicture();
+      return photo;
+    } catch (e) {
+      print("⚠️ Error en intento $attempts: $e");
+      
+      // Si es el error específico de iOS "Cannot Record", intentar reiniciar la cámara
+      if (e.toString().contains("Cannot Record") && attempts < maxAttempts) {
+        print("🔄 Intentando recuperar la cámara...");
+        try {
+          // Liberar y reiniciar la cámara entre intentos
+          await _quickCameraReset();
+        } catch (resetError) {
+          print("⚠️ Error al reiniciar: $resetError");
+        }
+      }
+    }
   }
+  
+  return null; // No se pudo tomar la foto después de varios intentos
+}
 
-  @override
-  Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(
-          "Take Product Photo",
-          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          child: const Icon(CupertinoIcons.back),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      child: SafeArea(
-        child: _isLoading
-            ? const Center(child: CupertinoActivityIndicator())
-            : _capturedImage != null
-                ? _buildImagePreview()
-                : _buildCameraView(),
+// Nuevo método para preparar la cámara de manera segura antes de capturar
+Future<void> _safelyPrepareForCapture() async {
+  try {
+    // Detener todos los procesos que puedan interferir con la captura
+    if (_arkitController != null) {
+      // No intentar eliminar nodos, solo ocultar ARKit
+      print("🔍 Pausando ARKit para captura");
+    }
+    
+    // Detener cualquier stream de cámara activo
+    if (_cameraController != null && _cameraController!.value.isStreamingImages) {
+      try {
+        await _cameraController!.stopImageStream();
+        print("📷 Stream de cámara detenido para foto");
+      } catch (e) {
+        print("⚠️ Advertencia al detener stream: $e");
+        // Continuar incluso si hay error
+      }
+    }
+    
+    // Pausa para asegurar que los recursos están liberados
+    await Future.delayed(Duration(milliseconds: 500));
+    
+  } catch (e) {
+    print("⚠️ Error preparando cámara: $e");
+    // No relanzar error, intentar tomar la foto de todos modos
+  }
+}
+
+ // 4. Mejora al método de reinicio de imagen para mayor robustez
+void _resetImage() {
+  if (_isLoading) return;
+  
+  setState(() {
+    _capturedImage = null;
+    _isLoading = true;
+    _feedback = "Reiniciando cámara...";
+  });
+
+  
+  // Usar un enfoque más seguro para la reinicialización
+  Future.microtask(() async {
+    try {
+      // 1. Detener todos los procesos activos
+      if (_cameraController != null) {
+        if (_cameraController!.value.isStreamingImages) {
+          try {
+            await _cameraController!.stopImageStream();
+            await Future.delayed(Duration(milliseconds: 100));
+          } catch (e) {
+            print("Error al detener stream: $e");
+          }
+        }
+        
+        try {
+          await _cameraController!.dispose();
+        } catch (e) {
+          print("Error al liberar cámara: $e");
+        }
+        _cameraController = null;
+      }
+      
+      if (_arkitController != null) {
+        try {
+          _arkitController!.dispose();
+        } catch (e) {
+          print("Error al liberar ARKit: $e");
+        }
+        _arkitController = null;
+        _arKitView = null;
+      }
+      
+      // 2. Limpiar estado
+      _measurementNodes.clear();
+      _lastPosition = null;
+      _currentMeasurement = '';
+      
+      // 3. Esperar antes de reiniciar
+      await Future.delayed(Duration(milliseconds: 500));
+      
+      // 4. Reiniciar cámara desde cero
+      await _initializeCamera();
+      
+      // 5. Restaurar el modo previo
+      if (mounted) {
+        setState(() {
+          if (_measurementMode) {
+            _showARKitOverlay = true;
+            Future.microtask(() => _startMeasurementMode());
+          } else {
+            _showARKitOverlay = false;
+          }
+        });
+      }
+    } catch (e) {
+      print("Error durante reinicio: $e");
+      if (mounted) {
+        setState(() {
+          _feedback = "Error al reiniciar. Intenta de nuevo.";
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  });
+}
+
+// Método para un reinicio rápido de la cámara
+Future<void> _quickCameraReset() async {
+  try {
+    final cameras = await availableCameras();
+    final backCamera = cameras.firstWhere(
+      (camera) => camera.lensDirection == CameraLensDirection.back,
+      orElse: () => cameras.first,
+    );
+    
+    // Liberar cámara actual
+    if (_cameraController != null) {
+      await _cameraController!.dispose();
+    }
+    
+    // Pequeña pausa
+    await Future.delayed(Duration(milliseconds: 300));
+    
+    // Crear nueva instancia de cámara
+    _cameraController = CameraController(
+      backCamera,
+      ResolutionPreset.high,
+      enableAudio: false,
+      imageFormatGroup: Platform.isIOS
+          ? ImageFormatGroup.bgra8888
+          : ImageFormatGroup.yuv420,
+    );
+    
+    // Inicializar (sin iniciar streaming)
+    await _cameraController!.initialize();
+    await Future.delayed(Duration(milliseconds: 200));
+    
+  } catch (e) {
+    print("❌ Error en reinicio rápido de cámara: $e");
+    // Permitir que el error se propague
+    throw e;
+  }
+}
+
+Future<void> _safelyRestorePreviousMode(bool wasMeasurementMode, bool wasARKitVisible) async {
+  try {
+    if (wasMeasurementMode) {
+      // Esperar un poco para evitar conflictos
+      await Future.delayed(Duration(milliseconds: 300));
+      setState(() { 
+        _showARKitOverlay = wasARKitVisible;
+        _measurementMode = true;
+        _feedback = "Modo medición restaurado";
+      });
+    } else {
+      // Restaurar modo luz
+      setState(() { 
+        _showARKitOverlay = false;
+        _measurementMode = false; 
+      });
+      
+      // Intentar reiniciar el stream de luz después de un momento
+      Future.delayed(Duration(milliseconds: 500), () async {
+        try {
+          if (_cameraController != null && 
+              _cameraController!.value.isInitialized && 
+              !_cameraController!.value.isStreamingImages) {
+            await _cameraController!.startImageStream(_processCameraImage);
+            if (mounted) setState(() { 
+              _feedback = "Modo luz restaurado";
+            });
+          }
+        } catch (e) {
+          print("Error al restaurar stream de luz: $e");
+          if (mounted) setState(() {
+            _feedback = "Error al restaurar modo luz";
+          });
+        }
+      });
+    }
+  } catch (e) {
+    print("Error al restaurar modo: $e");
+  }
+}
+
+  Widget _buildCameraView() {
+  if (!_isInitialized || _cameraController == null) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text("Camera not available"),
+          const SizedBox(height: 20),
+          CupertinoButton(
+            child: const Text("Try Again"),
+            onPressed: _initializeCamera,
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildCameraView() {
-    if (!_isInitialized || _cameraController == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text("Camera not available"),
-            const SizedBox(height: 20),
-            CupertinoButton(
-              child: const Text("Try Again"),
-              onPressed: _initializeCamera,
-            ),
-          ],
-        ),
-      );
-    }
+  // Obtener valores del sensor de luz
+  final lightLevel = _lightSensorService.lightLevelNotifier.value;
+  final lightColor = _lightSensorService.getLightLevelColor(lightLevel);
+  final lightFeedback = _lightSensorService.feedbackNotifier.value;
 
-    return Stack(
-      children: [
+  return Stack(
+    children: [
+      // Vista de la cámara
+      Positioned.fill(
+        child: AspectRatio(
+          aspectRatio: _cameraController!.value.aspectRatio,
+          child: CameraPreview(_cameraController!),
+        ),
+      ),
+      
+      // Vista de ARKit para medición (solo visible en modo medición)
+      if (_hasLiDAR && _arKitView != null && _showARKitOverlay && _measurementMode)
         Positioned.fill(
-          child: AspectRatio(
-            aspectRatio: _cameraController!.value.aspectRatio,
-            child: CameraPreview(_cameraController!),
-          ),
+          child: _arKitView!,
         ),
-        // Solo mostrar el overlay de ARKit si está activo y si la foto no fue capturada
-        if (_hasLiDAR && _arKitView != null && _showARKitOverlay)
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.05,
-              child: _arKitView!,
-            ),
-          ),
-        Positioned(
-          top: 0,
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: Container(
-              width: 60,
-              height: 60,
+      
+      // Indicadores superiores
+      Positioned(
+        top: 16,
+        left: 0,
+        right: 0,
+        child: Column(
+          children: [
+            // Indicador de modo actual
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                border: Border.all(
-                  color: _getDistanceColor(_distanceToObject),
-                  width: 2.0,
-                ),
-                shape: BoxShape.circle,
+                color: _measurementMode 
+                    ? CupertinoColors.activeBlue.withOpacity(0.7)
+                    : lightColor.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: Center(
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: _getDistanceColor(_distanceToObject),
-                    shape: BoxShape.circle,
-                  ),
+              child: Text(
+                _measurementMode 
+                    ? 'Modo: Medición'
+                    : 'Modo: Luz - ${(lightLevel * 100).toStringAsFixed(0)}%',
+                style: GoogleFonts.inter(
+                  color: CupertinoColors.white,
+                  fontWeight: FontWeight.bold,
                 ),
+                textAlign: TextAlign.center,
               ),
             ),
-          ),
-        ),
-        Positioned(
-          top: 16,
-          left: 0,
-          right: 0,
-          child: Column(
-            children: [
-              if (_distanceToObject != null)
-                Container(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color:
-                        _getDistanceColor(_distanceToObject).withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: CupertinoColors.white,
-                      width: 1.0,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _distanceToObject! < 0.3
-                            ? CupertinoIcons.arrow_left
-                            : _distanceToObject! > 1.5
-                                ? CupertinoIcons.arrow_right
-                                : CupertinoIcons.checkmark_circle,
-                        color: CupertinoColors.white,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Distancia: ${_distanceToObject!.toStringAsFixed(2)}m',
-                        style: GoogleFonts.inter(
-                          color: CupertinoColors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
+            
+            // Estado de LiDAR (solo visible si está disponible)
+            if (_hasLiDAR)
               Container(
-                margin:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _getLightLevelColor(_lightLevel).withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  'Light: ${(_lightLevel * 100).toStringAsFixed(0)}%',
-                  style: GoogleFonts.inter(
-                    color: CupertinoColors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              Container(
-                margin:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: CupertinoColors.black.withOpacity(0.7),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  _hasLiDAR
-                      ? "LiDAR activo: Midiendo distancia..."
-                      : "LiDAR no disponible",
+                  _measurementMode
+                      ? "LiDAR activo: Modo medición"
+                      : "LiDAR disponible",
                   style: GoogleFonts.inter(
                     color: CupertinoColors.white,
                     fontWeight: FontWeight.bold,
@@ -672,127 +908,152 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
                   textAlign: TextAlign.center,
                 ),
               ),
-              if (_feedback.isNotEmpty)
-                Container(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _feedback.contains("erfecta") ||
-                            _feedback.contains("Good")
-                        ? CupertinoColors.activeGreen.withOpacity(0.7)
-                        : _feedback.contains("Error")
-                            ? CupertinoColors.destructiveRed.withOpacity(0.7)
-                            : CupertinoColors.activeOrange.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: CupertinoColors.white,
-                      width: 1.0,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: CupertinoColors.black.withOpacity(0.2),
-                        spreadRadius: 1,
-                        blurRadius: 3,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
+            
+            // Feedback y mediciones
+            if (_feedback.isNotEmpty || 
+                (_currentMeasurement.isNotEmpty && _measurementMode) || 
+                (lightFeedback.isNotEmpty && !_measurementMode))
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: CupertinoColors.activeOrange.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: CupertinoColors.white,
+                    width: 1.0,
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _feedback.contains("erfecta") ||
-                                _feedback.contains("Good")
-                            ? CupertinoIcons.camera_viewfinder
-                            : _feedback.contains("Error")
-                                ? CupertinoIcons.exclamationmark_triangle
-                                : CupertinoIcons.info_circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: CupertinoColors.black.withOpacity(0.2),
+                      spreadRadius: 1,
+                      blurRadius: 3,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _measurementMode && _currentMeasurement.isNotEmpty
+                          ? CupertinoIcons.scope
+                          : CupertinoIcons.info_circle,
+                      color: CupertinoColors.white,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _measurementMode && _currentMeasurement.isNotEmpty
+                          ? "Medición: $_currentMeasurement"
+                          : (_feedback.isNotEmpty ? _feedback : 
+                             !_measurementMode ? lightFeedback : ""),
+                      style: GoogleFonts.inter(
                         color: CupertinoColors.white,
-                        size: 16,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _feedback,
-                        style: GoogleFonts.inter(
-                          color: CupertinoColors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+      
+      // Botones inferiores
+      Positioned(
+        left: 0,
+        right: 0,
+        bottom: 32,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            // Botón de cambio de modo (Nuevo)
+            GestureDetector(
+              onTap: _isLoading ? null : _toggleMode,
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: _measurementMode 
+                      ? CupertinoColors.activeBlue
+                      : lightColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: CupertinoColors.white,
+                    width: 2,
                   ),
                 ),
-            ],
-          ),
-        ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 32,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              GestureDetector(
-                onTap: _takingPicture ? null : _takePicture,
-                child: Container(
-                  width: 70,
-                  height: 70,
-                  decoration: BoxDecoration(
-                    color: CupertinoColors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppColors.primaryBlue,
-                      width: 3,
-                    ),
+                child: Icon(
+                  _measurementMode 
+                      ? CupertinoIcons.lightbulb
+                        : CupertinoIcons.arrow_2_circlepath,
+                  color: CupertinoColors.white,
+                  size: 25,
+                ),
+              ),
+            ),
+            
+            // Botón de foto
+            GestureDetector(
+              onTap: _takingPicture ? null : _takePicture,
+              child: Container(
+                width: 70,
+                height: 70,
+                decoration: BoxDecoration(
+                  color: CupertinoColors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.primaryBlue,
+                    width: 3,
                   ),
-                  child: _takingPicture
-                      ? const CupertinoActivityIndicator()
-                      : Center(
-                          child: Container(
-                            width: 60,
-                            height: 60,
-                            decoration: const BoxDecoration(
-                              color: AppColors.primaryBlue,
-                              shape: BoxShape.circle,
-                            ),
+                ),
+                child: _takingPicture
+                    ? const CupertinoActivityIndicator()
+                    : Center(
+                        child: Container(
+                          width: 60,
+                          height: 60,
+                          decoration: const BoxDecoration(
+                            color: AppColors.primaryBlue,
+                            shape: BoxShape.circle,
                           ),
                         ),
-                ),
+                      ),
               ),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _distanceToObject = null;
-                    _feedback = "Apunta a una superficie plana cercana";
-                  });
-                },
-                child: Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: CupertinoColors.darkBackgroundGray,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: CupertinoColors.white,
-                      width: 2,
+            ),
+            
+            // Botón de limpiar mediciones (solo visible en modo medición)
+            _measurementMode
+                ? GestureDetector(
+                    onTap: _clearMeasurements,
+                    child: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.darkBackgroundGray,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: CupertinoColors.white,
+                          width: 2,
+                        ),
+                      ),
+                      child: Icon(
+                        CupertinoIcons.refresh,
+                        color: CupertinoColors.white,
+                        size: 25,
+                      ),
                     ),
-                  ),
-                  child: Icon(
-                    CupertinoIcons.refresh,
-                    color: CupertinoColors.white,
-                    size: 25,
-                  ),
-                ),
-              ),
-            ],
-          ),
+                  )
+                : SizedBox(width: 50), // Espacio vacío para mantener la distribución
+          ],
         ),
-      ],
-    );
-  }
+      ),
+    ],
+  );
+}
 
   Widget _buildImagePreview() {
     return Column(
@@ -815,8 +1076,7 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               CupertinoButton(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 color: CupertinoColors.darkBackgroundGray,
                 child: Text(
                   "Retake",
@@ -825,24 +1085,56 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
                 onPressed: _resetImage,
               ),
               CupertinoButton(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                color: AppColors.primaryBlue,
-                child: Text(
-                  "Use Photo",
-                  style: GoogleFonts.inter(color: CupertinoColors.white),
-                ),
-                onPressed: () async {
-                  if (_capturedImage == null) return;
-                  final downloadUrl = await _uploadImage();
-                  widget.onImageCaptured(_capturedImage!, downloadUrl);
-                  Navigator.of(context).pop();
-                },
-              ),
+  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+  color: AppColors.primaryBlue,
+  child: Text(
+    "Use Photo",
+    style: GoogleFonts.inter(color: CupertinoColors.white),
+  ),
+  onPressed: () async {
+    if (_capturedImage == null) return;
+    
+    setState(() {
+      _isLoading = true; // Show loading indicator
+    });
+    
+    final downloadUrl = await _uploadImage();
+    
+    // Call the callback and ensure navigation happens
+    widget.onImageCaptured(_capturedImage!, downloadUrl);
+    
+    // Explicitly pop with a slight delay to ensure the callback completes
+    await Future.delayed(Duration(milliseconds: 100));
+    if (mounted) Navigator.of(context).pop();
+  },
+),
             ],
           ),
         ),
       ],
     );
   }
+  @override
+Widget build(BuildContext context) {
+  return CupertinoPageScaffold(
+    navigationBar: CupertinoNavigationBar(
+      middle: Text(
+        "Take Product Photo",
+        style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+      ),
+      leading: CupertinoButton(
+        padding: EdgeInsets.zero,
+        child: const Icon(CupertinoIcons.back),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+    ),
+    child: SafeArea(
+      child: _isLoading
+          ? const Center(child: CupertinoActivityIndicator())
+          : _capturedImage != null
+              ? _buildImagePreview()  // Aquí está el problema, no tiene guion bajo
+              : _buildCameraView(),
+    ),
+  );
+}
 }
