@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:unimarket/screens/product/product_upload.dart';
 import 'package:unimarket/widgets/buttons/floating_action_button_factory.dart';
@@ -13,6 +11,7 @@ import 'package:unimarket/models/product_model.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/screens/product/product_detail_screen.dart';
 import 'package:unimarket/screens/search/search_screen.dart';
+import 'package:unimarket/services/product_cache_service.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -23,37 +22,34 @@ class ExploreScreen extends StatefulWidget {
 
 class ExploreScreenState extends State<ExploreScreen> {
   final ProductService _productService = ProductService();
+  final ProductCacheService _cacheService = ProductCacheService();
   List<ProductModel> _allProducts = [];
   List<ProductModel> _filteredProducts = [];
-  bool _isLoading = true;
+  bool _isLoadingFiltered = false;  // Carga separada para productos personalizados
+  bool _isLoadingAll = true;         // Carga separada para todos los productos
   bool _isConnected = true;
   final Connectivity _connectivity = Connectivity();
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   @override
-  void initState() {
-    super.initState();
+void initState() {
+  super.initState();
+  
+  // Para evitar MissingPluginException, inicializar después del primer frame
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _checkConnectivity();
+    _setupConnectivityListener();
     
-    // Para evitar MissingPluginException, inicializar después del primer frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkConnectivity();
-      _setupConnectivityListener();
+    // Forzar la carga de All Products después de un breve delay
+    // para dar tiempo a la UI de renderizarse primero
+    Future.delayed(Duration(milliseconds: 500), () {
+      _loadAllProducts();
     });
-    
-    // Cargar productos inmediatamente
-    _loadProductsFromCache().then((_) {
-      if (mounted) {
-        // Solo consultar la red si la caché está vacía
-        if (_allProducts.isEmpty) {
-          _loadProducts();
-        } else {
-          // La caché ya tiene datos, intentamos actualizar en segundo plano
-          _refreshProductsInBackground();
-        }
-      }
-    });
-  }
-
+  });
+  
+  // Primero cargar productos personalizados desde caché (alta prioridad)
+  _loadFilteredProductsFromCache();
+}
   @override
   void dispose() {
     _connectivitySubscription?.cancel();
@@ -100,154 +96,128 @@ class ExploreScreenState extends State<ExploreScreen> {
         _isConnected = isConnected;
       });
     
-      // If connection is restored, try to fetch fresh data in background
-      if (isConnected && !_isLoading) {
-        _refreshProductsInBackground();
+      // Si la conexión se restaura, intentar actualizar productos personalizados primero
+      if (isConnected && !_isLoadingFiltered) {
+        _refreshFilteredProducts();
       }
     }
   }
 
-  // Actualizar productos en segundo plano sin mostrar indicador de carga
-  Future<void> _refreshProductsInBackground() async {
-    if (!_isConnected) return;
+  // Cargar productos personalizados desde caché (rápido)
+  Future<void> _loadFilteredProductsFromCache() async {
+    if (_isLoadingFiltered) return;
+    
+    setState(() {
+      _isLoadingFiltered = true;
+    });
     
     try {
-      List<ProductModel> allProducts = await _productService.fetchAllProducts();
-      List<ProductModel> filteredProducts = await _productService.fetchProductsByMajor();
+      // Cargar productos personalizados desde caché
+      final cachedProducts = await _cacheService.loadFilteredProductsFromCache();
       
       if (mounted) {
         setState(() {
-          _allProducts = allProducts;
-          _filteredProducts = filteredProducts;
-          _isConnected = true;
+          _filteredProducts = cachedProducts;
+          _isLoadingFiltered = false;
         });
       }
       
-      // Guardar en caché
-      _saveProductsToCache();
-    } catch (e) {
-      print("Error refreshing products in background: $e");
-      // No cambiar el estado de conectividad ya que es una operación en segundo plano
-    }
-  }
-
-  // Get the local storage directory path
-  Future<String> get _localPath async {
-    final directory = await getApplicationDocumentsDirectory();
-    return directory.path;
-  }
-
-  // Path for cache files
-  Future<File> get _allProductsFile async {
-    final path = await _localPath;
-    return File('$path/all_products_cache.json');
-  }
-
-  Future<File> get _filteredProductsFile async {
-    final path = await _localPath;
-    return File('$path/filtered_products_cache.json');
-  }
-
-  // Save products to local cache
-  Future<void> _saveProductsToCache() async {
-    try {
-      final allProductsFile = await _allProductsFile;
-      final filteredProductsFile = await _filteredProductsFile;
-      
-      // Guardar todos los productos sin limitar a 20
-      await allProductsFile.writeAsString(jsonEncode(
-        _allProducts.map((product) => product.toJson()).toList()
-      ));
-      
-      await filteredProductsFile.writeAsString(jsonEncode(
-        _filteredProducts.map((product) => product.toJson()).toList()
-      ));
-      
-      print("Products saved to cache successfully");
-    } catch (e) {
-      print("Error saving products to cache: $e");
-    }
-  }
-
-  // Load products from local cache
-  Future<void> _loadProductsFromCache() async {
-    try {
-      final allProductsFile = await _allProductsFile;
-      final filteredProductsFile = await _filteredProductsFile;
-      
-      if (await allProductsFile.exists() && await filteredProductsFile.exists()) {
-        final allProductsStr = await allProductsFile.readAsString();
-        final allProductsJson = jsonDecode(allProductsStr) as List;
-        
-        final filteredProductsStr = await filteredProductsFile.readAsString();
-        final filteredProductsJson = jsonDecode(filteredProductsStr) as List;
-        
-        if (mounted) {
-          setState(() {
-            _allProducts = allProductsJson
-                .map((json) => ProductModel.fromJson(json as Map<String, dynamic>))
-                .toList();
-                
-            _filteredProducts = filteredProductsJson
-                .map((json) => ProductModel.fromJson(json as Map<String, dynamic>))
-                .toList();
-                
-            _isLoading = false;
-          });
-        }
-        
-        print("Products loaded from cache successfully");
-        return;
+      // Si no hay productos en caché o están vacíos, intentar cargar desde la red
+      if (cachedProducts.isEmpty && _isConnected) {
+        _refreshFilteredProducts();
       }
     } catch (e) {
-      print("Error loading products from cache: $e");
-    }
-    
-    // Si no hay caché o hay error, mantener la lista vacía
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+      print("Error loading filtered products from cache: $e");
+      if (mounted) {
+        setState(() {
+          _isLoadingFiltered = false;
+        });
+      }
     }
   }
-
-  Future<void> _loadProducts() async {
-    // No volver a cargar si ya está cargando
-    if (_isLoading) return;
+  
+  // Actualizar productos personalizados desde la red
+  Future<void> _refreshFilteredProducts() async {
+    if (_isLoadingFiltered || !_isConnected) return;
+    
+    setState(() {
+      _isLoadingFiltered = true;
+    });
+    
+    try {
+      // Cargar productos personalizados desde la red
+      final filteredProducts = await _productService.fetchProductsByMajor();
+      
+      // Guardar en caché y precargar imágenes
+      await _cacheService.saveFilteredProductsToCache(filteredProducts);
+      
+      if (mounted) {
+        setState(() {
+          _filteredProducts = filteredProducts;
+          _isLoadingFiltered = false;
+        });
+      }
+    } catch (e) {
+      print("Error refreshing filtered products: $e");
+      if (mounted) {
+        setState(() {
+          _isLoadingFiltered = false;
+        });
+      }
+    }
+  }
+  
+ // Corregir la verificación de conectividad para que no bloquee la carga
+// Método mejorado para cargar todos los productos
+Future<void> _loadAllProducts() async {
+  // No verificar conectividad ni si ya está cargando
+  print("_loadAllProducts(): Iniciando carga de todos los productos");
+  
+  setState(() {
+    _isLoadingAll = true;
+  });
+  
+  try {
+    // Usar un Future.delayed para asegurar que no hay problemas de concurrencia
+    await Future.delayed(Duration.zero);
+    
+    // Cargar todos los productos desde la red
+    final allProducts = await _productService.fetchAllProducts();
+    
+    print("_loadAllProducts(): Cargados ${allProducts.length} productos exitosamente");
     
     if (mounted) {
       setState(() {
-        _isLoading = true;
+        _allProducts = allProducts;
+        _isLoadingAll = false;
       });
     }
-    
-    try {
-      // Intentar cargar desde la red independientemente del estado de conectividad
-      List<ProductModel> allProducts = await _productService.fetchAllProducts();
-      List<ProductModel> filteredProducts = await _productService.fetchProductsByMajor();
-      
-      if (mounted) {
-        setState(() {
-          _allProducts = allProducts;
-          _filteredProducts = filteredProducts;
-          _isConnected = true; // Si llegamos aquí, confirmar que hay conexión
-          _isLoading = false;
-        });
-      }
-      
-      // Save fetched products to cache
-      _saveProductsToCache();
-    } catch (e) {
-      print("Error loading products from network: $e");
-      
-      // Marcar como desconectado si no podemos cargar datos
-      if (mounted) {
-        setState(() {
-          _isConnected = false;
-          _isLoading = false;
-        });
-      }
+  } catch (e) {
+    print("_loadAllProducts(): Error cargando productos: $e");
+    if (mounted) {
+      setState(() {
+        _isLoadingAll = false;
+      });
     }
+  }
+}
+
+ Future<void> _onRefresh() async {
+  print("_onRefresh(): Refrescando datos");
+  
+  // No verificar conectividad, siempre intentar refrescar
+  try {
+    // Refrescar productos personalizados
+    _refreshFilteredProducts();
+    
+    // Refrescar todos los productos
+    _loadAllProducts();
+    
+    // Esperar un poco para mostrar el indicador de refresh
+    await Future.delayed(Duration(milliseconds: 800));
+  } catch (e) {
+    print("_onRefresh(): Error al refrescar: $e");
+  }
   }
 
   String _formatPrice(double price) {
@@ -300,48 +270,92 @@ class ExploreScreenState extends State<ExploreScreen> {
     );
   }
   
-  // Improved image widget that properly handles different image sources
-  Widget _buildProductImage(ProductModel product) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey6,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: product.imageUrls.isNotEmpty
-            ? Image.network(
-                product.imageUrls.first,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-                errorBuilder: (context, error, stackTrace) {
-                  return SvgPicture.asset(
-                    "assets/svgs/ImagePlaceHolder.svg",
-                    fit: BoxFit.cover,
-                    width: double.infinity,
-                    height: double.infinity,
-                  );
-                },
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Center(
-                    child: CupertinoActivityIndicator(),
-                  );
-                },
-              )
-            : SvgPicture.asset(
-                "assets/svgs/ImagePlaceHolder.svg",
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-              ),
-      ),
-    );
-  }
-
+  
+  // Improved image widget that checks the local cache first
+ // Reemplaza el método _buildProductImage con esta versión corregida
+Widget _buildProductImage(ProductModel product) {
+  return Container(
+    width: double.infinity,
+    height: double.infinity,
+    decoration: BoxDecoration(
+      color: CupertinoColors.systemGrey6,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: product.imageUrls.isNotEmpty
+          ? Image.network(
+              product.imageUrls.first,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (context, error, stackTrace) {
+                print("Error loading image: $error");
+                return SvgPicture.asset(
+                  "assets/svgs/ImagePlaceHolder.svg",
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                );
+              },
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Center(
+                  child: CupertinoActivityIndicator(),
+                );
+              },
+            )
+          : SvgPicture.asset(
+              "assets/svgs/ImagePlaceHolder.svg",
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+    ),
+  );
+}
+// Añade este método para cargar las imágenes desde la red
+Widget _buildNetworkImage(ProductModel product) {
+  return Container(
+    width: double.infinity,
+    height: double.infinity,
+    decoration: BoxDecoration(
+      color: CupertinoColors.systemGrey6,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: product.imageUrls.isNotEmpty
+          ? Image.network(
+              product.imageUrls.first,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (context, error, stackTrace) {
+                print("Error cargando imagen: $error");
+                return SvgPicture.asset(
+                  "assets/svgs/ImagePlaceHolder.svg",
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                );
+              },
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Center(
+                  child: CupertinoActivityIndicator(),
+                );
+              },
+            )
+          : SvgPicture.asset(
+              "assets/svgs/ImagePlaceHolder.svg",
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+    ),
+  );
+}
   // Product card widget to avoid code duplication
   Widget _buildProductCard(ProductModel product) {
     return GestureDetector(
@@ -460,85 +474,103 @@ class ExploreScreenState extends State<ExploreScreen> {
                               color: AppColors.primaryBlue,
                             ),
                           ),
-                          onPressed: _loadProducts,
+                          onPressed: _onRefresh,
                         ),
                       ],
                     ),
                   ),
                 Expanded(
-                  child: _isLoading
-                      ? const Center(child: CupertinoActivityIndicator())
-                      : _allProducts.isEmpty
-                          ? Center(
+                  child: CustomScrollView(
+                    physics: const BouncingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
+                    ),
+                    slivers: [
+                      CupertinoSliverRefreshControl(
+                        onRefresh: _onRefresh,
+                      ),
+                      SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 20),
+                            // Sección de productos personalizados
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
                               child: Text(
-                                "No products available",
-                                style: GoogleFonts.inter(fontSize: 16),
+                                "Perfect for you",
+                                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
                               ),
-                            )
-                          : CustomScrollView(
-                              physics: const BouncingScrollPhysics(
-                                parent: AlwaysScrollableScrollPhysics(),
-                              ),
-                              slivers: [
-                                CupertinoSliverRefreshControl(
-                                  onRefresh: _loadProducts,
-                                ),
-                                SliverToBoxAdapter(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const SizedBox(height: 20),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                                        child: Text(
-                                          "Perfect for you",
-                                          style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                                        child: _filteredProducts.isEmpty
-                                            ? Center(
-                                                child: Padding(
-                                                  padding: const EdgeInsets.all(20.0),
-                                                  child: Text(
-                                                    "No personalized products found",
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: 14,
-                                                      color: CupertinoColors.systemGrey,
-                                                    ),
-                                                  ),
-                                                ),
-                                              )
-                                            : GridView.builder(
-                                                shrinkWrap: true,
-                                                physics: const NeverScrollableScrollPhysics(),
-                                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                                  crossAxisCount: 2,
-                                                  childAspectRatio: 0.9,
-                                                  crossAxisSpacing: 10,
-                                                  mainAxisSpacing: 10,
-                                                ),
-                                                itemCount: _filteredProducts.length,
-                                                itemBuilder: (context, index) {
-                                                  final product = _filteredProducts[index];
-                                                  return _buildProductCard(product);
-                                                },
+                            ),
+                            const SizedBox(height: 10),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              child: _isLoadingFiltered
+                                  ? Container(
+                                      height: 200,
+                                      alignment: Alignment.center,
+                                      child: const CupertinoActivityIndicator(),
+                                    )
+                                  : _filteredProducts.isEmpty
+                                      ? Center(
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(20.0),
+                                            child: Text(
+                                              "No personalized products found",
+                                              style: GoogleFonts.inter(
+                                                fontSize: 14,
+                                                color: CupertinoColors.systemGrey,
                                               ),
-                                      ),
-                                      const SizedBox(height: 20),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                                        child: Text(
-                                          "All",
-                                          style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        )
+                                      : GridView.builder(
+                                          shrinkWrap: true,
+                                          physics: const NeverScrollableScrollPhysics(),
+                                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                            crossAxisCount: 2,
+                                            childAspectRatio: 0.9,
+                                            crossAxisSpacing: 10,
+                                            mainAxisSpacing: 10,
+                                          ),
+                                          itemCount: _filteredProducts.length,
+                                          itemBuilder: (context, index) {
+                                            final product = _filteredProducts[index];
+                                            return _buildProductCard(product);
+                                          },
                                         ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                                        child: GridView.builder(
+                            ),
+                            const SizedBox(height: 20),
+                            // Sección de todos los productos
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              child: Text(
+                                "All",
+                                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              child: _isLoadingAll
+                                  ? Container(
+                                      height: 200,
+                                      alignment: Alignment.center,
+                                      child: const CupertinoActivityIndicator(),
+                                    )
+                                  : _allProducts.isEmpty
+                                      ? Center(
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(20.0),
+                                            child: Text(
+                                              "No products available",
+                                              style: GoogleFonts.inter(
+                                                fontSize: 14,
+                                                color: CupertinoColors.systemGrey,
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                      : GridView.builder(
                                           shrinkWrap: true,
                                           physics: const NeverScrollableScrollPhysics(),
                                           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -553,13 +585,13 @@ class ExploreScreenState extends State<ExploreScreen> {
                                             return _buildProductCard(product);
                                           },
                                         ),
-                                      ),
-                                      const SizedBox(height: 100),
-                                    ],
-                                  ),
-                                ),
-                              ],
                             ),
+                            const SizedBox(height: 100),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
