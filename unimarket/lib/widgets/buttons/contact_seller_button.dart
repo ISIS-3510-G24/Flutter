@@ -1,4 +1,3 @@
-// lib/widgets/buttons/contact_seller_button.dart
 import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/models/user_model.dart';
@@ -50,45 +49,68 @@ class _ContactSellerButtonState extends State<ContactSellerButton> {
     });
     
     try {
+      print('Attempting to contact seller: ${widget.sellerId}');
+      
+      // Get current user ID to confirm it's available
+      final currentUserId = _chatService.currentUserId;
+      if (currentUserId == null) {
+        throw Exception('Not logged in');
+      }
+      
+      print('Current user: $currentUserId, Seller: ${widget.sellerId}');
+      
+      // Create or get chat
       final chat = await _chatService.createOrGetChat(widget.sellerId);
       
-      if (chat != null && mounted) {
+      if (chat != null) {
+        print('Chat obtained: ${chat.id}');
+        
         // Add an initial message about the product if it's a new chat
-        if (chat.lastMessage == null) {
+        if (chat.lastMessage == null || chat.lastMessage!.isEmpty) {
+          final messageText = "Hi, I'm interested in your product: ${widget.productTitle}";
+          print('Sending initial message: $messageText');
+          
           await _chatService.sendMessage(
             chat.id,
-            "Hi, I'm interested in your product: ${widget.productTitle}",
+            messageText,
           );
         }
         
-        // Navigate to the chat detail screen
-        Navigator.push(
-          context,
-          CupertinoPageRoute(
-            builder: (context) => ChatDetailScreen(
-              chatId: chat.id,
-              otherUser: _seller,
+        if (mounted) {
+          // Navigate to the chat detail screen
+          print('Navigating to chat detail screen');
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (context) => ChatDetailScreen(
+                chatId: chat.id,
+                otherUser: _seller,
+              ),
             ),
-          ),
-        );
+          );
+        }
+      } else {
+        throw Exception('Failed to create or get chat');
       }
     } catch (e) {
       print('Error contacting seller: $e');
       
-      // Show error alert
-      showCupertinoDialog(
-        context: context,
-        builder: (context) => CupertinoAlertDialog(
-          title: const Text('Error'),
-          content: const Text('Could not start chat. Please try again.'),
-          actions: [
-            CupertinoDialogAction(
-              child: const Text('OK'),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ],
-        ),
-      );
+      if (mounted) {
+        // Show error alert
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('Error'),
+            content: Text('Could not start chat: ${e.toString()}'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {

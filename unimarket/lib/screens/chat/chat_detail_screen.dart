@@ -64,62 +64,140 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
-  Future<void> _loadMessages() async {
-    setState(() {
-      _isLoading = true;
-    });
+// Update this method in your ChatDetailScreen class
+Future<void> _loadMessages() async {
+  setState(() {
+    _isLoading = true;
+  });
 
-    try {
-      // Set up a timeout to prevent infinite loading
-      final timeoutTimer = Timer(const Duration(seconds: 8), () {
-        if (mounted && _isLoading) {
-          print('Message loading timed out');
-          setState(() {
-            _isLoading = false;
-          });
-        }
-      });
-
-      // Listen to the messages stream with better error handling
-      _chatService.getChatMessages(widget.chatId).listen(
-        (messages) {
-          if (mounted) {
-            print('Received ${messages.length} messages for chat ${widget.chatId}');
-            setState(() {
-              _messages = messages;
-              _isLoading = false;
-            });
-            timeoutTimer.cancel();
-          }
-        },
-        onError: (error) {
-          print('Error loading messages: $error');
-          if (mounted) {
-            setState(() {
-              _isLoading = false;
-            });
-            
-            // Show error message to user
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Error loading messages. Please try again.'),
-                duration: Duration(seconds: 3),
-              ),
-            );
-            
-            timeoutTimer.cancel();
-          }
-        },
-      );
-    } catch (e) {
-      print('Exception in _loadMessages: $e');
-      if (mounted) {
+  try {
+    print('Loading messages for chat: ${widget.chatId}');
+    
+    // Set up a timeout to prevent infinite loading
+    final timeoutTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted && _isLoading) {
+        print('Message loading timed out for chat ${widget.chatId}');
         setState(() {
           _isLoading = false;
         });
       }
+    });
+
+    // Listen to the messages stream with better error handling
+    _chatService.getChatMessages(widget.chatId).listen(
+      (messages) {
+        timeoutTimer.cancel();
+        
+        if (mounted) {
+          print('Received ${messages.length} messages for chat ${widget.chatId}');
+          setState(() {
+            _messages = messages;
+            _isLoading = false;
+          });
+        }
+      },
+      onError: (error) {
+        timeoutTimer.cancel();
+        
+        print('Error loading messages for chat ${widget.chatId}: $error');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+          
+          // Show error message to user
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error loading messages. Please try again.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      },
+    );
+  } catch (e) {
+    print('Exception in _loadMessages for chat ${widget.chatId}: $e');
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
+}
+
+// Also update _sendMessage method for better handling
+Future<void> _sendMessage() async {
+  final text = _messageController.text.trim();
+  if (text.isEmpty) return;
+  
+  setState(() {
+    _isSending = true;
+  });
+  
+  // Save text and clear input immediately for better UX
+  final messageText = text;
+  _messageController.clear();
+  
+  // Create optimistic message for immediate feedback
+  final optimisticMessage = MessageModel(
+    id: 'temp-${DateTime.now().millisecondsSinceEpoch}',
+    chatId: widget.chatId,
+    senderId: _currentUserId ?? '',
+    text: messageText,
+    timestamp: DateTime.now(),
+  );
+  
+  // Add optimistic message to list
+  setState(() {
+    _messages = [optimisticMessage, ..._messages];
+  });
+  
+  try {
+    print('Sending message to chat ${widget.chatId}: "$messageText"');
+    final success = await _chatService.sendMessage(widget.chatId, messageText);
+    
+    if (mounted) {
+      setState(() {
+        _isSending = false;
+      });
+      
+      if (!success) {
+        print('Failed to send message to chat ${widget.chatId}');
+        
+        // Remove optimistic message on failure
+        setState(() {
+          _messages = _messages.where((m) => m.id != optimisticMessage.id).toList();
+        });
+        
+        // Show error
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not send message. Please try again.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  } catch (e) {
+    print('Error sending message to chat ${widget.chatId}: $e');
+    if (mounted) {
+      setState(() {
+        _isSending = false;
+        // Remove optimistic message on error
+        _messages = _messages.where((m) => m.id != optimisticMessage.id).toList();
+      });
+      
+      // Show error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error sending message. Please try again.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+}
+
 
   Future<void> _markChatAsRead() async {
     try {
@@ -128,78 +206,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     } catch (e) {
       print('Error marking chat as read (handled): $e');
       // Don't show error to user, as this is not critical
-    }
-  }
-
-  Future<void> _sendMessage() async {
-    final text = _messageController.text.trim();
-    if (text.isEmpty) return;
-    
-    setState(() {
-      _isSending = true;
-    });
-    
-    // Save text and clear input immediately for better UX
-    final messageText = text;
-    _messageController.clear();
-    
-    // Create optimistic message for immediate feedback
-    final optimisticMessage = MessageModel(
-      id: 'temp-${DateTime.now().millisecondsSinceEpoch}',
-      chatId: widget.chatId,
-      senderId: _currentUserId ?? '',
-      text: messageText,
-      timestamp: DateTime.now(),
-    );
-    
-    // Add optimistic message to list
-    setState(() {
-      _messages = [optimisticMessage, ..._messages];
-    });
-    
-    try {
-      print('Sending message: "$messageText"');
-      final success = await _chatService.sendMessage(widget.chatId, messageText);
-      
-      if (mounted) {
-        setState(() {
-          _isSending = false;
-        });
-        
-        if (!success) {
-          print('Failed to send message');
-          
-          // Remove optimistic message
-          setState(() {
-            _messages = _messages.where((m) => m.id != optimisticMessage.id).toList();
-          });
-          
-          // Show error
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Could not send message. Please try again.'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      print('Error sending message: $e');
-      if (mounted) {
-        setState(() {
-          _isSending = false;
-          // Remove optimistic message
-          _messages = _messages.where((m) => m.id != optimisticMessage.id).toList();
-        });
-        
-        // Show error
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error sending message. Please try again.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
     }
   }
 
