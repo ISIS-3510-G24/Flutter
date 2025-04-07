@@ -30,6 +30,8 @@ class ExploreScreenState extends State<ExploreScreen> {
   bool _isConnected = true;
   final Connectivity _connectivity = Connectivity();
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  bool _isDisposed = false;
+
 
   @override
 void initState() {
@@ -50,11 +52,11 @@ void initState() {
   // Primero cargar productos personalizados desde caché (alta prioridad)
   _loadFilteredProductsFromCache();
 }
-  @override
-  void dispose() {
-    _connectivitySubscription?.cancel();
-    super.dispose();
-  }
+@override
+void dispose() {
+  _isDisposed = true;
+  super.dispose();
+}
   
   // Método seguro para configurar el listener de conectividad
   void _setupConnectivityListener() {
@@ -170,9 +172,13 @@ void initState() {
  // Corregir la verificación de conectividad para que no bloquee la carga
 // Método mejorado para cargar todos los productos
 Future<void> _loadAllProducts() async {
+
+  if (_isDisposed) return;
   // No verificar conectividad ni si ya está cargando
   print("_loadAllProducts(): Iniciando carga de todos los productos");
   
+  if (!mounted || _isDisposed) return;
+
   setState(() {
     _isLoadingAll = true;
   });

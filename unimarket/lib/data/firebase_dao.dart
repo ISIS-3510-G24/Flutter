@@ -868,4 +868,161 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
 
     await _firestore.collection('finds').doc(findId).collection('offers').doc(offer.id).set(offer.toMap());
   }
+
+  // CHATS
+
+  // Add these methods to your lib/data/firebase_dao.dart file
+
+// Chat-related methods
+Future<List<Map<String, dynamic>>> getUserChats() async {
+  try {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return [];
+    
+    final snapshot = await _firestore
+        .collection('chats')
+        .where('participants', arrayContains: userId)
+        .orderBy('lastMessage.timestamp', descending: true)
+        .get();
+        
+    return snapshot.docs.map((doc) {
+      final data = doc.data();
+      data['id'] = doc.id;
+      return data;
+    }).toList();
+  } catch (e) {
+    print('Error getting user chats: $e');
+    return [];
+  }
+}
+
+Future<Map<String, dynamic>?> getChatById(String chatId) async {
+  try {
+    final doc = await _firestore.collection('chats').doc(chatId).get();
+    if (!doc.exists) return null;
+    
+    final data = doc.data()!;
+    data['id'] = doc.id;
+    return data;
+  } catch (e) {
+    print('Error getting chat by ID: $e');
+    return null;
+  }
+}
+
+Future<String?> createChat(List<String> participants) async {
+  try {
+    final chatRef = _firestore.collection('chats').doc();
+    await chatRef.set({
+      'participants': participants,
+      'createdAt': FieldValue.serverTimestamp(),
+      'hasUnreadMessages': false,
+    });
+    
+    return chatRef.id;
+  } catch (e) {
+    print('Error creating chat: $e');
+    return null;
+  }
+}
+
+Future<List<Map<String, dynamic>>> getChatMessages(String chatId) async {
+  try {
+    final snapshot = await _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .get();
+        
+    return snapshot.docs.map((doc) {
+      final data = doc.data();
+      data['id'] = doc.id;
+      return data;
+    }).toList();
+  } catch (e) {
+    print('Error getting chat messages: $e');
+    return [];
+  }
+}
+
+Future<String?> sendMessage(String chatId, String text, String senderId) async {
+  try {
+    // Create the message
+    final messageRef = _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages')
+        .doc();
+        
+    final message = {
+      'chatId': chatId,
+      'senderId': senderId,
+      'text': text,
+      'timestamp': FieldValue.serverTimestamp(),
+      'isRead': false,
+    };
+    
+    // Get the chat
+    final chatDoc = await _firestore.collection('chats').doc(chatId).get();
+    if (!chatDoc.exists) return null;
+    
+    // Use a batch to update both the message and the chat
+    final batch = _firestore.batch();
+    
+    // Add the message
+    batch.set(messageRef, message);
+    
+    // Update the chat with the last message info
+    batch.update(_firestore.collection('chats').doc(chatId), {
+      'lastMessage': {
+        'text': text,
+        'timestamp': FieldValue.serverTimestamp(),
+        'senderId': senderId,
+      },
+      'hasUnreadMessages': true,
+    });
+    
+    await batch.commit();
+    return messageRef.id;
+  } catch (e) {
+    print('Error sending message: $e');
+    return null;
+  }
+}
+
+Future<bool> markChatAsRead(String chatId, String userId) async {
+  try {
+    // First update the chat
+    await _firestore.collection('chats').doc(chatId).update({
+      'hasUnreadMessages': false,
+    });
+    
+    // Then get all unread messages not sent by this user
+    final unreadMessages = await _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages')
+        .where('isRead', isEqualTo: false)
+        .where('senderId', isNotEqualTo: userId)
+        .get();
+    
+    // Update all messages in a batch
+    if (unreadMessages.docs.isNotEmpty) {
+      final batch = _firestore.batch();
+      
+      for (final doc in unreadMessages.docs) {
+        batch.update(doc.reference, {'isRead': true});
+      }
+      
+      await batch.commit();
+    }
+    
+    return true;
+  } catch (e) {
+    print('Error marking chat as read: $e');
+    return false;
+  }
+}
+
 }

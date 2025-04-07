@@ -25,7 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
     OrdersScreen(), // Orders
     FindAndOfferScreen(), // Find & Offer
     ExploreScreen(),        // Explore
-    NotImplementedScreen(), // Chat
+    ChatScreen(), // Chat
     ProfileScreen(), // Profile - Cambiado temporalmente
   ];
 
