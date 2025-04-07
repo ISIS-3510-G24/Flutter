@@ -81,8 +81,8 @@ dependencies:
   device_info_plus: ^11.3.0
   vector_math: ^2.1.4
   collection: ^1.19.0
-
-
+  image_gallery_saver: ^2.0.3
+  connectivity_plus: ^6.1.3
    
   
 

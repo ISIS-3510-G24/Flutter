@@ -49,6 +49,30 @@ class ProductModel {
     );
   }
 
+  // Also add a fromJson factory for deserializing from cache
+  factory ProductModel.fromJson(Map<String, dynamic> json) {
+    return ProductModel(
+      id: json['id'],
+      classId: json['classId'] ?? '',
+      createdAt: json['createdAt'] != null 
+          ? DateTime.parse(json['createdAt']) 
+          : DateTime.now(),
+      description: json['description'] ?? '',
+      imageUrls: List<String>.from(json['imageUrls'] ?? []),
+      labels: List<String>.from(json['labels'] ?? []),
+      majorID: json['majorID'] ?? '',
+      price: (json['price'] is int) 
+          ? (json['price'] as int).toDouble() 
+          : (json['price'] ?? 0.0),
+      sellerID: json['sellerID'] ?? '',
+      status: json['status'] ?? 'Available',
+      title: json['title'] ?? '',
+      updatedAt: json['updatedAt'] != null 
+          ? DateTime.parse(json['updatedAt']) 
+          : DateTime.now(),
+    );
+  }
+
   // Convert ProductModel to a Map for Firestore
   Map<String, dynamic> toMap() {
     return {
@@ -63,6 +87,24 @@ class ProductModel {
       'status': status,
       'title': title,
       'updatedAt': updatedAt,
+    };
+  }
+
+  // Convert ProductModel to JSON for local storage
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'classId': classId,
+      'createdAt': createdAt.toIso8601String(),
+      'description': description,
+      'imageUrls': imageUrls,
+      'labels': labels,
+      'majorID': majorID,
+      'price': price,
+      'sellerID': sellerID,
+      'status': status,
+      'title': title,
+      'updatedAt': updatedAt.toIso8601String(),
     };
   }
 }
