@@ -1,15 +1,18 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
 class ProductCard extends StatelessWidget {
   final String title;
   final String subtitle;
+  final String? imageUrl;
   final VoidCallback onPressedBuy;
 
   const ProductCard({
     Key? key,
     required this.title,
     required this.subtitle,
+    this.imageUrl,
     required this.onPressedBuy,
   }) : super(key: key);
 
@@ -24,7 +27,7 @@ class ProductCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _buildPlaceholderImage(size: 60),
+          _buildImage(size: 60),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -54,8 +57,44 @@ class ProductCard extends StatelessWidget {
     );
   }
 
+  Widget _buildImage({double size = 60}) {
+    if (imageUrl != null && imageUrl!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          width: size,
+          height: size,
+          child: Image.network(
+            imageUrl!,
+            fit: BoxFit.cover,
+            width: size,
+            height: size,
+            errorBuilder: (context, error, stackTrace) {
+              return _buildPlaceholderImage(size: size);
+            },
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  color: AppColors.transparentGrey,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Center(
+                  child: CupertinoActivityIndicator(),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    } else {
+      return _buildPlaceholderImage(size: size);
+    }
+  }
+
   Widget _buildPlaceholderImage({double size = 60}) {
-    // En tu caso podrías usar una Image.network o Image.asset
     return Container(
       width: size,
       height: size,
@@ -63,8 +102,11 @@ class ProductCard extends StatelessWidget {
         color: AppColors.transparentGrey,
         borderRadius: BorderRadius.circular(6),
       ),
-      child: const Center(
-        child: Icon(CupertinoIcons.photo, size: 20, color: CupertinoColors.white),
+      child: SvgPicture.asset(
+        "assets/svgs/ImagePlaceHolder.svg",
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
       ),
     );
   }

@@ -76,6 +76,11 @@ dependencies:
 
   #animations
   flutter_spinkit: ^5.2.1
+  camera: ^0.11.1
+  arkit_plugin: ^1.1.2
+  device_info_plus: ^11.3.0
+  vector_math: ^2.1.4
+  collection: ^1.19.0
 
 
    

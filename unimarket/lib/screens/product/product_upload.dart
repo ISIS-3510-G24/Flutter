@@ -1,8 +1,12 @@
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:unimarket/data/firebase_dao.dart';
+import 'package:unimarket/models/measurement_model.dart';
 import 'package:unimarket/theme/app_colors.dart';
-import 'package:unimarket/models/class_model.dart'; // You'll need to create this
+import 'package:unimarket/models/class_model.dart';
+import 'package:unimarket/screens/upload/product_camera_screen.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class UploadProductScreen extends StatefulWidget {
   const UploadProductScreen({super.key});
@@ -16,12 +20,16 @@ class UploadProductScreenState extends State<UploadProductScreen> {
 
   String? _tempSelectedMajor; // Temporarily store selected major
   bool _isClassLoading = false;
+  File? _productImage;
+  String? _imageUrl;
+
+  MeasurementData? _measurementData;
+ List<String> _measurementTexts = [];
   
   // Form fields
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
-  final TextEditingController _imageUrlController = TextEditingController();
   
   String _selectedMajor = "No major"; // Default value
   String _selectedClass = "No class"; // Default value for class
@@ -42,15 +50,55 @@ class UploadProductScreenState extends State<UploadProductScreen> {
     _fetchAvailableMajors();
   }
   
-  
   @override
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
-    _imageUrlController.dispose();
     super.dispose();
   }
+  
+  // Handle image capture from camera screen
+  void _handleImageCaptured(File image, MeasurementData? measurementData) {
+  setState(() {
+    _productImage = image;
+    _imageUrl = null; // Clear any previous URL since we're working with a local file
+    _measurementData = measurementData;
+    
+    // Convert measurements to text
+    _measurementTexts = [];
+    if (measurementData != null && measurementData.lines.isNotEmpty) {
+      for (var line in measurementData.lines) {
+        _measurementTexts.add(line.measurement);
+      }
+      
+      // If there are measurements, append them to the description automatically
+      if (_measurementTexts.isNotEmpty) {
+        String currentDescription = _descriptionController.text;
+        String measurementsText = "\n\nMeasurements:\n- " + _measurementTexts.join("\n- ");
+        
+        // Only add if not already there (to prevent duplicates if the user takes multiple photos)
+        if (!currentDescription.contains("Measurements:")) {
+          _descriptionController.text = currentDescription + measurementsText;
+        }
+      }
+    }
+  });
+}
+  
+
+void _navigateToCameraScreen() {
+  Navigator.of(context).push(
+    CupertinoPageRoute(
+      builder: (context) => ProductCameraScreen(
+        onImageCaptured: (File image, MeasurementData? measurementData) {
+          _handleImageCaptured(image, measurementData);
+        },
+      ),
+    ),
+  );
+}
+
   
   // Fetch majors from Firestore
   Future<void> _fetchAvailableMajors() async {
@@ -80,43 +128,43 @@ class UploadProductScreenState extends State<UploadProductScreen> {
   
   // Fetch classes for the selected major
   Future<void> _fetchClassesForMajor(String majorId) async {
-  if (majorId == "No major") {
-    setState(() {
-      _availableClasses = [];
-      _availableClassNames = ["No class"];
-      _selectedClass = "No class";
-    });
-    return;
-  }
-  
-  setState(() {
-    _isClassLoading = true; // Only set class loading to true, not the entire screen
-  });
-  
-  try {
-    List<Map<String, dynamic>> classes = await _firebaseDAO.getClassesForMajor(majorId);
-    
-    // Extract class names and add default option
-    List<String> classNames = ["No class"];
-    for (var classItem in classes) {
-      classNames.add(classItem['name'] ?? classItem['id']);
+    if (majorId == "No major") {
+      setState(() {
+        _availableClasses = [];
+        _availableClassNames = ["No class"];
+        _selectedClass = "No class";
+      });
+      return;
     }
-    
-    setState(() {
-      _availableClasses = classes;
-      _availableClassNames = classNames;
-      _selectedClass = "No class"; // Reset selection when major changes
-    });
-  } catch (e) {
-    _showErrorAlert('Error loading classes: $e');
-  } finally {
-    setState(() {
-      _isClassLoading = false;
-    });
-  }
-}
   
-  // Toggle label selection
+    setState(() {
+      _isClassLoading = true; // Only set class loading to true, not the entire screen
+    });
+  
+    try {
+      List<Map<String, dynamic>> classes = await _firebaseDAO.getClassesForMajor(majorId);
+      
+      // Extract class names and add default option
+      List<String> classNames = ["No class"];
+      for (var classItem in classes) {
+        classNames.add(classItem['name'] ?? classItem['id']);
+      }
+      
+      setState(() {
+        _availableClasses = classes;
+        _availableClassNames = classNames;
+        _selectedClass = "No class"; // Reset selection when major changes
+      });
+    } catch (e) {
+      _showErrorAlert('Error loading classes: $e');
+    } finally {
+      setState(() {
+        _isClassLoading = false;
+      });
+    }
+  }
+  
+// Toggle label selection
   void _toggleLabel(String label) {
     setState(() {
       if (_labels.contains(label)) {
@@ -126,88 +174,163 @@ class UploadProductScreenState extends State<UploadProductScreen> {
       }
     });
   }
-  
-  // Submit the form
-  Future<void> _submitForm() async {
-    // Basic validation
-    if (_titleController.text.trim().isEmpty) {
-      _showErrorAlert('Please enter a title');
-      return;
-    }
-    
-    if (_descriptionController.text.trim().isEmpty) {
-      _showErrorAlert('Please enter a description');
-      return;
-    }
-    
-    if (_priceController.text.trim().isEmpty || 
-        int.tryParse(_priceController.text.trim()) == null) {
-      _showErrorAlert('Please enter a valid price');
-      return;
-    }
-    
-    setState(() {
-      _isLoading = true;
-    });
-    
-    try {
-      // Prepare the product data
-      Map<String, dynamic> productData = {
-        'title': _titleController.text.trim(),
-        'description': _descriptionController.text.trim(),
-        'price': int.parse(_priceController.text.trim()),
-        'sellerID': _firebaseDAO.getCurrentUserId(),
-        'status': 'Available', // Always set to Available as default
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'labels': _labels,
-      };
-      
-      // Add image URL if provided
-      if (_imageUrlController.text.trim().isNotEmpty) {
-        productData['imageUrls'] = [_imageUrlController.text.trim()];
-      }
-      
-      // Only add majorID if not "No major"
-      if (_selectedMajor != "No major") {
-        productData['majorID'] = _selectedMajor;
-      }
-      
-      // Only add classID if not "No class"
-      if (_selectedClass != "No class") {
-        // Find the class ID that matches the selected class name
-        String? classId;
-        for (var classItem in _availableClasses) {
-          if (classItem['name'] == _selectedClass || classItem['id'] == _selectedClass) {
-            classId = classItem['id'];
-            break;
-          }
-        }
-        
-        if (classId != null) {
-          productData['classID'] = classId;
-        }
-      }
-      //Actualizar los label counters del producto
-      _firebaseDAO.updateProductPlacementMetrics(_labels);
 
-      // Create the product
-      final productId = await _firebaseDAO.createProduct(productData);
-      
-      if (productId != null) {
-        _showSuccessAlert('Product uploaded successfully!');
-      } else {
-        _showErrorAlert('Failed to upload product');
-      }
-    } catch (e) {
-      _showErrorAlert('Error: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
+Future<void> _submitForm() async {
+  // Validaciones básicas
+  if (_titleController.text.trim().isEmpty) {
+    _showErrorAlert('Please enter a title');
+    return;
   }
   
+  if (_descriptionController.text.trim().isEmpty) {
+    _showErrorAlert('Please enter a description');
+    return;
+  }
+  
+  if (_priceController.text.trim().isEmpty ||
+      int.tryParse(_priceController.text.trim()) == null) {
+    _showErrorAlert('Please enter a valid price');
+    return;
+  }
+  
+  if (_productImage == null) {
+    _showErrorAlert('Please add at least one product image');
+    return;
+  }
+  
+  setState(() {
+    _isLoading = true;
+  });
+  
+  try {
+    // Primero, subir la imagen
+    String? downloadUrl;
+    if (_productImage != null) {
+      final String filePath = _productImage!.path;
+      final File imageFile = File(filePath);
+      
+      // Verifica si el archivo existe y loguea algunos detalles
+      final bool exists = await imageFile.exists();
+      final int fileSize = exists ? await imageFile.length() : 0;
+      print("Uploading file from path: $filePath, exists: $exists, size: $fileSize bytes");
+      
+      if (!exists) {
+        _showErrorAlert('Image file does not exist at $filePath');
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+      
+      // Mostrar diálogo de carga
+      showCupertinoDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemBackground,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoActivityIndicator(),
+                SizedBox(height: 15),
+                Text("Uploading image..."),
+              ],
+            ),
+          ),
+        ),
+      );
+      
+      // Usar la propiedad .path para subir el archivo
+      downloadUrl = await _firebaseDAO.uploadProductImage(filePath);
+      
+      // Cerrar el diálogo
+      Navigator.of(context).pop();
+      
+      if (downloadUrl == null) {
+        _showErrorAlert('Failed to upload product image');
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+    }
+    
+    // Preparar los datos del producto
+    Map<String, dynamic> productData = {
+      'title': _titleController.text.trim(),
+      'description': _descriptionController.text.trim(),
+      'price': int.parse(_priceController.text.trim()),
+      'sellerID': _firebaseDAO.getCurrentUserId(),
+      'status': 'Available',
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'labels': _labels,
+    };
+    
+    // Agregar la URL de la imagen si se obtuvo
+    if (downloadUrl != null) {
+      productData['imageUrls'] = [downloadUrl];
+    }
+    
+    // Agregar majorID si se seleccionó uno distinto a "No major"
+    if (_selectedMajor != "No major") {
+      productData['majorID'] = _selectedMajor;
+    }
+    
+    // Agregar classID si se seleccionó uno distinto a "No class"
+    if (_selectedClass != "No class") {
+      String? classId;
+      for (var classItem in _availableClasses) {
+        if (classItem['name'] == _selectedClass || classItem['id'] == _selectedClass) {
+          classId = classItem['id'];
+          break;
+        }
+      }
+      
+      if (classId != null) {
+        productData['classID'] = classId;
+      }
+    }
+    
+    // Agregar datos de mediciones si están disponibles
+    if (_measurementData != null && _measurementData!.lines.isNotEmpty) {
+      List<Map<String, dynamic>> simplifiedMeasurements = [];
+      for (var line in _measurementData!.lines) {
+        simplifiedMeasurements.add({
+          'value': line.measurement,
+          'fromPoint': {'x': line.from.x, 'y': line.from.y, 'z': line.from.z},
+          'toPoint': {'x': line.to.x, 'y': line.to.y, 'z': line.to.z},
+        });
+      }
+      productData['measurementCount'] = simplifiedMeasurements.length;
+    }
+    
+    // Actualizar métricas de placement
+    _firebaseDAO.updateProductPlacementMetrics(_labels);
+    
+    // Crear el producto en Firestore
+    final productId = await _firebaseDAO.createProduct(productData);
+    
+    if (productId != null) {
+      _showSuccessAlert('Product uploaded successfully!');
+    } else {
+      _showErrorAlert('Failed to upload product');
+    }
+  } catch (e) {
+    _showErrorAlert('Error: $e');
+  } finally {
+    setState(() {
+      _isLoading = false;
+    });
+  }
+}
+
+
   void _showErrorAlert(String message) {
     showCupertinoDialog(
       context: context,
@@ -257,6 +380,113 @@ class UploadProductScreenState extends State<UploadProductScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Image Selection Section
+                const Text('Product Image', 
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: _navigateToCameraScreen,
+                  child: Container(
+                    width: double.infinity,
+                    height: 200,
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.systemGrey6,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: CupertinoColors.systemGrey4),
+                    ),
+                    child: _productImage != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            _productImage!,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(
+                              CupertinoIcons.camera,
+                              size: 50,
+                              color: CupertinoColors.systemGrey,
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Tap to take a photo',
+                              style: TextStyle(
+                                color: CupertinoColors.systemGrey,
+                              ),
+                            ),
+                          ],
+                        ),
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                 // ADD THIS SECTION - Measurements Preview
+              if (_productImage != null && _measurementTexts.isNotEmpty)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.systemGrey6,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: CupertinoColors.systemGrey4),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                                Icon(CupertinoIcons.info, size: 16, color: AppColors.primaryBlue),
+                              SizedBox(width: 6),
+                              Text(
+                                'Captured Measurements:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primaryBlue,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 6),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: _measurementTexts.map((measure) => 
+                              Container(
+                                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryBlue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: AppColors.primaryBlue.withOpacity(0.5),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  measure,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.primaryBlue,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              )
+                            ).toList(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                  ],
+                ),
+                
+                
                 // Title
                 const Text('Product Title *', 
                   style: TextStyle(fontWeight: FontWeight.bold)),
@@ -301,21 +531,6 @@ class UploadProductScreenState extends State<UploadProductScreen> {
                   ),
                   padding: const EdgeInsets.all(12),
                   keyboardType: const TextInputType.numberWithOptions(decimal: false),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: CupertinoColors.systemGrey4),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
-                // Image URL
-                const Text('Image URL', 
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                CupertinoTextField(
-                  controller: _imageUrlController,
-                  placeholder: 'Enter URL to product image',
-                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     border: Border.all(color: CupertinoColors.systemGrey4),
                     borderRadius: BorderRadius.circular(8),

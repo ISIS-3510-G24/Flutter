@@ -99,6 +99,95 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
+  // Improved image widget that properly handles different image sources
+  Widget _buildProductImage(ProductModel product) {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemGrey6,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: product.imageUrls.isNotEmpty
+            ? Image.network(
+                product.imageUrls.first,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                errorBuilder: (context, error, stackTrace) {
+                  return SvgPicture.asset(
+                    "assets/svgs/ImagePlaceHolder.svg",
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                  );
+                },
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Center(
+                    child: CupertinoActivityIndicator(),
+                  );
+                },
+              )
+            : SvgPicture.asset(
+                "assets/svgs/ImagePlaceHolder.svg",
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+              ),
+      ),
+    );
+  }
+
+  // Product card widget to avoid code duplication
+  Widget _buildProductCard(ProductModel product) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          CupertinoPageRoute(
+            builder: (ctx) => ProductDetailScreen(product: product),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(
+              color: CupertinoColors.systemGrey4,
+              blurRadius: 5,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _buildProductImage(product),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              product.title,
+              style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              _formatPrice(product.price),
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
@@ -109,7 +198,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: _navigateToSearch, // Changed to navigate to search screen
+          onPressed: _navigateToSearch,
           child: const Icon(
             CupertinoIcons.search,
             size: 26,
@@ -159,66 +248,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                       itemCount: _filteredProducts.length,
                                       itemBuilder: (context, index) {
                                         final product = _filteredProducts[index];
-                                        return GestureDetector(
-                                            onTap: () {
-                                              Navigator.push(
-                                                context,
-                                                CupertinoPageRoute(
-                                                  builder: (ctx) => ProductDetailScreen(product: product),
-                                                ),
-                                              );
-                                            },
-                                          child: Container(
-                                            padding: const EdgeInsets.all(10),
-                                            decoration: BoxDecoration(
-                                              color: CupertinoColors.white,
-                                              borderRadius: BorderRadius.circular(10),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: CupertinoColors.systemGrey4,
-                                                  blurRadius: 5,
-                                                  spreadRadius: 1,
-                                                ),
-                                              ],
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Expanded(
-                                                  child: ClipRRect(
-                                                    borderRadius: BorderRadius.circular(10),
-                                                    child: product.imageUrls.isNotEmpty
-                                                        ? Image.network(
-                                                            product.imageUrls.first,
-                                                            fit: BoxFit.cover,
-                                                            errorBuilder: (context, error, stackTrace) {
-                                                              return SvgPicture.asset(
-                                                                "assets/svgs/ImagePlaceHolder.svg",
-                                                                fit: BoxFit.cover,
-                                                              );
-                                                            },
-                                                          )
-                                                        : SvgPicture.asset(
-                                                            "assets/svgs/ImagePlaceHolder.svg",
-                                                            fit: BoxFit.cover,
-                                                          ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 10),
-                                                Text(
-                                                  product.title,
-                                                  style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                               Text(
-                                                   _formatPrice(product.price),
-                                                   style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
+                                        return _buildProductCard(product);
                                       },
                                     ),
                                   ),
@@ -245,66 +275,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                       itemCount: _allProducts.length,
                                       itemBuilder: (context, index) {
                                         final product = _allProducts[index];
-                                        return GestureDetector(
-                                            onTap: () {
-                                              Navigator.push(
-                                                context,
-                                                CupertinoPageRoute(
-                                                  builder: (ctx) => ProductDetailScreen(product: product),
-                                                ),
-                                              );
-                                            },
-                                          child: Container(
-                                            padding: const EdgeInsets.all(10),
-                                            decoration: BoxDecoration(
-                                              color: CupertinoColors.white,
-                                              borderRadius: BorderRadius.circular(10),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: CupertinoColors.systemGrey4,
-                                                  blurRadius: 5,
-                                                  spreadRadius: 1,
-                                                ),
-                                              ],
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Expanded(
-                                                  child: ClipRRect(
-                                                    borderRadius: BorderRadius.circular(10),
-                                                    child: product.imageUrls.isNotEmpty
-                                                        ? Image.network(
-                                                            product.imageUrls.first,
-                                                            fit: BoxFit.cover,
-                                                            errorBuilder: (context, error, stackTrace) {
-                                                              return SvgPicture.asset(
-                                                                "assets/svgs/ImagePlaceHolder.svg",
-                                                                fit: BoxFit.cover,
-                                                              );
-                                                            },
-                                                          )
-                                                        : SvgPicture.asset(
-                                                            "assets/svgs/ImagePlaceHolder.svg",
-                                                            fit: BoxFit.cover,
-                                                          ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 10),
-                                                Text(
-                                                  product.title,
-                                                  style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                               Text(
-                                                   _formatPrice(product.price),
-                                                   style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
+                                        return _buildProductCard(product);
                                       },
                                     ),
                                   ),

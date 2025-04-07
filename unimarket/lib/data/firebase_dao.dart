@@ -1,5 +1,8 @@
+import 'dart:io';
+import 'package:path/path.dart' as path;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:unimarket/models/order_model.dart';
 import 'package:unimarket/models/user_model.dart';
 import 'package:unimarket/models/find_model.dart'; 
@@ -415,15 +418,33 @@ Future<String?> createProduct(Map<String, dynamic> productData) async {
     return null;
   }
 }
-
-// Method to upload an image and get URL
-// Note: This is a placeholder. You'll need to implement actual image upload using Firebase Storage
 Future<String?> uploadProductImage(String filePath) async {
-  // Implementation for image upload to Firebase Storage
-  // Return the download URL
-  // For now, it returns a placeholder
-  return null;
+  try {
+    // Crear el archivo a partir de la ruta
+    final File file = File(filePath);
+    // Obtener el nombre del archivo (por ejemplo, product_1743971980402.jpg)
+    final String fileName = path.basename(filePath);
+    
+    // Crear una referencia en Firebase Storage, por ejemplo en la carpeta 'product_images'
+    Reference ref = FirebaseStorage.instance.ref().child('product_images/$fileName');
+    
+    // Iniciar la subida del archivo
+    UploadTask uploadTask = ref.putFile(file);
+    
+    // Esperar a que se complete la subida
+    TaskSnapshot snapshot = await uploadTask.whenComplete(() => {});
+    
+    // Obtener la URL de descarga
+    String downloadUrl = await snapshot.ref.getDownloadURL();
+    print("Download URL: $downloadUrl");
+    
+    return downloadUrl;
+  } catch (e) {
+    print("Error uploading product image: $e");
+    return null;
+  }
 }
+
 
 // Method to get product details by ID
 Future<Map<String, dynamic>?> getProductById(String productId) async {
