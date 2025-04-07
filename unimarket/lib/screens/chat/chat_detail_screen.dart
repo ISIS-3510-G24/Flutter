@@ -1,8 +1,9 @@
-// lib/screens/chat/chat_detail_screen.dart
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart'; // Ensure this import is present
+import 'package:intl/intl.dart';
 import 'package:unimarket/models/message_model.dart';
 import 'package:unimarket/models/user_model.dart';
 import 'package:unimarket/services/chat_service.dart';
@@ -63,109 +64,144 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
-// Reemplaza _loadMessages en ChatDetailScreen con esta versión simplificada
-Future<void> _loadMessages() async {
-  setState(() {
-    _isLoading = true;
-  });
+  Future<void> _loadMessages() async {
+    setState(() {
+      _isLoading = true;
+    });
 
-  // Solo mantenemos la escucha básica del stream
-  _chatService.getChatMessages(widget.chatId).listen(
-    (messages) {
-      if (mounted) {
-        setState(() {
-          _messages = messages;
-          _isLoading = false;
-        });
-      }
-    },
-    onError: (_) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    },
-  );
-  
-  // Timer de seguridad para evitar carga infinita
-  Future.delayed(Duration(seconds: 5), () {
-    if (mounted && _isLoading) {
-      setState(() {
-        _isLoading = false;
+    try {
+      // Set up a timeout to prevent infinite loading
+      final timeoutTimer = Timer(const Duration(seconds: 8), () {
+        if (mounted && _isLoading) {
+          print('Message loading timed out');
+          setState(() {
+            _isLoading = false;
+          });
+        }
       });
+
+      // Listen to the messages stream with better error handling
+      _chatService.getChatMessages(widget.chatId).listen(
+        (messages) {
+          if (mounted) {
+            print('Received ${messages.length} messages for chat ${widget.chatId}');
+            setState(() {
+              _messages = messages;
+              _isLoading = false;
+            });
+            timeoutTimer.cancel();
+          }
+        },
+        onError: (error) {
+          print('Error loading messages: $error');
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+            
+            // Show error message to user
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error loading messages. Please try again.'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+            
+            timeoutTimer.cancel();
+          }
+        },
+      );
+    } catch (e) {
+      print('Exception in _loadMessages: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
-  });
-}
-
-
-  Future<void> _markChatAsRead() async {
-    await _chatService.markChatAsRead(widget.chatId);
   }
 
-// Corrección para _sendMessage con mejor gestión de errores
-Future<void> _sendMessage() async {
-  final text = _messageController.text.trim();
-  if (text.isEmpty) return;
-  
-  setState(() {
-    _isSending = true;
-  });
-  
-  try {
-    print('Enviando mensaje: "$text"');
-    final success = await _chatService.sendMessage(widget.chatId, text);
+  Future<void> _markChatAsRead() async {
+    try {
+      print('Marking chat ${widget.chatId} as read');
+      await _chatService.markChatAsRead(widget.chatId);
+    } catch (e) {
+      print('Error marking chat as read (handled): $e');
+      // Don't show error to user, as this is not critical
+    }
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
     
-    if (mounted) {
-      setState(() {
-        _isSending = false;
-      });
+    setState(() {
+      _isSending = true;
+    });
+    
+    // Save text and clear input immediately for better UX
+    final messageText = text;
+    _messageController.clear();
+    
+    // Create optimistic message for immediate feedback
+    final optimisticMessage = MessageModel(
+      id: 'temp-${DateTime.now().millisecondsSinceEpoch}',
+      chatId: widget.chatId,
+      senderId: _currentUserId ?? '',
+      text: messageText,
+      timestamp: DateTime.now(),
+    );
+    
+    // Add optimistic message to list
+    setState(() {
+      _messages = [optimisticMessage, ..._messages];
+    });
+    
+    try {
+      print('Sending message: "$messageText"');
+      final success = await _chatService.sendMessage(widget.chatId, messageText);
       
-      if (success) {
-        print('Mensaje enviado exitosamente');
-        _messageController.clear();
-        
-        // Opcional: Añadir mensaje optimista a la UI mientras esperamos la actualización de Firestore
-        final optimisticMessage = MessageModel(
-          id: 'temp-${DateTime.now().millisecondsSinceEpoch}',
-          chatId: widget.chatId,
-          senderId: _currentUserId ?? '',
-          text: text,
-          timestamp: DateTime.now(),
-        );
-        
+      if (mounted) {
         setState(() {
-          _messages = [optimisticMessage, ..._messages];
+          _isSending = false;
         });
-      } else {
-        print('Error al enviar mensaje');
-        // Mostrar mensaje de error
+        
+        if (!success) {
+          print('Failed to send message');
+          
+          // Remove optimistic message
+          setState(() {
+            _messages = _messages.where((m) => m.id != optimisticMessage.id).toList();
+          });
+          
+          // Show error
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not send message. Please try again.'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error sending message: $e');
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+          // Remove optimistic message
+          _messages = _messages.where((m) => m.id != optimisticMessage.id).toList();
+        });
+        
+        // Show error
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se pudo enviar el mensaje. Inténtalo de nuevo.'),
+          SnackBar(
+            content: Text('Error sending message. Please try again.'),
             duration: Duration(seconds: 2),
           ),
         );
       }
     }
-  } catch (e) {
-    print('Error al enviar mensaje: $e');
-    if (mounted) {
-      setState(() {
-        _isSending = false;
-      });
-      
-      // Mostrar mensaje de error
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al enviar mensaje: $e'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
   }
-}
-
 
   @override
   Widget build(BuildContext context) {
@@ -252,71 +288,71 @@ Future<void> _sendMessage() async {
       ),
     );
   }
-// Corrección para _buildMessagesList con mejores diagnósticos
-Widget _buildMessagesList() {
-  if (_messages.isEmpty) {
-    print('No hay mensajes para mostrar');
-    return _buildEmptyChat();
+
+  Widget _buildMessagesList() {
+    if (_messages.isEmpty) {
+      print('No messages to display');
+      return _buildEmptyChat();
+    }
+    
+    print('Displaying ${_messages.length} messages');
+    
+    return ListView.builder(
+      controller: _scrollController,
+      reverse: true,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      itemCount: _messages.length,
+      itemBuilder: (context, index) {
+        final message = _messages[index];
+        final isMe = message.senderId == _currentUserId;
+        
+        print('Message $index - ID: ${message.id}, Sender: ${message.senderId}, isMe: $isMe');
+        
+        final showTimestamp = index == 0 || 
+            _shouldShowTimestamp(_messages[index], _messages[index - 1]);
+        
+        return Column(
+          children: [
+            // Timestamp if needed
+            if (showTimestamp)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 12),
+                child: Text(
+                  _formatMessageDate(message.timestamp),
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: CupertinoColors.systemGrey,
+                  ),
+                ),
+              ),
+              
+            // Message bubble
+            Align(
+              alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.7,
+                ),
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isMe ? AppColors.primaryBlue : CupertinoColors.systemGrey6,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  message.text,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    color: isMe ? CupertinoColors.white : CupertinoColors.black,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
-  
-  print('Mostrando ${_messages.length} mensajes');
-  
-  return ListView.builder(
-    controller: _scrollController,
-    reverse: true, // Mostrar mensajes de abajo hacia arriba
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-    itemCount: _messages.length,
-    itemBuilder: (context, index) {
-      final message = _messages[index];
-      final isMe = message.senderId == _currentUserId;
-      
-      print('Mensaje $index - ID: ${message.id}, Remitente: ${message.senderId}, isMe: $isMe');
-      
-      final showTimestamp = index == 0 || 
-          _shouldShowTimestamp(_messages[index], _messages[index - 1]);
-      
-      return Column(
-        children: [
-          // Marca de tiempo si es necesario
-          if (showTimestamp)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 12),
-              child: Text(
-                _formatMessageDate(message.timestamp),
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: CupertinoColors.systemGrey,
-                ),
-              ),
-            ),
-            
-          // Burbuja de mensaje
-          Align(
-            alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.7,
-              ),
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: isMe ? AppColors.primaryBlue : CupertinoColors.systemGrey6,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                message.text,
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  color: isMe ? CupertinoColors.white : CupertinoColors.black,
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    },
-  );
-}
 
   Widget _buildMessageInput() {
     return Container(

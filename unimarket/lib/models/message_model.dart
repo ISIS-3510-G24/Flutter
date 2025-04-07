@@ -1,4 +1,3 @@
-// lib/models/message_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MessageModel {
@@ -21,36 +20,64 @@ class MessageModel {
   });
 
   factory MessageModel.fromFirestore(Map<String, dynamic> data, String documentId) {
-    // Safely extract timestamp
-    DateTime extractTimestamp() {
-      try {
-        final timestamp = data['timestamp'];
-        if (timestamp is Timestamp) {
-          return timestamp.toDate();
-        } else if (timestamp is DateTime) {
-          return timestamp;
-        } else if (timestamp is int) {
-          return DateTime.fromMillisecondsSinceEpoch(timestamp);
-        } else if (timestamp is String) {
-          final parsed = DateTime.tryParse(timestamp);
-          if (parsed != null) return parsed;
-        }
-        return DateTime.now(); // Fallback
-      } catch (e) {
-        print('Error parsing message timestamp: $e');
-        return DateTime.now(); // Fallback
-      }
-    }
-
     return MessageModel(
       id: documentId,
       chatId: data['chatId']?.toString() ?? '',
       senderId: data['senderId']?.toString() ?? '',
       text: data['text']?.toString() ?? '',
-      timestamp: extractTimestamp(),
+      timestamp: _extractTimestamp(data),
       isRead: data['isRead'] == true,
       additionalData: data,
     );
+  }
+
+  static DateTime _extractTimestamp(Map<String, dynamic> data) {
+    try {
+      final timestamp = data['timestamp'];
+      
+      if (timestamp is Timestamp) {
+        return timestamp.toDate();
+      } else if (timestamp is DateTime) {
+        return timestamp;
+      } else if (timestamp is int) {
+        return DateTime.fromMillisecondsSinceEpoch(timestamp);
+      } else if (timestamp is String) {
+        try {
+          return DateTime.parse(timestamp);
+        } catch (e) {
+          print('Error parsing timestamp string: $e');
+        }
+      } else if (timestamp is Map) {
+        try {
+          if (timestamp.containsKey('seconds')) {
+            final seconds = timestamp['seconds'];
+            final nanoseconds = timestamp['nanoseconds'] ?? 0;
+            
+            if (seconds is int && nanoseconds is int) {
+              return DateTime.fromMillisecondsSinceEpoch(
+                seconds * 1000 + (nanoseconds ~/ 1000000),
+              );
+            }
+            
+            // Handle case where seconds/nanoseconds might be num instead of int
+            if (seconds is num && nanoseconds is num) {
+              return DateTime.fromMillisecondsSinceEpoch(
+                seconds.toInt() * 1000 + (nanoseconds ~/ 1000000),
+              );
+            }
+          }
+        } catch (e) {
+          print('Error parsing timestamp map: $e');
+        }
+      }
+      
+      // Default to current time if parsing fails
+      print('Using current time as fallback for message timestamp');
+      return DateTime.now();
+    } catch (e) {
+      print('Error extracting timestamp in MessageModel: $e');
+      return DateTime.now();
+    }
   }
 
   Map<String, dynamic> toMap() {

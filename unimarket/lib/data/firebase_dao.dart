@@ -869,9 +869,6 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
     await _firestore.collection('finds').doc(findId).collection('offers').doc(offer.id).set(offer.toMap());
   }
 
-  // CHATS
-
-  // Add these methods to your lib/data/firebase_dao.dart file
 
 // Chat-related methods
 Future<List<Map<String, dynamic>>> getUserChats() async {
