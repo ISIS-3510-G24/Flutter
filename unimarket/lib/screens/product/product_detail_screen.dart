@@ -1,417 +1,53 @@
+// lib/screens/product/product_detail_screen.dart
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/models/product_model.dart';
 import 'package:unimarket/models/user_model.dart';
-import 'package:unimarket/screens/profile/user_profile_screen.dart';
+import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:unimarket/widgets/buttons/contact_seller_button.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final ProductModel product;
 
-  const ProductDetailScreen({Key? key, required this.product}) : super(key: key);
+  const ProductDetailScreen({super.key, required this.product});
 
   @override
   _ProductDetailScreenState createState() => _ProductDetailScreenState();
 }
 
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
-  UserModel? seller;
-  final FirebaseDAO _firebaseDAO = FirebaseDAO();
-  bool isLoading = true;
+  final UserService _userService = UserService();
+  UserModel? _seller;
+  bool _isLoading = true;
+  int _currentImageIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    print("⚠️ Product seller ID: '${widget.product.sellerID}'");
-    _loadSellerDetails();
+    _loadSellerInfo();
   }
 
-  Future<void> _loadSellerDetails() async {
+  Future<void> _loadSellerInfo() async {
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
-      // Add a loading state indicator
-      if (mounted) {
-        setState(() {
-          isLoading = true;
-        });
-      }
-      
-      // Add a retry mechanism
-      int retryCount = 0;
-      UserModel? fetchedUser;
-      
-      while (retryCount < 3 && fetchedUser == null) {
-        fetchedUser = await _firebaseDAO.getUserById(widget.product.sellerID);
-        if (fetchedUser == null) {
-          retryCount++;
-          await Future.delayed(Duration(seconds: 1)); // Add delay between retries
-        }
-      }
-      
-      if (mounted) {
-        setState(() {
-          seller = fetchedUser;
-          isLoading = false;
-        });
-      }
+      final seller = await _userService.getUserById(widget.product.sellerID);
+      setState(() {
+        _seller = seller;
+        _isLoading = false;
+      });
     } catch (e) {
-      print("Error loading seller details: $e");
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
+      print("Error loading seller info: $e");
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  void _navigateToUserProfile() {
-    if (seller != null) {
-      Navigator.push(
-        context,
-        CupertinoPageRoute(
-          builder: (context) => UserProfileScreen(
-            userId: widget.product.sellerID,
-            initialUserData: seller, // Pass the already loaded user data
-          ),
-        ),
-      );
-    } else {
-      // Show loading indicator or error message if seller data isn't available
-      showCupertinoDialog(
-        context: context,
-        builder: (context) => CupertinoAlertDialog(
-          title: Text('Unable to View Profile'),
-          content: Text('Seller information is not available at the moment.'),
-          actions: [
-            CupertinoDialogAction(
-              child: Text('OK'),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(
-          "Product Details",
-          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-        ),
-      ),
-      child: SafeArea(
-        child: Stack(
-          children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.only(bottom: 80), // Add padding to avoid overlap with the button
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Product Image
-                  _buildProductImage(widget.product),
-                  
-                  // Product Details
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Title and Price Row
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Title
-                            Expanded(
-                              child: Text(
-                                widget.product.title,
-                                style: GoogleFonts.inter(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            // Price
-                            Text(
-                              _formatPrice(widget.product.price),
-                              style: GoogleFonts.inter(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primaryBlue,
-                              ),
-                            ),
-                          ],
-                        ),
-                        
-                        const SizedBox(height: 12),
-                        
-                        // Status Badge and Seller Info in same row
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            // Available badge
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: widget.product.status == "Available" 
-                                    ? AppColors.primaryBlue.withOpacity(0.2) 
-                                    : CupertinoColors.systemGrey4,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                widget.product.status,
-                                style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                  color: widget.product.status == "Available" 
-                                      ? AppColors.primaryBlue 
-                                      : CupertinoColors.systemGrey,
-                                ),
-                              ),
-                            ),
-                            
-                            // Seller info with tap to navigate to profile
-                            GestureDetector(
-                              onTap: _navigateToUserProfile,
-                              child: _buildSellerInfo(),
-                            ),
-                          ],
-                        ),
-                        
-                        const SizedBox(height: 16),
-                        
-                        // Description
-                        Text(
-                          "Description",
-                          style: GoogleFonts.inter(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          widget.product.description,
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            color: CupertinoColors.systemGrey,
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 24),
-                        
-                        // Labels Section
-                        Text(
-                          "Tags",
-                          style: GoogleFonts.inter(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildLabelsRow(widget.product.labels),
-                        
-                        const SizedBox(height: 24),
-                        
-                        // Additional Info
-                        Text(
-                          "Additional Information",
-                          style: GoogleFonts.inter(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildInfoRow("Major", widget.product.majorID),
-                        _buildInfoRow("Posted on", _formatDate(widget.product.createdAt)),
-                        _buildInfoRow("Updated", _formatDate(widget.product.updatedAt)),
-                        _buildInfoRow("ID", widget.product.classId),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: CupertinoButton(
-                    color: AppColors.primaryBlue,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    borderRadius: BorderRadius.circular(30),
-                    child: Text(
-                      "Contact Seller",
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: CupertinoColors.white,
-                      ),
-                    ),
-                    onPressed: () {
-                      print("Contacting seller: ${widget.product.sellerID}");
-                      // Add your contact logic here
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildSellerInfo() {
-    if (isLoading) {
-      return const CupertinoActivityIndicator();
-    }
-    
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          seller?.displayName ?? "Unknown Seller",
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            // Add underline to indicate it's clickable
-            decoration: TextDecoration.underline,
-            decorationColor: AppColors.primaryBlue.withOpacity(0.5),
-          ),
-        ),
-        const SizedBox(width: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(15),
-          child: seller?.photoURL != null && seller!.photoURL!.isNotEmpty
-              ? Image.network(
-                  seller!.photoURL!,
-                  width: 30,
-                  height: 30,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return _buildDefaultAvatar();
-                  },
-                )
-              : _buildDefaultAvatar(),
-        ),
-      ],
-    );
-  }
-  
-  Widget _buildDefaultAvatar() {
-    return Container(
-      width: 30,
-      height: 30,
-      decoration: BoxDecoration(
-        color: AppColors.primaryBlue.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Center(
-        child: Text(
-          seller?.displayName?.isNotEmpty == true
-              ? seller!.displayName[0].toUpperCase()
-              : "?",
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: AppColors.primaryBlue,
-          ),
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildProductImage(ProductModel product) {
-    return Container(
-      height: 250,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey6,
-      ),
-      child: product.imageUrls.isNotEmpty 
-          ? Image.network(
-              product.imageUrls.first,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return Center(
-                  child: SvgPicture.asset(
-                    "assets/svgs/ImagePlaceHolder.svg",
-                    height: 100,
-                    width: 100,
-                  ),
-                );
-              },
-            )
-          : Center(
-              child: SvgPicture.asset(
-                "assets/svgs/ImagePlaceHolder.svg",
-                height: 100,
-                width: 100,
-              ),
-            ),
-    );
-  }
-  
-  Widget _buildLabelsRow(List<String> labels) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: labels.map((label) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.lightGreyBackground,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              color: CupertinoColors.systemGrey,
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-  
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: CupertinoColors.systemGrey,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
   String _formatPrice(double price) {
     // Convert to integer to remove decimal part
     int wholePart = price.toInt();
@@ -451,23 +87,324 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     // Add dollar sign at the end
     return "$result \$";
   }
-  
-  String _formatDate(DateTime date) {
-    // Format: Month Day, Year at Hour:Minute AM/PM
-    String month = _getMonthName(date.month);
-    String hour = date.hour > 12 ? (date.hour - 12).toString() : date.hour.toString();
-    if (hour == "0") hour = "12"; // Handle midnight
-    String minute = date.minute.toString().padLeft(2, '0');
-    String period = date.hour >= 12 ? 'PM' : 'AM';
-    
-    return "$month ${date.day}, ${date.year} at $hour:$minute $period";
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: Text(
+          widget.product.title,
+          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+        ),
+      ),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Product Images
+              _buildProductImages(),
+
+              // Product Title and Price
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.product.title,
+                            style: GoogleFonts.inter(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _formatPrice(widget.product.price),
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    // Contact Seller Button
+                    ContactSellerButton(
+                      sellerId: widget.product.sellerID,
+                      productTitle: widget.product.title,
+                    ),
+                  ],
+                ),
+              ),
+
+              // Separator line (Cupertino style)
+              Container(
+                height: 1,
+                color: CupertinoColors.systemGrey5,
+              ),
+
+              // Seller Information
+              _buildSellerInfo(),
+
+              // Separator line (Cupertino style)
+              Container(
+                height: 1,
+                color: CupertinoColors.systemGrey5,
+              ),
+
+              // Product Description
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Description",
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      widget.product.description,
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        color: CupertinoColors.black,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Labels
+              if (widget.product.labels.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Labels",
+                        style: GoogleFonts.inter(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: widget.product.labels.map((label) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryBlue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              label,
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // Bottom padding
+              const SizedBox(height: 80),
+            ],
+          ),
+        ),
+      ),
+    );
   }
-  
-  String _getMonthName(int month) {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June', 
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    return months[month - 1];
+
+  Widget _buildProductImages() {
+    if (widget.product.imageUrls.isEmpty) {
+      return Container(
+        height: 300,
+        width: double.infinity,
+        color: CupertinoColors.systemGrey6,
+        child: Center(
+          child: SvgPicture.asset(
+            "assets/svgs/ImagePlaceHolder.svg",
+            height: 100,
+            width: 100,
+            fit: BoxFit.contain,
+          ),
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        // Image display
+        SizedBox(
+          height: 300,
+          width: double.infinity,
+          child: PageView.builder(
+            itemCount: widget.product.imageUrls.length,
+            onPageChanged: (index) {
+              setState(() {
+                _currentImageIndex = index;
+              });
+            },
+            itemBuilder: (context, index) {
+              return Image.network(
+                widget.product.imageUrls[index],
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    color: CupertinoColors.systemGrey6,
+                    child: Center(
+                      child: SvgPicture.asset(
+                        "assets/svgs/ImagePlaceHolder.svg",
+                        height: 100,
+                        width: 100,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  );
+                },
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Container(
+                    color: CupertinoColors.systemGrey6,
+                    child: const Center(
+                      child: CupertinoActivityIndicator(),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+
+        // Page indicators
+        if (widget.product.imageUrls.length > 1)
+          Positioned(
+            bottom: 10,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                widget.product.imageUrls.length,
+                (index) => Container(
+                  width: 8,
+                  height: 8,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _currentImageIndex == index
+                        ? AppColors.primaryBlue
+                        : CupertinoColors.systemGrey.withOpacity(0.5),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSellerInfo() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          // Seller Avatar
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: CupertinoColors.systemGrey5,
+            ),
+            child: _isLoading
+                ? const Center(child: CupertinoActivityIndicator())
+                : _seller?.photoURL != null && _seller!.photoURL!.isNotEmpty
+                    ? ClipOval(
+                        child: Image.network(
+                          _seller!.photoURL!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Center(
+                              child: Text(
+                                _seller!.displayName.substring(0, 1).toUpperCase(),
+                                style: GoogleFonts.inter(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primaryBlue,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                    : Center(
+                        child: Text(
+                          _seller != null
+                              ? _seller!.displayName.substring(0, 1).toUpperCase()
+                              : "?",
+                          style: GoogleFonts.inter(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primaryBlue,
+                          ),
+                        ),
+                      ),
+          ),
+          const SizedBox(width: 16),
+          
+          // Seller Details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _isLoading ? "Loading..." : (_seller?.displayName ?? "Unknown Seller"),
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (_seller?.ratingAverage != null && _seller?.reviewsCount != null)
+                  Row(
+                    children: [
+                      const Icon(
+                        CupertinoIcons.star_fill,
+                        color: CupertinoColors.systemYellow,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        "${_seller!.ratingAverage!.toStringAsFixed(1)} (${_seller!.reviewsCount} reviews)",
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: CupertinoColors.systemGrey,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
