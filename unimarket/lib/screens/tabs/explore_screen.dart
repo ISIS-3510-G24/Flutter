@@ -1,15 +1,13 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/screens/product/product_upload.dart';
 import 'package:unimarket/widgets/buttons/floating_action_button_factory.dart';
-import 'package:unimarket/widgets/popups/not_implemented.dart';
 import 'package:unimarket/services/product_service.dart';
 import 'package:unimarket/models/product_model.dart';
 import 'package:unimarket/theme/app_colors.dart';
-import 'package:unimarket/screens/upload/confirm_product_screen.dart';
 import 'package:unimarket/screens/product/product_detail_screen.dart';
+import 'package:unimarket/screens/search/search_screen.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -91,39 +89,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
     return "$result \$";
   }
   
-  // Muestra un modal con un campo de búsqueda
-  void _showSearchModal() {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (ctx) {
-        // Focus node to auto-focus the search field when modal opens
-        final FocusNode _searchFocus = FocusNode();
-        
-        // Auto-focus after the modal is built
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          FocusScope.of(context).requestFocus(_searchFocus);
-        });
-        
-        return Container(
-          color: CupertinoColors.systemBackground,
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CupertinoSearchTextField(
-                focusNode: _searchFocus,
-                onSubmitted: (value) {
-                  print("Search query: $value");
-                  // Implement search functionality here
-                  Navigator.pop(ctx);
-                },
-                placeholder: "Search products...",
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        );
-      },
+  // Navigate to the SearchScreen when search icon is tapped
+  void _navigateToSearch() {
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (context) => const SearchScreen(),
+      ),
     );
   }
 
@@ -137,7 +109,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: _showSearchModal,
+          onPressed: _navigateToSearch, // Changed to navigate to search screen
           child: const Icon(
             CupertinoIcons.search,
             size: 26,
