@@ -125,24 +125,38 @@ class ChatModel {
     }
   }
 
-  static String? _extractSenderId(Map<String, dynamic> data) {
-    try {
-      // Check if it's at the root level
-      if (data['lastMessageSenderId'] != null) {
-        return data['lastMessageSenderId'].toString();
-      }
-      
-      // Check if it's nested in lastMessage
-      if (data['lastMessage'] is Map) {
-        return data['lastMessage']['senderId']?.toString();
-      }
-      
-      return null;
-    } catch (e) {
-      print('Error parsing senderId: $e');
-      return null;
+static String? _extractSenderId(Map<String, dynamic> data) {
+  try {
+    print('Extrayendo senderId para chat - datos completos: $data');
+    
+    // Verificar si está directamente en el documento
+    if (data.containsKey('lastMessageSenderId') && data['lastMessageSenderId'] != null) {
+      print('SenderId encontrado directamente: ${data['lastMessageSenderId']}');
+      return data['lastMessageSenderId'].toString();
     }
+    
+    // Verificar en formato anidado
+    if (data.containsKey('lastMessage') && data['lastMessage'] is Map) {
+      final lastMessage = data['lastMessage'] as Map<String, dynamic>;
+      if (lastMessage.containsKey('senderId')) {
+        print('SenderId encontrado en lastMessage: ${lastMessage['senderId']}');
+        return lastMessage['senderId']?.toString();
+      }
+    }
+    
+    // Intentar buscar en un campo senderId a nivel raíz (algunos sistemas lo guardan así)
+    if (data.containsKey('senderId')) {
+      print('SenderId encontrado en raíz del documento: ${data['senderId']}');
+      return data['senderId'].toString();
+    }
+    
+    print('⚠️ No se encontró senderId en los datos del chat');
+    return null;
+  } catch (e) {
+    print('Error extrayendo senderId: $e');
+    return null;
   }
+}
 
   Map<String, dynamic> toMap() {
     return {
