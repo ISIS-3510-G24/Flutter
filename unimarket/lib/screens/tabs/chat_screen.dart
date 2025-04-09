@@ -9,6 +9,9 @@ import 'package:unimarket/screens/chat/chat_detail_screen.dart';
 import 'package:unimarket/services/chat_service.dart';
 import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:unimarket/screens/chat/response_time_indicator.dart';
+
+
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -299,182 +302,194 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildChatList() {
-    return ListView.builder(
-      itemCount: _chats.length,
-      itemBuilder: (context, index) {
-        final chat = _chats[index];
-        final user = _chatUsers[chat.id];
-        
-        // Better handling of user display name
-        String displayName = 'Unknown User';
-        
-        if (user != null) {
-          displayName = user.displayName;
-        } else if (_isLoading) {
-          displayName = 'Loading...';
-        }
-        
-        String lastMessage = 'No messages yet';
-        if (chat.lastMessage != null && chat.lastMessage!.isNotEmpty) {
-          lastMessage = chat.lastMessage!;
-        }
-        
-        // Add separator after each item except the last
-        return Column(
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: () {
-                // Navigate to chat detail
-                Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (context) => ChatDetailScreen(
-                      chatId: chat.id,
-                      otherUser: user,
-                    ),
+Widget _buildChatList() {
+  return ListView.builder(
+    itemCount: _chats.length,
+    itemBuilder: (context, index) {
+      final chat = _chats[index];
+      final user = _chatUsers[chat.id];
+      
+      // Better handling of user display name
+      String displayName = 'Unknown User';
+      
+      if (user != null) {
+        displayName = user.displayName;
+      } else if (_isLoading) {
+        displayName = 'Loading...';
+      }
+      
+      String lastMessage = 'No messages yet';
+      if (chat.lastMessage != null && chat.lastMessage!.isNotEmpty) {
+        lastMessage = chat.lastMessage!;
+      }
+      
+      // Add separator after each item except the last
+      return Column(
+        children: [
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: () {
+              // Navigate to chat detail
+              Navigator.push(
+                context,
+                CupertinoPageRoute(
+                  builder: (context) => ChatDetailScreen(
+                    chatId: chat.id,
+                    otherUser: user,
                   ),
-                ).then((_) {
-                  // Reload on return to update read status
-                  if (mounted && !_isDisposed) {
-                    _loadChats();
-                  }
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    // User avatar
-                    Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: CupertinoColors.systemGrey5,
-                      ),
-                      child: user != null && user.photoURL != null && user.photoURL!.isNotEmpty
-                          ? ClipOval(
-                              child: Image.network(
-                                user.photoURL!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  // Fallback to initials if image fails to load
-                                  return Center(
-                                    child: Text(
-                                      user.displayName.isNotEmpty 
-                                          ? user.displayName.substring(0, 1).toUpperCase() 
-                                          : "?",
-                                      style: GoogleFonts.inter(
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.primaryBlue,
-                                      ),
+                ),
+              ).then((_) {
+                // Reload on return to update read status
+                if (mounted && !_isDisposed) {
+                  _loadChats();
+                }
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  // User avatar
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: CupertinoColors.systemGrey5,
+                    ),
+                    child: user != null && user.photoURL != null && user.photoURL!.isNotEmpty
+                        ? ClipOval(
+                            child: Image.network(
+                              user.photoURL!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                // Fallback to initials if image fails to load
+                                return Center(
+                                  child: Text(
+                                    user.displayName.isNotEmpty 
+                                        ? user.displayName.substring(0, 1).toUpperCase() 
+                                        : "?",
+                                    style: GoogleFonts.inter(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.primaryBlue,
                                     ),
-                                  );
-                                },
+                                  ),
+                                );
+                              },
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              user != null && user.displayName.isNotEmpty
+                                  ? user.displayName.substring(0, 1).toUpperCase()
+                                  : "?",
+                              style: GoogleFonts.inter(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primaryBlue,
                               ),
-                            )
-                          : Center(
-                              child: Text(
-                                user != null && user.displayName.isNotEmpty
-                                    ? user.displayName.substring(0, 1).toUpperCase()
-                                    : "?",
+                            ),
+                          ),
+                  ),
+                  const SizedBox(width: 12),
+                  
+                  // Chat details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Username
+                            Text(
+                              displayName,
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: chat.hasUnreadMessages
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: CupertinoColors.black,
+                              ),
+                            ),
+                            
+                            // Timestamp
+                            if (chat.lastMessageTime != null)
+                              Text(
+                                _formatTimestamp(chat.lastMessageTime!),
                                 style: GoogleFonts.inter(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.primaryBlue,
+                                  fontSize: 12,
+                                  color: CupertinoColors.systemGrey,
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        
+                        // Last message
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                lastMessage,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  color: chat.hasUnreadMessages
+                                      ? CupertinoColors.black
+                                      : CupertinoColors.systemGrey,
+                                  fontWeight: chat.hasUnreadMessages
+                                      ? FontWeight.w500
+                                      : FontWeight.normal,
                                 ),
                               ),
                             ),
-                    ),
-                    const SizedBox(width: 12),
-                    
-                    // Chat details
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              // Username
-                              Text(
-                                displayName,
-                                style: GoogleFonts.inter(
-                                  fontSize: 16,
-                                  fontWeight: chat.hasUnreadMessages
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                  color: CupertinoColors.black,
+                            
+                            // Unread indicator
+                            if (chat.hasUnreadMessages)
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: AppColors.primaryBlue,
                                 ),
                               ),
-                              
-                              // Timestamp
-                              if (chat.lastMessageTime != null)
-                                Text(
-                                  _formatTimestamp(chat.lastMessageTime!),
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    color: CupertinoColors.systemGrey,
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          
-                          // Last message
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  lastMessage,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 14,
-                                    color: chat.hasUnreadMessages
-                                        ? CupertinoColors.black
-                                        : CupertinoColors.systemGrey,
-                                    fontWeight: chat.hasUnreadMessages
-                                        ? FontWeight.w500
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                              ),
-                              
-                              // Unread indicator
-                              if (chat.hasUnreadMessages)
-                                Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: const BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: AppColors.primaryBlue,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-            // Add separator after each item except the last
-            if (index < _chats.length - 1)
-              Container(
-                height: 1,
-                color: CupertinoColors.systemGrey5,
-                margin: const EdgeInsets.only(left: 75),
-              ),
-          ],
-        );
-      },
-    );
-  }
+          ),
+          
+          // Add Response Time Indicator if appropriate
+          if (chat.lastMessageSenderId != null && 
+              chat.lastMessageTime != null && 
+              _chatService.currentUserId != null &&
+              chat.lastMessageSenderId != _chatService.currentUserId)
+            ChatResponseTimeIndicator(
+              lastMessageTime: chat.lastMessageTime,
+              lastMessageSenderId: chat.lastMessageSenderId!,
+              currentUserId: _chatService.currentUserId!,
+            ),
+          
+          // Add separator after each item except the last
+          if (index < _chats.length - 1)
+            Container(
+              height: 1,
+              color: CupertinoColors.systemGrey5,
+              margin: const EdgeInsets.only(left: 75),
+            ),
+        ],
+      );
+    },
+  );
+}
 
   String _formatTimestamp(DateTime timestamp) {
     final now = DateTime.now();

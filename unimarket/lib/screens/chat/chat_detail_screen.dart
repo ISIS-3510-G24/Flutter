@@ -9,6 +9,7 @@ import 'package:unimarket/models/user_model.dart';
 import 'package:unimarket/services/chat_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
+
 class ChatDetailScreen extends StatefulWidget {
   final String chatId;
   final UserModel? otherUser;
