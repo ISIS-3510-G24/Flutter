@@ -3,7 +3,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:unimarket/models/chat_model.dart';
 import 'package:unimarket/models/user_model.dart';
 import 'package:unimarket/screens/chat/chat_detail_screen.dart';
@@ -11,8 +10,6 @@ import 'package:unimarket/services/chat_service.dart';
 import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/screens/chat/response_time_indicator.dart';
-
-
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -47,178 +44,139 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-Future<void> _loadChats() async {
-  if (_isDisposed) return;
-  
-  setState(() {
-    _isLoading = true;
-    _hasError = false;
-    _errorMessage = "";
-  });
+  Future<void> _loadChats() async {
+    if (_isDisposed) return;
+    
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+      _errorMessage = "";
+    });
 
-  try {
-    // Check for current user
-    final currentUserId = _chatService.currentUserId;
-    if (currentUserId == null) {
-      print('ChatScreen: No current user (currentUserId is null)');
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-        _errorMessage = "Could not load chats. User not authenticated.";
-      });
-      return;
-    }
-    
-    print('ChatScreen: Current user: $currentUserId');
-    
-    // Cancel existing subscription
-    await _chatSubscription?.cancel();
-    
-    // Forzar limpieza de caché local para asegurar datos frescos
-    print('ChatScreen: Forzando recarga sin caché');
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('chat_list'); // Eliminar lista de chats en caché
-    
-    // Create a new subscription with error handling
-    _chatSubscription = _chatService.getUserChats().listen(
-      (chats) async {
-        if (_isDisposed) return;
-        
-        print('ChatScreen: Received ${chats.length} chats');
-        
-        // Si hay chats, verificar directamente los datos de cada chat
-        for (final chat in chats) {
-          try {
-            // Obtener el último mensaje directamente de la colección de mensajes
-            final messagesSnapshot = await _chatService.chatsCollection
-                .doc(chat.id)
-                .collection('messages')
-                .orderBy('timestamp', descending: true)
-                .limit(1)
-                .get();
-            
-            if (messagesSnapshot.docs.isNotEmpty) {
-              final lastMessageData = messagesSnapshot.docs.first.data();
-              final String? lastSenderId = lastMessageData['senderId']?.toString();
-              
-              // Verificar si hay discrepancia
-              if (lastSenderId != null && lastSenderId != chat.lastMessageSenderId) {
-                print('⚠️ DISCREPANCIA DETECTADA en chat ${chat.id}:');
-                print('  - En ChatModel: ${chat.lastMessageSenderId}');
-                print('  - En subcollection: $lastSenderId');
-              }
-            }
-          } catch (e) {
-            print('Error verificando mensajes para chat ${chat.id}: $e');
-          }
-        }
-        
-        // Sort chats by last message time
-        chats.sort((a, b) {
-          if (a.lastMessageTime == null) return 1;
-          if (b.lastMessageTime == null) return -1;
-          return b.lastMessageTime!.compareTo(a.lastMessageTime!);
-        });
-        
-        // Update state with the chats
-        setState(() {
-          _chats = chats;
-        });
-        
-        // Load user details for each chat
-        for (final chat in _chats) {
-          if (!_chatUsers.containsKey(chat.id) || _chatUsers[chat.id] == null) {
-            print('ChatScreen: Loading user for chat ${chat.id}');
-            try {
-              // Check for empty participants
-              if (chat.participants.isEmpty) {
-                print('ChatScreen: Chat ${chat.id} has no participants');
-                continue;
-              }
-              
-              // Check if current user is in participants
-              if (!chat.participants.contains(currentUserId)) {
-                print('ChatScreen: Current user is not in participants for chat ${chat.id}');
-                continue;
-              }
-              
-              // Get the other participant
-              final user = await _chatService.getChatParticipant(chat.id);
-              if (user == null) {
-                print('ChatScreen: Could not get user for chat ${chat.id}');
-              } else {
-                print('ChatScreen: Got user for chat ${chat.id}: ${user.displayName}');
-              }
-              
-              if (mounted && !_isDisposed) {
-                setState(() {
-                  _chatUsers[chat.id] = user;
-                });
-              }
-            } catch (e) {
-              print('ChatScreen: Error loading user for chat ${chat.id}: $e');
-            }
-          }
-        }
-        
-        // Verificar explícitamente los datos de todos los chats
-        for (final chat in _chats) {
-          print('------- DATOS DEL CHAT ${chat.id} -------');
-          print('lastMessageSenderId: ${chat.lastMessageSenderId}');
-          print('currentUserId: $currentUserId');
-          print('lastMessageTime: ${chat.lastMessageTime}');
-          print('hasUnreadMessages: ${chat.hasUnreadMessages}');
-          print('lastMessage: ${chat.lastMessage}');
-          print('-------------------------------------');
-        }
-        
-        if (mounted && !_isDisposed) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
-        
-        // Cancel timeout timer
-        _loadingTimer?.cancel();
-      },
-      onError: (error) {
-        print("ChatScreen: Error listening to chats: $error");
-        if (mounted && !_isDisposed) {
-          setState(() {
-            _isLoading = false;
-            _hasError = true;
-            _errorMessage = "Could not load chats. $error";
-          });
-        }
-        
-        _loadingTimer?.cancel();
-      },
-    );
-
-    // Set a timeout timer
-    _loadingTimer = Timer(const Duration(seconds: 10), () {
-      if (mounted && !_isDisposed && _isLoading) {
-        print('ChatScreen: Timeout loading chats');
+    try {
+      // Check for current user
+      final currentUserId = _chatService.currentUserId;
+      if (currentUserId == null) {
+        print('ChatScreen: No current user (currentUserId is null)');
         setState(() {
           _isLoading = false;
-          if (_chats.isEmpty) {
-            _hasError = true;
-            _errorMessage = "Request timed out. Check your connection.";
+          _hasError = true;
+          _errorMessage = "Could not load chats. User not authenticated.";
+        });
+        return;
+      }
+      
+      print('ChatScreen: Loading chats for user: $currentUserId');
+      
+      // Cancel existing subscription
+      await _chatSubscription?.cancel();
+      
+      // Create a new subscription with error handling
+      _chatSubscription = _chatService.getUserChats().listen(
+        (chats) async {
+          if (_isDisposed) return;
+          
+          print('ChatScreen: Received ${chats.length} chats');
+          
+          // Update state with the chats
+          setState(() {
+            _chats = chats;
+          });
+          
+          // Load user details for each chat
+          for (final chat in _chats) {
+            if (!_chatUsers.containsKey(chat.id) || _chatUsers[chat.id] == null) {
+              print('ChatScreen: Loading user for chat ${chat.id}');
+              try {
+                // Check for empty participants
+                if (chat.participants.isEmpty) {
+                  print('ChatScreen: Chat ${chat.id} has no participants');
+                  continue;
+                }
+                
+                // Check if current user is in participants
+                if (!chat.participants.contains(currentUserId)) {
+                  print('ChatScreen: Current user is not in participants for chat ${chat.id}');
+                  continue;
+                }
+                
+                // Get the other participant
+                final user = await _chatService.getChatParticipant(chat.id);
+                if (user == null) {
+                  print('ChatScreen: Could not get user for chat ${chat.id}');
+                } else {
+                  print('ChatScreen: Got user for chat ${chat.id}: ${user.displayName}');
+                }
+                
+                if (mounted && !_isDisposed) {
+                  setState(() {
+                    _chatUsers[chat.id] = user;
+                  });
+                }
+              } catch (e) {
+                print('ChatScreen: Error loading user for chat ${chat.id}: $e');
+              }
+            }
           }
+          
+          // Debug chat data again
+          for (final chat in _chats) {
+            print('------- CHAT DATA ${chat.id} -------');
+            print('lastMessageSenderId: ${chat.lastMessageSenderId}');
+            print('currentUserId: $currentUserId');
+            print('lastMessageTime: ${chat.lastMessageTime}');
+            print('hasUnreadMessages: ${chat.hasUnreadMessages}');
+            print('lastMessage: ${chat.lastMessage}');
+            print('-------------------------------------');
+          }
+          
+          if (mounted && !_isDisposed) {
+            setState(() {
+              _isLoading = false;
+            });
+          }
+          
+          // Cancel timeout timer
+          _loadingTimer?.cancel();
+        },
+        onError: (error) {
+          print("ChatScreen: Error listening to chats: $error");
+          if (mounted && !_isDisposed) {
+            setState(() {
+              _isLoading = false;
+              _hasError = true;
+              _errorMessage = "Could not load chats. $error";
+            });
+          }
+          
+          _loadingTimer?.cancel();
+        },
+      );
+
+      // Set a timeout timer
+      _loadingTimer = Timer(const Duration(seconds: 10), () {
+        if (mounted && !_isDisposed && _isLoading) {
+          print('ChatScreen: Timeout loading chats');
+          setState(() {
+            _isLoading = false;
+            if (_chats.isEmpty) {
+              _hasError = true;
+              _errorMessage = "Request timed out. Check your connection.";
+            }
+          });
+        }
+      });
+    } catch (e) {
+      print("ChatScreen: Error setting up chat listener: $e");
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+          _errorMessage = "Could not connect to chat service. $e";
         });
       }
-    });
-  } catch (e) {
-    print("ChatScreen: Error setting up chat listener: $e");
-    if (mounted && !_isDisposed) {
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-        _errorMessage = "Could not connect to chat service. $e";
-      });
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -346,191 +304,200 @@ Future<void> _loadChats() async {
     );
   }
 
-Widget _buildChatList() {
-  return ListView.builder(
-    itemCount: _chats.length,
-    itemBuilder: (context, index) {
-      final chat = _chats[index];
-      final user = _chatUsers[chat.id];
-      
-      // Mejor manejo del nombre de usuario
-      String displayName = 'Usuario desconocido';
-      
-      if (user != null) {
-        displayName = user.displayName;
-      } else if (_isLoading) {
-        displayName = 'Cargando...';
-      }
-      
-      String lastMessage = 'No hay mensajes aún';
-      if (chat.lastMessage != null && chat.lastMessage!.isNotEmpty) {
-        lastMessage = chat.lastMessage!;
-      }
-      
-      // Add separator after each item except the last
-      return Column(
-        children: [
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: () {
-              // Navigate to chat detail
-              Navigator.push(
-                context,
-                CupertinoPageRoute(
-                  builder: (context) => ChatDetailScreen(
-                    chatId: chat.id,
-                    otherUser: user,
-                  ),
-                ),
-              ).then((_) {
-                // Reload on return to update read status
-                if (mounted && !_isDisposed) {
-                  _loadChats();
-                }
-              });
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  // User avatar
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: CupertinoColors.systemGrey5,
+  Widget _buildChatList() {
+    return ListView.builder(
+      itemCount: _chats.length,
+      itemBuilder: (context, index) {
+        final chat = _chats[index];
+        final user = _chatUsers[chat.id];
+        
+        // Better handling of user name
+        String displayName = 'Unknown user';
+        
+        if (user != null) {
+          displayName = user.displayName;
+        } else if (_isLoading) {
+          displayName = 'Loading...';
+        }
+        
+        String lastMessage = 'No messages yet';
+        if (chat.lastMessage != null && chat.lastMessage!.isNotEmpty) {
+          lastMessage = chat.lastMessage!;
+        }
+        
+        // Debugging to help identify data issues
+        print('Building chat item for ${chat.id}:');
+        print('  - User: ${user?.displayName ?? "unknown"}');
+        print('  - Last message: $lastMessage');
+        print('  - Last message time: ${chat.lastMessageTime}');
+        print('  - Last message sender: ${chat.lastMessageSenderId}');
+        print('  - Current user: ${_chatService.currentUserId}');
+        print('  - Has unread messages: ${chat.hasUnreadMessages}');
+        
+        // Add separator after each item except the last
+        return Column(
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () {
+                // Navigate to chat detail
+                Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (context) => ChatDetailScreen(
+                      chatId: chat.id,
+                      otherUser: user,
                     ),
-                    child: user != null && user.photoURL != null && user.photoURL!.isNotEmpty
-                        ? ClipOval(
-                            child: Image.network(
-                              user.photoURL!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                // Fallback to initials if image fails to load
-                                return Center(
-                                  child: Text(
-                                    user.displayName.isNotEmpty 
-                                        ? user.displayName.substring(0, 1).toUpperCase() 
-                                        : "?",
-                                    style: GoogleFonts.inter(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.primaryBlue,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          )
-                        : Center(
-                            child: Text(
-                              user != null && user.displayName.isNotEmpty
-                                  ? user.displayName.substring(0, 1).toUpperCase()
-                                  : "?",
-                              style: GoogleFonts.inter(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primaryBlue,
-                              ),
-                            ),
-                          ),
                   ),
-                  const SizedBox(width: 12),
-                  
-                  // Chat details
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            // Username
-                            Text(
-                              displayName,
-                              style: GoogleFonts.inter(
-                                fontSize: 16,
-                                fontWeight: chat.hasUnreadMessages
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                color: CupertinoColors.black,
+                ).then((_) {
+                  // Reload on return to update read status
+                  if (mounted && !_isDisposed) {
+                    _loadChats();
+                  }
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    // User avatar
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: CupertinoColors.systemGrey5,
+                      ),
+                      child: user != null && user.photoURL != null && user.photoURL!.isNotEmpty
+                          ? ClipOval(
+                              child: Image.network(
+                                user.photoURL!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  // Fallback to initials if image fails to load
+                                  return Center(
+                                    child: Text(
+                                      user.displayName.isNotEmpty 
+                                          ? user.displayName.substring(0, 1).toUpperCase() 
+                                          : "?",
+                                      style: GoogleFonts.inter(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.primaryBlue,
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
-                            ),
-                            
-                            // Timestamp
-                            if (chat.lastMessageTime != null)
-                              Text(
-                                _formatTimestamp(chat.lastMessageTime!),
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: CupertinoColors.systemGrey,
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        
-                        // Last message
-                        Row(
-                          children: [
-                            Expanded(
+                            )
+                          : Center(
                               child: Text(
-                                lastMessage,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                user != null && user.displayName.isNotEmpty
+                                    ? user.displayName.substring(0, 1).toUpperCase()
+                                    : "?",
                                 style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  color: chat.hasUnreadMessages
-                                      ? CupertinoColors.black
-                                      : CupertinoColors.systemGrey,
-                                  fontWeight: chat.hasUnreadMessages
-                                      ? FontWeight.w500
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            ),
-                            
-                            // Unread indicator
-                            if (chat.hasUnreadMessages)
-                              Container(
-                                width: 10,
-                                height: 10,
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
                                   color: AppColors.primaryBlue,
                                 ),
                               ),
-                          ],
-                        ),
-                      ],
+                            ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    
+                    // Chat details
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              // Username
+                              Text(
+                                displayName,
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: chat.hasUnreadMessages
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: CupertinoColors.black,
+                                ),
+                              ),
+                              
+                              // Timestamp
+                              if (chat.lastMessageTime != null)
+                                Text(
+                                  _formatTimestamp(chat.lastMessageTime!),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: CupertinoColors.systemGrey,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          
+                          // Last message
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  lastMessage,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    color: chat.hasUnreadMessages
+                                        ? CupertinoColors.black
+                                        : CupertinoColors.systemGrey,
+                                    fontWeight: chat.hasUnreadMessages
+                                        ? FontWeight.w500
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                              ),
+                              
+                              // Unread indicator
+                              if (chat.hasUnreadMessages)
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: AppColors.primaryBlue,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          
-          // Indicador de tiempo de respuesta
-          if (chat.lastMessageTime != null && chat.lastMessageSenderId != null)
-            ChatResponseTimeIndicator(
-              lastMessageTime: chat.lastMessageTime,
-              lastMessageSenderId: chat.lastMessageSenderId!,
-              currentUserId: _chatService.currentUserId ?? '',
-            ),
-          
-          // Add separator after each item except the last
-          if (index < _chats.length - 1)
-            Container(
-              height: 1,
-              color: CupertinoColors.systemGrey5,
-              margin: const EdgeInsets.only(left: 75),
-            ),
-        ],
-      );
-    },
-  );
-}
+            
+            // Response time indicator
+            if (chat.lastMessageTime != null && chat.lastMessageSenderId != null)
+              ChatResponseTimeIndicator(
+                lastMessageTime: chat.lastMessageTime,
+                lastMessageSenderId: chat.lastMessageSenderId!,
+                currentUserId: _chatService.currentUserId ?? '',
+              ),
+            
+            // Add separator after each item except the last
+            if (index < _chats.length - 1)
+              Container(
+                height: 1,
+                color: CupertinoColors.systemGrey5,
+                margin: const EdgeInsets.only(left: 75),
+              ),
+          ],
+        );
+      },
+    );
+  }
 
   String _formatTimestamp(DateTime timestamp) {
     final now = DateTime.now();

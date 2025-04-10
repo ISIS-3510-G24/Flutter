@@ -20,6 +20,14 @@ class ChatModel {
   });
 
   factory ChatModel.fromFirestore(Map<String, dynamic> data, String documentId) {
+    // Enhanced debugging
+    print('Creating ChatModel from Firestore data for $documentId:');
+    print('  - participants: ${data['participants']}');
+    print('  - lastMessage: ${data['lastMessage']}');
+    print('  - lastMessageTime: ${data['lastMessageTime']}');
+    print('  - lastMessageSenderId: ${data['lastMessageSenderId']}');
+    print('  - hasUnreadMessages: ${data['hasUnreadMessages']}');
+    
     return ChatModel(
       id: documentId,
       participants: _extractParticipants(data),
@@ -47,40 +55,55 @@ class ChatModel {
 
   static DateTime? _extractTimestamp(Map<String, dynamic> data) {
     try {
+      print('Extracting timestamp from: $data');
+      
       // Check if lastMessageTime is directly in data
       dynamic timestamp;
       if (data.containsKey('lastMessageTime')) {
         timestamp = data['lastMessageTime'];
+        print('Found lastMessageTime: $timestamp');
       } else if (data.containsKey('lastMessage')) {
         // Nested in lastMessage
         var lastMessageData = data['lastMessage'];
         
         // Handle string format
         if (lastMessageData is String) {
+          print('lastMessage is a string, no timestamp available');
           return null; // Just text, no timestamp
         }
         
         // Handle map format
         if (lastMessageData is Map) {
           timestamp = lastMessageData['timestamp'];
+          print('Found timestamp in lastMessage map: $timestamp');
         }
       }
       
-      if (timestamp == null) return null;
+      if (timestamp == null) {
+        print('No timestamp found in data');
+        return null;
+      }
       
+      // Now convert the timestamp to DateTime based on its type
       if (timestamp is Timestamp) {
+        print('Converting Timestamp to DateTime: ${timestamp.toDate()}');
         return timestamp.toDate();
       } else if (timestamp is DateTime) {
+        print('Timestamp is already DateTime: $timestamp');
         return timestamp;
       } else if (timestamp is int) {
+        print('Converting int timestamp to DateTime: ${DateTime.fromMillisecondsSinceEpoch(timestamp)}');
         return DateTime.fromMillisecondsSinceEpoch(timestamp);
       } else if (timestamp is String) {
+        print('Parsing string timestamp: $timestamp');
         return DateTime.parse(timestamp);
       } else if (timestamp is Map) {
         // Handle Firebase server timestamp format
         if (timestamp.containsKey('seconds')) {
           final seconds = timestamp['seconds'];
           final nanoseconds = timestamp['nanoseconds'] ?? 0;
+          
+          print('Timestamp is Firebase format - seconds: $seconds, nanoseconds: $nanoseconds');
           
           if (seconds is int && nanoseconds is int) {
             return DateTime.fromMillisecondsSinceEpoch(
@@ -97,6 +120,7 @@ class ChatModel {
         }
       }
       
+      print('Failed to convert timestamp to DateTime');
       return null;
     } catch (e) {
       print('Error extracting timestamp in ChatModel: $e');
@@ -125,38 +149,38 @@ class ChatModel {
     }
   }
 
-static String? _extractSenderId(Map<String, dynamic> data) {
-  try {
-    print('Extrayendo senderId para chat - datos completos: $data');
-    
-    // Verificar si está directamente en el documento
-    if (data.containsKey('lastMessageSenderId') && data['lastMessageSenderId'] != null) {
-      print('SenderId encontrado directamente: ${data['lastMessageSenderId']}');
-      return data['lastMessageSenderId'].toString();
-    }
-    
-    // Verificar en formato anidado
-    if (data.containsKey('lastMessage') && data['lastMessage'] is Map) {
-      final lastMessage = data['lastMessage'] as Map<String, dynamic>;
-      if (lastMessage.containsKey('senderId')) {
-        print('SenderId encontrado en lastMessage: ${lastMessage['senderId']}');
-        return lastMessage['senderId']?.toString();
+  static String? _extractSenderId(Map<String, dynamic> data) {
+    try {
+      print('Extracting senderId from data: $data');
+      
+      // Check if directly in document
+      if (data.containsKey('lastMessageSenderId') && data['lastMessageSenderId'] != null) {
+        print('Found lastMessageSenderId directly: ${data['lastMessageSenderId']}');
+        return data['lastMessageSenderId'].toString();
       }
+      
+      // Check nested format
+      if (data.containsKey('lastMessage') && data['lastMessage'] is Map) {
+        final lastMessage = data['lastMessage'] as Map<String, dynamic>;
+        if (lastMessage.containsKey('senderId')) {
+          print('Found senderId in lastMessage: ${lastMessage['senderId']}');
+          return lastMessage['senderId']?.toString();
+        }
+      }
+      
+      // Check at root level (some systems store it this way)
+      if (data.containsKey('senderId')) {
+        print('Found senderId at root level: ${data['senderId']}');
+        return data['senderId'].toString();
+      }
+      
+      print('No senderId found in data');
+      return null;
+    } catch (e) {
+      print('Error extracting senderId: $e');
+      return null;
     }
-    
-    // Intentar buscar en un campo senderId a nivel raíz (algunos sistemas lo guardan así)
-    if (data.containsKey('senderId')) {
-      print('SenderId encontrado en raíz del documento: ${data['senderId']}');
-      return data['senderId'].toString();
-    }
-    
-    print('⚠️ No se encontró senderId en los datos del chat');
-    return null;
-  } catch (e) {
-    print('Error extrayendo senderId: $e');
-    return null;
   }
-}
 
   Map<String, dynamic> toMap() {
     return {

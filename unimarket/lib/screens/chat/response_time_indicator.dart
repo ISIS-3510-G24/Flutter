@@ -16,47 +16,50 @@ class ChatResponseTimeIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Añadir logs para diagnosticar
-    print('ChatResponseTimeIndicator - lastMessageTime: $lastMessageTime');
-    print('ChatResponseTimeIndicator - lastMessageSenderId: $lastMessageSenderId');
-    print('ChatResponseTimeIndicator - currentUserId: $currentUserId');
+    // Enhanced debugging to track what's happening
+    print('ResponseTimeIndicator [${lastMessageSenderId?.substring(0, 5) ?? 'null'}] - Building with:');
+    print('  - lastMessageTime: $lastMessageTime');
+    print('  - lastMessageSenderId: $lastMessageSenderId');
+    print('  - currentUserId: ${currentUserId.substring(0, 5)}...');
     
-    // Verificar si hay tiempo de último mensaje y si no es del usuario actual
+    // Important check: we ONLY want to show this indicator if the last message
+    // is FROM THE OTHER PERSON, not from the current user
+    bool isFromOtherUser = lastMessageSenderId != null && lastMessageSenderId != currentUserId;
+    print('  - isFromOtherUser: $isFromOtherUser (${isFromOtherUser ? "SHOW INDICATOR" : "DONT SHOW"})');
+    
+    // Basic validations
     if (lastMessageTime == null) {
-      print('ChatResponseTimeIndicator - No se muestra: lastMessageTime es null');
+      print('  - Not showing: lastMessageTime is null');
       return const SizedBox.shrink();
     }
     
-    if (lastMessageSenderId == null) {
-      print('ChatResponseTimeIndicator - No se muestra: lastMessageSenderId es null');
-      return const SizedBox.shrink();
-    }
-    
-    if (lastMessageSenderId == currentUserId) {
-      print('ChatResponseTimeIndicator - No se muestra: mensaje enviado por el usuario actual');
+    if (!isFromOtherUser) {
+      print('  - Not showing: message was sent by current user or unknown sender');
       return const SizedBox.shrink();
     }
 
-    // Calcular horas transcurridas (más preciso que días)
+    // Calculate time passed
     final int hoursPassed = DateTime.now().difference(lastMessageTime!).inHours;
-    final int daysPassed = hoursPassed ~/ 24; // División entera
+    final int daysPassed = hoursPassed ~/ 24; // Integer division
     
-    print('ChatResponseTimeIndicator - Horas: $hoursPassed, Días: $daysPassed');
+    print('  - Time calculation: $hoursPassed hours ($daysPassed days)');
     
-    // No mostrar si han pasado menos de 24 horas
+    // Only show for messages older than 24 hours
     if (hoursPassed < 24) {
-      print('ChatResponseTimeIndicator - No se muestra: han pasado menos de 24 horas');
+      print('  - Not showing: message is less than 24 hours old');
       return const SizedBox.shrink();
     }
+    
+    print('  - DISPLAYING INDICATOR for $daysPassed days');
 
-    // Determinar la apariencia basada en el tiempo transcurrido
+    // Configure appearance based on time passed
     Color backgroundColor = AppColors.primaryBlue.withOpacity(0.1);
     Color textColor = AppColors.primaryBlue;
     IconData icon = CupertinoIcons.clock;
     String timeText = '$daysPassed ${daysPassed == 1 ? 'día' : 'días'}';
     String messageText = 'Este mensaje lleva esperando respuesta.';
 
-    // Cambiar la apariencia para respuestas urgentes
+    // Change appearance for more urgent responses
     if (daysPassed >= 3 && daysPassed < 7) {
       backgroundColor = CupertinoColors.systemOrange.withOpacity(0.1);
       textColor = CupertinoColors.systemOrange;
@@ -71,8 +74,7 @@ class ChatResponseTimeIndicator extends StatelessWidget {
       messageText = 'Este mensaje necesita una respuesta urgentemente.';
     }
 
-    print('ChatResponseTimeIndicator - Mostrando indicador: $daysPassed días');
-
+    // Build the response time indicator
     return Container(
       margin: const EdgeInsets.only(top: 8, left: 12, right: 12, bottom: 4),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
