@@ -8,6 +8,7 @@ import 'package:unimarket/core/routes.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:unimarket/data/hive_chat_storage.dart';
+import 'package:unimarket/theme/app_colors.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,7 +39,11 @@ class UniMarketApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CupertinoApp(
-      debugShowCheckedModeBanner: false,
+      title: 'UniMarket',
+      theme: const CupertinoThemeData(
+        primaryColor: AppColors.primaryBlue,
+        brightness: Brightness.light,
+      ),
       initialRoute: '/',  
       onGenerateRoute: Routes.generateRoute, 
       localizationsDelegates: const [
