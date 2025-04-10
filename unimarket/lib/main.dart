@@ -8,6 +8,7 @@ import 'package:unimarket/core/routes.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:unimarket/data/hive_chat_storage.dart';
+import 'package:unimarket/data/hive_user_storage.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
 void main() async {
@@ -17,6 +18,8 @@ void main() async {
   );
 
   await HiveChatStorage.initialize();
+  await HiveUserStorage.initialize();
+
 
   FirebaseFirestore.instance.settings = 
     Settings(persistenceEnabled: true, cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED);

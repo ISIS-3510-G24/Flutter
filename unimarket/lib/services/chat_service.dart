@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:unimarket/data/hive_chat_storage.dart';
+import 'package:unimarket/data/hive_user_storage.dart';
 import 'package:unimarket/models/chat_model.dart';
 import 'package:unimarket/models/message_model.dart';
 import 'package:unimarket/models/user_model.dart';
@@ -12,7 +13,8 @@ class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final UserService _userService = UserService();
-  final HiveChatStorage _storage = HiveChatStorage();
+  final HiveChatStorage _chatStorage = HiveChatStorage();
+  final HiveUserStorage _userStorage = HiveUserStorage();
   final ConnectivityService _connectivityService = ConnectivityService();
   
   // Constructor asegurando la inicialización de Hive
@@ -22,10 +24,9 @@ class ChatService {
   
   Future<void> _ensureHiveInitialized() async {
     try {
-      if (!HiveChatStorage.isInitialized) {
-        print('ChatService: Inicializando Hive desde el constructor');
-        await HiveChatStorage.initialize();
-      }
+      await HiveChatStorage.initialize();
+      await HiveUserStorage.initialize();
+      print('ChatService: Hive inicializado correctamente');
     } catch (e) {
       print('ChatService: Error al inicializar Hive: $e');
     }
@@ -77,7 +78,10 @@ class ChatService {
       );
       
       // Save the new chat to local storage
-      await _storage.saveChat(newChat);
+      await _chatStorage.saveChat(newChat);
+      
+      // Asegurarse de que los datos de usuario estén en caché
+      await _cacheUserData(otherUserId);
       
       return newChat;
     } catch (e) {
@@ -119,7 +123,10 @@ class ChatService {
             final chatModel = ChatModel.fromFirestore(chatData, doc.id);
             
             // Save to local storage
-            await _storage.saveChat(chatModel);
+            await _chatStorage.saveChat(chatModel);
+            
+            // Asegurarse de que los datos de usuario estén en caché
+            await _cacheUserData(otherUserId);
             
             return chatModel;
           }
@@ -154,6 +161,11 @@ class ChatService {
         if (cachedChats.isNotEmpty) {
           print('ChatService: Emitting ${cachedChats.length} cached chats');
           controller.add(cachedChats);
+          
+          // Asegurarse de que los datos de usuario estén en caché para todos los chats
+          for (var chat in cachedChats) {
+            _cacheParticipantsData(chat.participants);
+          }
         }
         
         // Check connectivity before fetching from Firestore
@@ -173,6 +185,11 @@ class ChatService {
                     // Add processed chats to stream
                     if (!controller.isClosed) {
                       controller.add(chats);
+                      
+                      // Asegurarse de que los datos de usuario estén en caché para todos los chats
+                      for (var chat in chats) {
+                        _cacheParticipantsData(chat.participants);
+                      }
                       
                       // Set up real-time listener for changes after initial load
                       _setupChatRealTimeListener(controller, chats);
@@ -222,7 +239,7 @@ class ChatService {
   Future<List<ChatModel>> _loadCachedChats() async {
     try {
       print('ChatService: Loading chats from cache');
-      final cachedChats = await _storage.getAllChats();
+      final cachedChats = await _chatStorage.getAllChats();
       print('ChatService: Loaded ${cachedChats.length} chats from cache');
       
       // Sort the chats by last message time
@@ -236,6 +253,42 @@ class ChatService {
     } catch (e) {
       print('ChatService: Error loading cached chats: $e');
       return [];
+    }
+  }
+  
+  // Cache user data for all participants in a chat
+  Future<void> _cacheParticipantsData(List<String> participants) async {
+    if (currentUserId == null) return;
+    
+    for (final userId in participants) {
+      if (userId != currentUserId) {
+        await _cacheUserData(userId);
+      }
+    }
+  }
+  
+  // Cache user data for a specific user
+  Future<void> _cacheUserData(String userId) async {
+    try {
+      // Verificar primero si ya tenemos el usuario en caché
+      final bool exists = await _userStorage.userExists(userId);
+      if (exists) {
+        print('ChatService: User $userId already in cache');
+        return;
+      }
+      
+      // Obtener datos del usuario desde Firestore
+      final user = await _userService.getUserById(userId);
+      if (user == null) {
+        print('ChatService: Could not get user $userId from Firestore');
+        return;
+      }
+      
+      // Guardar en caché
+      await _userStorage.saveUser(user);
+      print('ChatService: User $userId cached successfully');
+    } catch (e) {
+      print('ChatService: Error caching user data for $userId: $e');
     }
   }
   
@@ -288,20 +341,28 @@ class ChatService {
             print('  Updated values:');
             print('    lastMessageSenderId: ${chatData['lastMessageSenderId']}');
             print('    hasUnreadMessages: ${chatData['hasUnreadMessages']}');
+            
+            // Cache sender data
+            if (latestMessageData['senderId'] != null && latestMessageData['senderId'] != currentUserId) {
+              await _cacheUserData(latestMessageData['senderId']);
+            }
           }
           
           // Create chat model
           final chatModel = ChatModel.fromFirestore(chatData, doc.id);
           
+          // Cache user data for all participants
+          await _cacheParticipantsData(chatModel.participants);
+          
           // Save to local storage
-          await _storage.saveChat(chatModel);
+          await _chatStorage.saveChat(chatModel);
           
           return chatModel;
         } catch (e) {
           print('ChatService: Error processing chat ${doc.id}: $e');
           
           // Try to get from cache if Firestore processing fails
-          final cachedChat = await _storage.getChat(doc.id);
+          final cachedChat = await _chatStorage.getChat(doc.id);
           if (cachedChat != null) {
             print('ChatService: Retrieved chat ${doc.id} from cache');
             return cachedChat;
@@ -388,7 +449,7 @@ class ChatService {
       final controller = StreamController<List<MessageModel>>();
       
       // First try to load cached messages
-      _storage.getChatMessages(chatId).then((cachedMessages) {
+      _chatStorage.getChatMessages(chatId).then((cachedMessages) {
         // Emit cached messages if available
         if (cachedMessages.isNotEmpty) {
           print('ChatService: Emitting ${cachedMessages.length} cached messages');
@@ -432,7 +493,12 @@ class ChatService {
                           messages.add(message);
                           
                           // Save each message to local storage
-                          _storage.saveMessage(message);
+                          _chatStorage.saveMessage(message);
+                          
+                          // Cache sender data
+                          if (message.senderId != currentUserId) {
+                            _cacheUserData(message.senderId);
+                          }
                         } catch (e) {
                           print('ChatService: Error parsing message ${doc.id}: $e');
                           // Continue with next message
@@ -497,58 +563,6 @@ class ChatService {
     }
   }
 
-  // Mark chat as read
-  Future<void> markChatAsRead(String chatId) async {
-    if (currentUserId == null) return;
-    
-    try {
-      print('ChatService: Marking chat $chatId as read');
-      
-      // Check connectivity
-      final bool isConnected = await _connectivityService.checkConnectivity();
-      
-      if (isConnected) {
-        print('ChatService: Connected - updating in Firestore');
-        
-        // Update chat document
-        await _chatsCollection.doc(chatId).update({
-          'hasUnreadMessages': false,
-        });
-        
-        // Update all unread messages sent by others
-        try {
-          final unreadMessages = await _chatsCollection
-              .doc(chatId)
-              .collection('messages')
-              .where('isRead', isEqualTo: false)
-              .where('senderId', isNotEqualTo: currentUserId)
-              .get();
-          
-          print('ChatService: Found ${unreadMessages.docs.length} unread messages to mark as read');
-          
-          if (unreadMessages.docs.isNotEmpty) {
-            final batch = _firestore.batch();
-            for (final doc in unreadMessages.docs) {
-              batch.update(doc.reference, {'isRead': true});
-            }
-            await batch.commit();
-            print('ChatService: All unread messages marked as read');
-          }
-        } catch (e) {
-          print('ChatService: Error updating unread messages: $e');
-        }
-      } else {
-        print('ChatService: Not connected - updating only locally');
-      }
-      
-      // Update local storage
-      await _storage.updateChatUnreadStatus(chatId, false);
-      
-    } catch (e) {
-      print('ChatService: Error in markChatAsRead: $e');
-    }
-  }
-
   // Get user details for a chat participant
   Future<UserModel?> getChatParticipant(String chatId) async {
     try {
@@ -603,8 +617,18 @@ class ChatService {
       final otherUserId = otherParticipants.first;
       print('ChatService: Other user ID: $otherUserId');
       
-      // Get user info
-      final userModel = await _userService.getUserById(otherUserId);
+      // First try to get from local storage
+      UserModel? userModel = await _userStorage.getUser(otherUserId);
+      
+      // If not in cache, get from Firestore
+      if (userModel == null) {
+        userModel = await _userService.getUserById(otherUserId);
+        
+        // Cache the user data
+        if (userModel != null) {
+          await _userStorage.saveUser(userModel);
+        }
+      }
       
       if (userModel == null) {
         print('ChatService: Could not fetch user info for $otherUserId');
@@ -655,7 +679,7 @@ class ChatService {
       );
       
       // Always save to local storage immediately
-      await _storage.saveMessage(message);
+      await _chatStorage.saveMessage(message);
       
       if (isConnected) {
         // Check if chat exists
@@ -703,10 +727,10 @@ class ChatService {
         );
         
         // Save server message to local storage
-        await _storage.saveMessage(serverMessage);
+        await _chatStorage.saveMessage(serverMessage);
         
         // Update chat in local storage
-        final existingChat = await _storage.getChat(chatId);
+        final existingChat = await _chatStorage.getChat(chatId);
         if (existingChat != null) {
           final updatedChat = ChatModel(
             id: existingChat.id,
@@ -718,12 +742,12 @@ class ChatService {
             additionalData: existingChat.additionalData,
           );
           
-          await _storage.saveChat(updatedChat);
+          await _chatStorage.saveChat(updatedChat);
         }
       } else {
         print('ChatService: Device is offline, message saved only locally');
         // Update chat in local storage with pending message
-        final existingChat = await _storage.getChat(chatId);
+        final existingChat = await _chatStorage.getChat(chatId);
         if (existingChat != null) {
           final updatedChat = ChatModel(
             id: existingChat.id,
@@ -735,7 +759,7 @@ class ChatService {
             additionalData: existingChat.additionalData,
           );
           
-          await _storage.saveChat(updatedChat);
+          await _chatStorage.saveChat(updatedChat);
         }
       }
       
@@ -743,6 +767,58 @@ class ChatService {
     } catch (e) {
       print('ChatService: Error sending message: $e');
       return false;
+    }
+  }
+  
+  // Mark chat as read
+  Future<void> markChatAsRead(String chatId) async {
+    if (currentUserId == null) return;
+    
+    try {
+      print('ChatService: Marking chat $chatId as read');
+      
+      // Check connectivity
+      final bool isConnected = await _connectivityService.checkConnectivity();
+      
+      if (isConnected) {
+        print('ChatService: Connected - updating in Firestore');
+        
+        // Update chat document
+        await _chatsCollection.doc(chatId).update({
+          'hasUnreadMessages': false,
+        });
+        
+        // Update all unread messages sent by others
+        try {
+          final unreadMessages = await _chatsCollection
+              .doc(chatId)
+              .collection('messages')
+              .where('isRead', isEqualTo: false)
+              .where('senderId', isNotEqualTo: currentUserId)
+              .get();
+          
+          print('ChatService: Found ${unreadMessages.docs.length} unread messages to mark as read');
+          
+          if (unreadMessages.docs.isNotEmpty) {
+            final batch = _firestore.batch();
+            for (final doc in unreadMessages.docs) {
+              batch.update(doc.reference, {'isRead': true});
+            }
+            await batch.commit();
+            print('ChatService: All unread messages marked as read');
+          }
+        } catch (e) {
+          print('ChatService: Error updating unread messages: $e');
+        }
+      } else {
+        print('ChatService: Not connected - updating only locally');
+      }
+      
+      // Update local storage
+      await _chatStorage.updateChatUnreadStatus(chatId, false);
+      
+    } catch (e) {
+      print('ChatService: Error in markChatAsRead: $e');
     }
   }
   
@@ -783,7 +859,7 @@ class ChatService {
       });
       
       // Also update in local storage
-      final existingChat = await _storage.getChat(chatId);
+      final existingChat = await _chatStorage.getChat(chatId);
       if (existingChat != null) {
         final updatedChat = ChatModel(
           id: existingChat.id,
@@ -795,8 +871,11 @@ class ChatService {
           additionalData: existingChat.additionalData,
         );
         
-        await _storage.saveChat(updatedChat);
+        await _chatStorage.saveChat(updatedChat);
       }
+      
+      // Cache user data for sender
+      await _cacheUserData(senderId);
       
       print('ChatService: Updated lastMessageSenderId to $senderId');
       return true;
