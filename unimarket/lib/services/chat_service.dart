@@ -1,20 +1,39 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:unimarket/data/hive_chat_storage.dart';
 import 'package:unimarket/models/chat_model.dart';
 import 'package:unimarket/models/message_model.dart';
 import 'package:unimarket/models/user_model.dart';
+import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/services/user_service.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final UserService _userService = UserService();
+  final HiveChatStorage _storage = HiveChatStorage();
+  final ConnectivityService _connectivityService = ConnectivityService();
+  
+  // Constructor asegurando la inicialización de Hive
+  ChatService() {
+    _ensureHiveInitialized();
+  }
+  
+  Future<void> _ensureHiveInitialized() async {
+    try {
+      if (!HiveChatStorage.isInitialized) {
+        print('ChatService: Inicializando Hive desde el constructor');
+        await HiveChatStorage.initialize();
+      }
+    } catch (e) {
+      print('ChatService: Error al inicializar Hive: $e');
+    }
+  }
   
   // Collection references
   CollectionReference get _chatsCollection => _firestore.collection('chats');
+  CollectionReference get chatsCollection => _firestore.collection('chats');
   
   // Get current user ID
   String? get currentUserId => _auth.currentUser?.uid;
@@ -22,21 +41,21 @@ class ChatService {
   // Create or get existing chat with another user
   Future<ChatModel?> createOrGetChat(String otherUserId) async {
     if (currentUserId == null) {
-      print('No current user ID available');
+      print('ChatService: No current user ID available');
       return null;
     }
     
-    print('Creating or getting chat with user: $otherUserId');
+    print('ChatService: Creating or getting chat with user: $otherUserId');
     
     try {
       // Check if chat already exists
       final existingChat = await _findExistingChat(otherUserId);
       if (existingChat != null) {
-        print('Found existing chat: ${existingChat.id}');
+        print('ChatService: Found existing chat: ${existingChat.id}');
         return existingChat;
       }
       
-      print('No existing chat found, creating new chat');
+      print('ChatService: No existing chat found, creating new chat');
       
       // Create new chat
       final newChatRef = _chatsCollection.doc();
@@ -48,23 +67,23 @@ class ChatService {
         'createdAt': FieldValue.serverTimestamp(),
       });
       
-      print('New chat created successfully with ID: ${newChatRef.id}');
+      print('ChatService: New chat created successfully with ID: ${newChatRef.id}');
       
       // Return a ChatModel with the new chat data
-      return ChatModel(
+      final newChat = ChatModel(
         id: newChatRef.id,
         participants: [currentUserId!, otherUserId],
         hasUnreadMessages: false,
       );
+      
+      // Save the new chat to local storage
+      await _storage.saveChat(newChat);
+      
+      return newChat;
     } catch (e) {
-      print('Error creating or getting chat: $e');
+      print('ChatService: Error creating or getting chat: $e');
       return null;
     }
-  }
-
-  Future<List<MessageModel>> getLocalMessages(String chatId) async {
-    // Call private method internally
-    return _getLocalMessages(chatId);
   }
 
   // Find existing chat with another user
@@ -72,14 +91,14 @@ class ChatService {
     if (currentUserId == null) return null;
     
     try {
-      print('Searching for existing chat with user $otherUserId');
+      print('ChatService: Searching for existing chat with user $otherUserId');
       
       // Query chats where current user is a participant
       final snapshot = await _chatsCollection
           .where('participants', arrayContains: currentUserId)
           .get();
       
-      print('Found ${snapshot.docs.length} chats for current user');
+      print('ChatService: Found ${snapshot.docs.length} chats for current user');
       
       // Check each chat to see if the other user is also a participant
       for (final doc in snapshot.docs) {
@@ -92,23 +111,28 @@ class ChatService {
             participants = List<String>.from(
               (chatData['participants'] as List).map((item) => item.toString())
             );
-            print('Chat ${doc.id} participants: $participants');
+            print('ChatService: Chat ${doc.id} participants: $participants');
           }
           
           if (participants.contains(otherUserId)) {
-            print('Found matching chat: ${doc.id}');
-            return ChatModel.fromFirestore(chatData, doc.id);
+            print('ChatService: Found matching chat: ${doc.id}');
+            final chatModel = ChatModel.fromFirestore(chatData, doc.id);
+            
+            // Save to local storage
+            await _storage.saveChat(chatModel);
+            
+            return chatModel;
           }
         } catch (e) {
-          print('Error processing chat ${doc.id}: $e');
+          print('ChatService: Error processing chat ${doc.id}: $e');
           continue;
         }
       }
       
-      print('No existing chat found with user $otherUserId');
+      print('ChatService: No existing chat found with user $otherUserId');
       return null;
     } catch (e) {
-      print('Error finding existing chat: $e');
+      print('ChatService: Error finding existing chat: $e');
       return null;
     }
   }
@@ -116,6 +140,7 @@ class ChatService {
   // Get all chats for current user
   Stream<List<ChatModel>> getUserChats() {
     if (currentUserId == null) {
+      print('ChatService: getUserChats - No current user ID');
       return Stream.value([]);
     }
     
@@ -123,503 +148,494 @@ class ChatService {
       // Create a StreamController to handle errors
       final controller = StreamController<List<ChatModel>>();
       
-      // Subscribe to the Firestore query
-      final subscription = _chatsCollection
-          .where('participants', arrayContains: currentUserId)
-          .snapshots()
-          .listen(
-            (snapshot) {
-              try {
-                final chats = snapshot.docs
-                    .map((doc) {
-                      try {
-                        return ChatModel.fromFirestore(
-                          doc.data() as Map<String, dynamic>, 
-                          doc.id
-                        );
-                      } catch (e) {
-                        print('Error parsing chat ${doc.id}: $e');
-                        return null;
-                      }
-                    })
-                    .where((chat) => chat != null)
-                    .cast<ChatModel>()
-                    .toList();
-                
-                // Sort the chats manually in memory
-                chats.sort((a, b) {
-                  if (a.lastMessageTime == null) return 1;
-                  if (b.lastMessageTime == null) return -1;
-                  return b.lastMessageTime!.compareTo(a.lastMessageTime!);
+      // First try to load chats from cache
+      _loadCachedChats().then((cachedChats) {
+        // Emit cached chats first (if available)
+        if (cachedChats.isNotEmpty) {
+          print('ChatService: Emitting ${cachedChats.length} cached chats');
+          controller.add(cachedChats);
+        }
+        
+        // Check connectivity before fetching from Firestore
+        _connectivityService.checkConnectivity().then((isConnected) {
+          if (isConnected) {
+            print('ChatService: Device is connected, fetching from Firestore');
+            
+            // Fetch from Firestore with server option
+            _firestore.collection('chats')
+                .where('participants', arrayContains: currentUserId)
+                .get(GetOptions(source: Source.server))
+                .then((snapshot) async {
+                  try {
+                    print('ChatService: Got ${snapshot.docs.length} chats from server');
+                    final List<ChatModel> chats = await _processChatsSnapshot(snapshot);
+                    
+                    // Add processed chats to stream
+                    if (!controller.isClosed) {
+                      controller.add(chats);
+                      
+                      // Set up real-time listener for changes after initial load
+                      _setupChatRealTimeListener(controller, chats);
+                    }
+                  } catch (e) {
+                    print('ChatService: Error in initial chats load: $e');
+                    // If we have cached chats, use them instead of showing error
+                    if (cachedChats.isNotEmpty && !controller.isClosed) {
+                      controller.add(cachedChats);
+                    } else if (!controller.isClosed) {
+                      controller.addError(e);
+                    }
+                  }
+                })
+                .catchError((error) {
+                  print('ChatService: Error fetching chats from Firestore: $error');
+                  // If we have cached chats, use them instead of showing error
+                  if (cachedChats.isNotEmpty && !controller.isClosed) {
+                    controller.add(cachedChats);
+                  } else if (!controller.isClosed) {
+                    controller.addError(error);
+                  }
                 });
-                
-                // Add the result to the stream
-                controller.add(chats);
-              } catch (e) {
-                print('Error processing chats: $e');
-                controller.addError(e);
-              }
-            },
-            onError: (error) {
-              print('Firestore error: $error');
-              controller.addError(error);
-            },
-          );
-      
-      // Clean up the subscription when the stream is canceled
-      controller.onCancel = () {
-        subscription.cancel();
-      };
+          } else {
+            print('ChatService: Device is offline, using only cached chats');
+            // If not connected, only use cached chats
+            if (!controller.isClosed) {
+              // Add a timeout to simulate network request
+              Future.delayed(Duration(milliseconds: 500), () {
+                if (!controller.isClosed) {
+                  controller.add(cachedChats);
+                }
+              });
+            }
+          }
+        });
+      });
       
       return controller.stream;
     } catch (e) {
-      print('Error getting user chats: $e');
-      // Return an empty stream with error handling
+      print('ChatService: Error in getUserChats: $e');
       return Stream.value([]);
     }
+  }
+  
+  // Load chats from cache
+  Future<List<ChatModel>> _loadCachedChats() async {
+    try {
+      print('ChatService: Loading chats from cache');
+      final cachedChats = await _storage.getAllChats();
+      print('ChatService: Loaded ${cachedChats.length} chats from cache');
+      
+      // Sort the chats by last message time
+      cachedChats.sort((a, b) {
+        if (a.lastMessageTime == null) return 1;
+        if (b.lastMessageTime == null) return -1;
+        return b.lastMessageTime!.compareTo(a.lastMessageTime!);
+      });
+      
+      return cachedChats;
+    } catch (e) {
+      print('ChatService: Error loading cached chats: $e');
+      return [];
+    }
+  }
+  
+  // Process a Firestore snapshot into ChatModel objects
+  Future<List<ChatModel>> _processChatsSnapshot(QuerySnapshot snapshot) async {
+    try {
+      final List<Future<ChatModel>> chatFutures = snapshot.docs.map((doc) async {
+        try {
+          // Get the latest message for each chat
+          final messagesQuery = await _firestore
+              .collection('chats')
+              .doc(doc.id)
+              .collection('messages')
+              .orderBy('timestamp', descending: true)
+              .limit(1)
+              .get();
+          
+          // Start with base chat data
+          final Map<String, dynamic> chatData = doc.data() as Map<String, dynamic>;
+          
+          print('ChatService: Processing chat ${doc.id}:');
+          print('  Original hasUnreadMessages: ${chatData['hasUnreadMessages']}');
+          print('  Original lastMessageSenderId: ${chatData['lastMessageSenderId']}');
+          
+          // Update with latest message info
+          if (messagesQuery.docs.isNotEmpty) {
+            final latestMessageData = messagesQuery.docs.first.data();
+            
+            print('  Latest message from subcollection:');
+            print('    SenderId: ${latestMessageData['senderId']}');
+            print('    Text: ${latestMessageData['text']}');
+            print('    IsRead: ${latestMessageData['isRead']}');
+            
+            // Update the chat data with latest message info
+            chatData['lastMessageSenderId'] = latestMessageData['senderId'];
+            chatData['lastMessage'] = latestMessageData['text'];
+            
+            // Update unread status if the message is from someone else and not read
+            if (latestMessageData['senderId'] != currentUserId && 
+                latestMessageData['isRead'] == false) {
+              chatData['hasUnreadMessages'] = true;
+            }
+            
+            // Update timestamp
+            if (latestMessageData['timestamp'] != null) {
+              chatData['lastMessageTime'] = latestMessageData['timestamp'];
+            }
+            
+            // Debugging the updated values
+            print('  Updated values:');
+            print('    lastMessageSenderId: ${chatData['lastMessageSenderId']}');
+            print('    hasUnreadMessages: ${chatData['hasUnreadMessages']}');
+          }
+          
+          // Create chat model
+          final chatModel = ChatModel.fromFirestore(chatData, doc.id);
+          
+          // Save to local storage
+          await _storage.saveChat(chatModel);
+          
+          return chatModel;
+        } catch (e) {
+          print('ChatService: Error processing chat ${doc.id}: $e');
+          
+          // Try to get from cache if Firestore processing fails
+          final cachedChat = await _storage.getChat(doc.id);
+          if (cachedChat != null) {
+            print('ChatService: Retrieved chat ${doc.id} from cache');
+            return cachedChat;
+          }
+          
+          return ChatModel.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
+        }
+      }).toList();
+      
+      // Wait for all futures to complete
+      final chats = await Future.wait(chatFutures);
+      
+      // Filter and sort
+      final validChats = chats.where((chat) => chat != null).toList();
+      
+      validChats.sort((a, b) {
+        if (a.lastMessageTime == null) return 1;
+        if (b.lastMessageTime == null) return -1;
+        return b.lastMessageTime!.compareTo(a.lastMessageTime!);
+      });
+      
+      // Extra debugging for the final chat list
+      for (final chat in validChats) {
+        print('ChatService: Final chat data - ${chat.id}:');
+        print('  lastMessageSenderId: ${chat.lastMessageSenderId}');
+        print('  currentUserId: $currentUserId');
+        print('  lastMessageTime: ${chat.lastMessageTime}');
+        print('  hasUnreadMessages: ${chat.hasUnreadMessages}');
+      }
+      
+      return validChats;
+    } catch (e) {
+      print('ChatService: Error processing chats snapshot: $e');
+      return [];
+    }
+  }
+  
+  // Setup real-time listener for chat updates
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>> _setupChatRealTimeListener(
+    StreamController<List<ChatModel>> controller,
+    List<ChatModel> initialChats
+  ) {
+    return _firestore.collection('chats')
+        .where('participants', arrayContains: currentUserId)
+        .snapshots()
+        .listen(
+          (snapshot) async {
+            try {
+              print('ChatService: Real-time update received for chats');
+              final updatedChats = await _processChatsSnapshot(snapshot);
+              
+              // Add to stream if not closed
+              if (!controller.isClosed) {
+                controller.add(updatedChats);
+              }
+            } catch (e) {
+              print('ChatService: Error in real-time chat update: $e');
+              // On error, use initial chats if available
+              if (!controller.isClosed && initialChats.isNotEmpty) {
+                controller.add(initialChats);
+              } else if (!controller.isClosed) {
+                controller.addError(e);
+              }
+            }
+          },
+          onError: (error) {
+            print('ChatService: Error in Firestore listener: $error');
+            // On error, use initial chats if available
+            if (!controller.isClosed && initialChats.isNotEmpty) {
+              controller.add(initialChats);
+            } else if (!controller.isClosed) {
+              controller.addError(error);
+            }
+          },
+        );
   }
 
   // Get messages for a specific chat
   Stream<List<MessageModel>> getChatMessages(String chatId) {
     try {
-      print('Starting message stream for chat $chatId');
+      print('ChatService: Setting up message stream for chat $chatId');
       
-      // Check if the messages subcollection exists
-      _checkAndCreateMessagesCollection(chatId);
-      
-      // Create a StreamController to handle errors and cache
+      // Create a StreamController
       final controller = StreamController<List<MessageModel>>();
       
       // First try to load cached messages
-      _getLocalMessages(chatId).then((cachedMessages) {
-        // Immediately emit cached messages if available
+      _storage.getChatMessages(chatId).then((cachedMessages) {
+        // Emit cached messages if available
         if (cachedMessages.isNotEmpty) {
-          print('Emitting ${cachedMessages.length} cached messages');
+          print('ChatService: Emitting ${cachedMessages.length} cached messages');
           controller.add(cachedMessages);
-        } else {
-          print('No cached messages available for chat $chatId');
         }
         
-        // Set up Firestore subscription with better error handling
-        final subscription = _chatsCollection
-            .doc(chatId)
-            .collection('messages')
-            .orderBy('timestamp', descending: true)
-            .limit(50)
-            .snapshots()
-            .listen(
-              (snapshot) {
-                try {
-                  print('Message snapshot received for chat $chatId: ${snapshot.docs.length} documents');
-                  
-                  if (snapshot.docs.isEmpty) {
-                    print('No messages in Firestore for chat $chatId');
-                    if (!controller.isClosed) {
-                      controller.add([]);
-                    }
-                    return;
-                  }
-                  
-                  final messages = snapshot.docs.map((doc) {
+        // Check connectivity before fetching from Firestore
+        _connectivityService.checkConnectivity().then((isConnected) {
+          if (isConnected) {
+            // Set up Firestore subscription
+            final subscription = _chatsCollection
+                .doc(chatId)
+                .collection('messages')
+                .orderBy('timestamp', descending: true)
+                .snapshots()
+                .listen(
+                  (snapshot) {
                     try {
-                      final data = doc.data();
-                      print('Processing message ${doc.id} with data: $data');
+                      print('ChatService: Message snapshot received with ${snapshot.docs.length} documents');
                       
-                      // Make sure chatId is available in the data
-                      if (!data.containsKey('chatId')) {
-                        data['chatId'] = chatId;
+                      if (snapshot.docs.isEmpty) {
+                        print('ChatService: No messages in Firestore for chat $chatId');
+                        if (!controller.isClosed) {
+                          controller.add([]);
+                        }
+                        return;
                       }
                       
-                      // Add document ID to data
-                      data['id'] = doc.id;
+                      // Process message documents
+                      final List<MessageModel> messages = [];
                       
-                      return MessageModel.fromFirestore(data, doc.id);
+                      for (final doc in snapshot.docs) {
+                        try {
+                          final data = doc.data();
+                          
+                          // Make sure chatId is included
+                          data['chatId'] = chatId;
+                          data['id'] = doc.id;
+                          
+                          final message = MessageModel.fromFirestore(data, doc.id);
+                          messages.add(message);
+                          
+                          // Save each message to local storage
+                          _storage.saveMessage(message);
+                        } catch (e) {
+                          print('ChatService: Error parsing message ${doc.id}: $e');
+                          // Continue with next message
+                        }
+                      }
+                      
+                      // Sort messages by timestamp (newest first)
+                      messages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+                      
+                      // Add to stream if not closed
+                      if (!controller.isClosed) {
+                        print('ChatService: Emitting ${messages.length} messages');
+                        controller.add(messages);
+                      }
                     } catch (e) {
-                      print('Error parsing message ${doc.id}: $e');
-                      return null;
+                      print('ChatService: Error processing message snapshot: $e');
+                      // Fall back to cache on error
+                      if (!controller.isClosed && cachedMessages.isNotEmpty) {
+                        controller.add(cachedMessages);
+                      } else if (!controller.isClosed) {
+                        controller.addError(e);
+                      }
                     }
-                  })
-                  .where((message) => message != null)
-                  .cast<MessageModel>()
-                  .toList();
-                  
-                  // Add result to stream if not closed
-                  if (!controller.isClosed) {
-                    print('Emitting ${messages.length} messages from Firestore');
-                    controller.add(messages);
-                    
-                    // Save messages locally
-                    if (messages.isNotEmpty) {
-                      _saveMessagesLocally(messages);
-                    }
-                  }
-                } catch (e) {
-                  print('Error processing message snapshot: $e');
-                  if (!controller.isClosed) {
-                    // If we have cached messages, emit those on error
-                    if (cachedMessages.isNotEmpty) {
+                  },
+                  onError: (error) {
+                    print('ChatService: Firestore error in message listener: $error');
+                    // Fall back to cache on error
+                    if (!controller.isClosed && cachedMessages.isNotEmpty) {
                       controller.add(cachedMessages);
-                    } else {
-                      controller.addError(e);
+                    } else if (!controller.isClosed) {
+                      controller.addError(error);
                     }
-                  }
-                }
-              },
-              onError: (error) {
-                print('Firestore error in messages for chat $chatId: $error');
+                  },
+                );
+            
+            // Clean up subscription when stream is canceled
+            controller.onCancel = () {
+              print('ChatService: Message stream canceled for chat $chatId');
+              subscription.cancel();
+            };
+          } else {
+            print('ChatService: Device is offline, using only cached messages');
+            // If not connected, only use cached messages
+            if (!controller.isClosed && cachedMessages.isNotEmpty) {
+              // Add a timeout to simulate network request
+              Future.delayed(Duration(milliseconds: 500), () {
                 if (!controller.isClosed) {
-                  // If we have cached messages, emit those on error
-                  if (cachedMessages.isNotEmpty) {
-                    controller.add(cachedMessages);
-                  } else {
-                    controller.addError(error);
-                  }
+                  controller.add(cachedMessages);
                 }
-              },
-            );
-        
-        // Clean up subscription when stream is canceled
-        controller.onCancel = () {
-          print('Message stream canceled for chat $chatId');
-          subscription.cancel();
-        };
+              });
+            } else if (!controller.isClosed) {
+              controller.add([]);
+            }
+          }
+        });
       });
       
       return controller.stream;
     } catch (e) {
-      print('Error setting up message stream for chat $chatId: $e');
-      // Return an empty stream on error
+      print('ChatService: Error setting up message stream: $e');
       return Stream.value([]);
     }
   }
 
-  // Check if the messages subcollection exists, create sample message if not
-  Future<void> _checkAndCreateMessagesCollection(String chatId) async {
-    if (currentUserId == null) return;
-    
-    try {
-      print('Checking if messages subcollection exists for chat $chatId');
-      
-      // Try to get one message to check if subcollection exists
-      final messagesQuery = await _chatsCollection
-          .doc(chatId)
-          .collection('messages')
-          .limit(1)
-          .get();
-      
-      if (messagesQuery.docs.isEmpty) {
-        print('No messages found for chat $chatId. Need to ensure collection exists');
-        
-        // Check if the chat has a lastMessage field but no messages subcollection
-        final chatDoc = await _chatsCollection.doc(chatId).get();
-        if (chatDoc.exists) {
-          final chatData = chatDoc.data() as Map<String, dynamic>;
-          
-          if (chatData.containsKey('lastMessage') && chatData['lastMessage'] != null) {
-            print('Chat has lastMessage but no messages subcollection. Adding lastMessage as a document');
-            
-            String lastMessageText = '';
-            String? lastMessageSenderId;
-            DateTime timestamp = DateTime.now();
-            
-            // Extract data from the chat document
-            if (chatData['lastMessage'] is String) {
-              lastMessageText = chatData['lastMessage'];
-            }
-            
-            if (chatData.containsKey('lastMessageSenderId')) {
-              lastMessageSenderId = chatData['lastMessageSenderId'];
-            }
-            
-            if (chatData.containsKey('timestamp') || chatData.containsKey('lastMessageTime')) {
-              // Use the existing timestamp if available
-              dynamic existingTimestamp = chatData['timestamp'] ?? chatData['lastMessageTime'];
-              if (existingTimestamp is Timestamp) {
-                timestamp = existingTimestamp.toDate();
-              }
-            }
-            
-            // Only proceed if we have valid data
-            if (lastMessageText.isNotEmpty && lastMessageSenderId != null) {
-              // Create a message to ensure the subcollection exists
-              await _chatsCollection
-                  .doc(chatId)
-                  .collection('messages')
-                  .add({
-                    'chatId': chatId,
-                    'senderId': lastMessageSenderId,
-                    'text': lastMessageText,
-                    'timestamp': timestamp,
-                    'isRead': true,
-                  });
-              
-              print('Created message document from lastMessage in chat $chatId');
-            }
-          }
-        }
-      } else {
-        print('Messages subcollection exists for chat $chatId with at least one document');
-      }
-    } catch (e) {
-      print('Error checking/creating messages subcollection: $e');
-    }
-  }
-
-  // Helper method to save multiple messages locally
-  Future<void> _saveMessagesLocally(List<MessageModel> messages) async {
-    if (messages.isEmpty) return;
-    
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final chatId = messages.first.chatId;
-      final chatKey = 'chat_${chatId}_messages';
-      final List<String> messageKeys = prefs.getStringList(chatKey) ?? [];
-      
-      for (final message in messages) {
-        final key = 'chat_${chatId}_${message.id}';
-        final messageMap = message.toMap();
-        messageMap['id'] = message.id; // Add ID for reconstruction
-        
-        // Convert DateTime to ISO string
-        messageMap['timestamp'] = message.timestamp.toIso8601String();
-        
-        // Save as JSON string
-        await prefs.setString(key, jsonEncode(messageMap));
-        
-        // Add to message keys if not already present
-        if (!messageKeys.contains(key)) {
-          messageKeys.add(key);
-        }
-      }
-      
-      // Update message keys
-      await prefs.setStringList(chatKey, messageKeys);
-    } catch (e) {
-      print('Error saving messages locally: $e');
-    }
-  }
-
-  // Mark all messages in a chat as read
+  // Mark chat as read
   Future<void> markChatAsRead(String chatId) async {
     if (currentUserId == null) return;
     
     try {
-      // First update the chat's unread status
-      await _chatsCollection.doc(chatId).update({
-        'hasUnreadMessages': false,
-      });
+      print('ChatService: Marking chat $chatId as read');
       
-      print('Chat marked as not having unread messages');
+      // Check connectivity
+      final bool isConnected = await _connectivityService.checkConnectivity();
       
-      try {
-        // Try to update individual messages, but handle the index error gracefully
-        final unreadMessages = await _chatsCollection
-            .doc(chatId)
-            .collection('messages')
-            .where('isRead', isEqualTo: false)
-            .where('senderId', isNotEqualTo: currentUserId)
-            .get();
+      if (isConnected) {
+        print('ChatService: Connected - updating in Firestore');
         
-        if (unreadMessages.docs.isNotEmpty) {
-          final batch = _firestore.batch();
-          for (final doc in unreadMessages.docs) {
-            batch.update(doc.reference, {'isRead': true});
+        // Update chat document
+        await _chatsCollection.doc(chatId).update({
+          'hasUnreadMessages': false,
+        });
+        
+        // Update all unread messages sent by others
+        try {
+          final unreadMessages = await _chatsCollection
+              .doc(chatId)
+              .collection('messages')
+              .where('isRead', isEqualTo: false)
+              .where('senderId', isNotEqualTo: currentUserId)
+              .get();
+          
+          print('ChatService: Found ${unreadMessages.docs.length} unread messages to mark as read');
+          
+          if (unreadMessages.docs.isNotEmpty) {
+            final batch = _firestore.batch();
+            for (final doc in unreadMessages.docs) {
+              batch.update(doc.reference, {'isRead': true});
+            }
+            await batch.commit();
+            print('ChatService: All unread messages marked as read');
           }
-          await batch.commit();
-          print('${unreadMessages.docs.length} messages marked as read');
+        } catch (e) {
+          print('ChatService: Error updating unread messages: $e');
         }
-      } catch (e) {
-        // This might fail due to the missing index, but we've already updated the chat's unread status
-        print('Error updating message read status (probably missing index): $e');
-        print('Individual messages not marked as read, but chat is updated');
+      } else {
+        print('ChatService: Not connected - updating only locally');
       }
+      
+      // Update local storage
+      await _storage.updateChatUnreadStatus(chatId, false);
+      
     } catch (e) {
-      print('Error marking chat as read: $e');
+      print('ChatService: Error in markChatAsRead: $e');
     }
   }
-  
+
   // Get user details for a chat participant
   Future<UserModel?> getChatParticipant(String chatId) async {
     try {
-      print('Getting participant for chat $chatId');
-      // First, ensure we have a current user
-      final currentUserId = _auth.currentUser?.uid;
+      print('ChatService: Getting participant for chat $chatId');
+      
       if (currentUserId == null) {
-        print('No current user to compare against chat participants');
+        print('ChatService: No current user ID');
         return null;
       }
       
       // Get the chat document
       final chatDoc = await _chatsCollection.doc(chatId).get();
       if (!chatDoc.exists) {
-        print('Chat $chatId does not exist');
+        print('ChatService: Chat $chatId does not exist');
         return null;
       }
       
       final chatData = chatDoc.data() as Map<String, dynamic>;
       
-      // Extract participants properly
+      // Extract participants
       List<String> participants = [];
       try {
         if (chatData.containsKey('participants') && chatData['participants'] is List) {
           participants = List<String>.from(
             (chatData['participants'] as List).map((item) => item.toString())
           );
-          print('Found participants: $participants');
+          print('ChatService: Found participants: $participants');
         } else {
-          print('No participants found or invalid format');
+          print('ChatService: No participants found or invalid format');
           return null;
         }
       } catch (e) {
-        print('Error extracting participants: $e');
+        print('ChatService: Error extracting participants: $e');
         return null;
       }
       
-      // Check if there are participants
+      // Check for empty participants
       if (participants.isEmpty) {
-        print('Empty participants list');
+        print('ChatService: Empty participants list');
         return null;
       }
       
-      // Filter out the current user to find other participants
+      // Filter out current user
       final otherParticipants = participants.where((id) => id != currentUserId).toList();
       
       if (otherParticipants.isEmpty) {
-        print('No other participants found in chat - current user: $currentUserId');
+        print('ChatService: No other participants found');
         return null;
       }
       
-      // Get the first other participant (typically in a 1:1 chat)
+      // Get the first other participant
       final otherUserId = otherParticipants.first;
-      print('Other user ID: $otherUserId');
+      print('ChatService: Other user ID: $otherUserId');
       
       // Get user info
       final userModel = await _userService.getUserById(otherUserId);
+      
       if (userModel == null) {
-        print('Could not fetch user info for $otherUserId');
+        print('ChatService: Could not fetch user info for $otherUserId');
       } else {
-        print('User retrieved: ${userModel.displayName}');
+        print('ChatService: User retrieved: ${userModel.displayName}');
       }
       
       return userModel;
     } catch (e) {
-      print('Error in getChatParticipant: $e');
+      print('ChatService: Error in getChatParticipant: $e');
       return null;
     }
   }
 
-  Future<void> _saveMessageLocally(MessageModel message) async {
-    try {
-      print('Saving message locally: ${message.id}');
-      final prefs = await SharedPreferences.getInstance();
-      final key = 'chat_${message.chatId}_${message.id}';
-      
-      // Prepare map for JSON
-      final messageJson = message.toMap();
-      messageJson['id'] = message.id; // Add ID for reconstruction
-      
-      // Convert DateTime to ISO string
-      messageJson['timestamp'] = message.timestamp.toIso8601String();
-      
-      // Save as JSON string
-      final jsonString = jsonEncode(messageJson);
-      print('Message JSON to save: $jsonString');
-      await prefs.setString(key, jsonString);
-      
-      // Update chat message keys
-      final chatKey = 'chat_${message.chatId}_messages';
-      final List<String> messageKeys = prefs.getStringList(chatKey) ?? [];
-      if (!messageKeys.contains(key)) {
-        messageKeys.add(key);
-        await prefs.setStringList(chatKey, messageKeys);
-        print('Keys updated, total: ${messageKeys.length}');
-      }
-    } catch (e) {
-      print('Error saving message locally: $e');
-    }
-  }
-
-  Future<List<MessageModel>> _getLocalMessages(String chatId) async {
-    try {
-      print('Getting local messages for chat $chatId');
-      final prefs = await SharedPreferences.getInstance();
-      final chatKey = 'chat_${chatId}_messages';
-      final List<String> messageKeys = prefs.getStringList(chatKey) ?? [];
-      print('Message keys found: ${messageKeys.length}');
-      
-      final List<MessageModel> messages = [];
-      
-      for (final key in messageKeys) {
-        final messageString = prefs.getString(key);
-        if (messageString != null) {
-          try {
-            // Properly decode JSON
-            final messageMap = jsonDecode(messageString) as Map<String, dynamic>;
-            
-            // Make sure the chatId is set
-            if (!messageMap.containsKey('chatId')) {
-              messageMap['chatId'] = chatId;
-            }
-            
-            // Handle timestamp in a safer way
-            DateTime timestamp;
-            if (messageMap.containsKey('timestamp') && messageMap['timestamp'] != null) {
-              if (messageMap['timestamp'] is String) {
-                timestamp = DateTime.parse(messageMap['timestamp']);
-              } else {
-                // Fallback to current time if we can't parse
-                timestamp = DateTime.now();
-              }
-            } else {
-              timestamp = DateTime.now();
-            }
-            
-            messages.add(MessageModel(
-              id: messageMap['id'] ?? key.split('_').last,
-              chatId: messageMap['chatId'] ?? chatId,
-              senderId: messageMap['senderId'] ?? '',
-              text: messageMap['text'] ?? '',
-              timestamp: timestamp,
-              isRead: messageMap['isRead'] ?? false,
-            ));
-          } catch (e) {
-            print('Error parsing local message: $e');
-          }
-        }
-      }
-      
-      // Sort by timestamp (newest first)
-      messages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      print('Retrieved ${messages.length} local messages');
-      
-      return messages;
-    } catch (e) {
-      print('Error getting local messages: $e');
-      return [];
-    }
-  }
-
-  // Send message with improved error handling and structure
+  // Send message
   Future<bool> sendMessage(String chatId, String text) async {
     if (currentUserId == null) {
-      print('No current user to send message');
+      print('ChatService: No current user to send message');
       return false;
     }
     
     try {
-      print('Sending message to chat $chatId: "$text"');
+      print('ChatService: Sending message to chat $chatId: "$text"');
       
-      // Check if chat exists
-      final chatDoc = await _chatsCollection.doc(chatId).get();
-      if (!chatDoc.exists) {
-        print('Chat $chatId does not exist');
-        return false;
-      }
+      // Check connectivity first
+      final bool isConnected = await _connectivityService.checkConnectivity();
       
-      // Create message document in the proper subcollection
+      // Create message timestamp
       final timestamp = DateTime.now();
       
-      // Create the message data
+      // Create message data
       final messageData = {
         'chatId': chatId,
         'senderId': currentUserId,
@@ -628,41 +644,175 @@ class ChatService {
         'isRead': false,
       };
       
-      // Add the message to the messages subcollection
-      final messageRef = await _chatsCollection
-          .doc(chatId)
-          .collection('messages')
-          .add(messageData);
-      
-      print('Created message document with ID: ${messageRef.id}');
-      
-      // Update chat's last message info
-      final chatUpdate = {
-        'lastMessage': text,
-        'lastMessageTime': timestamp,
-        'lastMessageSenderId': currentUserId,
-        'hasUnreadMessages': true,
-      };
-      
-      await _chatsCollection.doc(chatId).update(chatUpdate);
-      print('Updated chat document with new message info');
-      
-      // Create MessageModel for local storage
+      // Create message model for local storage
       final message = MessageModel(
-        id: messageRef.id,
+        id: 'local_${timestamp.millisecondsSinceEpoch}_${currentUserId!.substring(0, 8)}',
         chatId: chatId,
         senderId: currentUserId!,
         text: text,
         timestamp: timestamp,
+        isRead: false,
       );
       
-      // Save to local storage
-      await _saveMessageLocally(message);
+      // Always save to local storage immediately
+      await _storage.saveMessage(message);
+      
+      if (isConnected) {
+        // Check if chat exists
+        final chatDoc = await _chatsCollection.doc(chatId).get();
+        if (!chatDoc.exists) {
+          print('ChatService: Chat $chatId does not exist');
+          return false;
+        }
+        
+        // Add message to Firestore
+        final messageRef = await _chatsCollection
+            .doc(chatId)
+            .collection('messages')
+            .add(messageData);
+        
+        print('ChatService: Created message with ID: ${messageRef.id}');
+        
+        // Update chat document
+        final chatUpdate = {
+          'lastMessage': text,
+          'lastMessageTime': timestamp,
+          'lastMessageSenderId': currentUserId,
+          // If the message is from current user, the recipient has an unread message
+          'hasUnreadMessages': true,
+        };
+        
+        // Use a transaction to update the chat document
+        await _firestore.runTransaction((transaction) async {
+          transaction.update(
+            _chatsCollection.doc(chatId), 
+            chatUpdate
+          );
+        });
+        
+        print('ChatService: Updated chat with new message info');
+        
+        // Update local message with server ID
+        final serverMessage = MessageModel(
+          id: messageRef.id,
+          chatId: chatId,
+          senderId: currentUserId!,
+          text: text,
+          timestamp: timestamp,
+          isRead: false,
+        );
+        
+        // Save server message to local storage
+        await _storage.saveMessage(serverMessage);
+        
+        // Update chat in local storage
+        final existingChat = await _storage.getChat(chatId);
+        if (existingChat != null) {
+          final updatedChat = ChatModel(
+            id: existingChat.id,
+            participants: existingChat.participants,
+            lastMessage: text,
+            lastMessageTime: timestamp,
+            lastMessageSenderId: currentUserId,
+            hasUnreadMessages: true,
+            additionalData: existingChat.additionalData,
+          );
+          
+          await _storage.saveChat(updatedChat);
+        }
+      } else {
+        print('ChatService: Device is offline, message saved only locally');
+        // Update chat in local storage with pending message
+        final existingChat = await _storage.getChat(chatId);
+        if (existingChat != null) {
+          final updatedChat = ChatModel(
+            id: existingChat.id,
+            participants: existingChat.participants,
+            lastMessage: text + " (pending)",
+            lastMessageTime: timestamp,
+            lastMessageSenderId: currentUserId,
+            hasUnreadMessages: true,
+            additionalData: existingChat.additionalData,
+          );
+          
+          await _storage.saveChat(updatedChat);
+        }
+      }
       
       return true;
     } catch (e) {
-      print('Error sending message: $e');
+      print('ChatService: Error sending message: $e');
       return false;
     }
+  }
+  
+  // Manually fix lastMessageSenderId for a chat
+  Future<bool> fixChatSenderIds(String chatId) async {
+    try {
+      print('ChatService: Attempting to fix lastMessageSenderId for chat $chatId');
+      
+      // Get the chat document
+      final chatDoc = await _chatsCollection.doc(chatId).get();
+      if (!chatDoc.exists) {
+        print('ChatService: Chat $chatId does not exist');
+        return false;
+      }
+      
+      // Get the latest message
+      final latestMessage = await _chatsCollection
+          .doc(chatId)
+          .collection('messages')
+          .orderBy('timestamp', descending: true)
+          .limit(1)
+          .get();
+      
+      if (latestMessage.docs.isEmpty) {
+        print('ChatService: No messages found for chat $chatId');
+        return false;
+      }
+      
+      // Get sender ID from latest message
+      final latestMessageData = latestMessage.docs.first.data();
+      final String senderId = latestMessageData['senderId'];
+      
+      print('ChatService: Latest message senderId: $senderId');
+      
+      // Update chat document
+      await _chatsCollection.doc(chatId).update({
+        'lastMessageSenderId': senderId,
+      });
+      
+      // Also update in local storage
+      final existingChat = await _storage.getChat(chatId);
+      if (existingChat != null) {
+        final updatedChat = ChatModel(
+          id: existingChat.id,
+          participants: existingChat.participants,
+          lastMessage: existingChat.lastMessage,
+          lastMessageTime: existingChat.lastMessageTime,
+          lastMessageSenderId: senderId,
+          hasUnreadMessages: existingChat.hasUnreadMessages,
+          additionalData: existingChat.additionalData,
+        );
+        
+        await _storage.saveChat(updatedChat);
+      }
+      
+      print('ChatService: Updated lastMessageSenderId to $senderId');
+      return true;
+    } catch (e) {
+      print('ChatService: Error fixing chat sender IDs: $e');
+      return false;
+    }
+  }
+  
+  // Check if a message needs a response reminder
+  bool needsResponseReminder(MessageModel message) {
+    if (message.senderId == currentUserId) {
+      return false; // No reminder needed for our own messages
+    }
+    
+    final daysSinceMessage = DateTime.now().difference(message.timestamp).inDays;
+    return daysSinceMessage >= 1; // Show reminder after 1+ days
   }
 }

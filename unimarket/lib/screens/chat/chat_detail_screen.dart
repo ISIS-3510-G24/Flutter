@@ -1,7 +1,7 @@
 import 'dart:async';
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:unimarket/models/message_model.dart';
@@ -32,11 +32,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   bool _isSending = false;
   UserModel? _otherUser;
   String? _currentUserId;
+  StreamSubscription? _messagesSubscription;
 
   @override
   void initState() {
     super.initState();
     _currentUserId = _chatService.currentUserId;
+    
+    // Reset lastMessageSenderId first
+    _fixChatSenderIds();
+    
+    // Then load messages and mark as read
     _loadMessages();
     _markChatAsRead();
     
@@ -52,9 +58,21 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
+    _messagesSubscription?.cancel();
     super.dispose();
   }
 
+  Future<void> _fixChatSenderIds() async {
+    try {
+      print('ChatDetailScreen: Fixing lastMessageSenderId for chat ${widget.chatId}');
+      
+      // This will update the lastMessageSenderId field with the correct value from the messages collection
+      await _chatService.fixChatSenderIds(widget.chatId);
+    } catch (e) {
+      print('ChatDetailScreen: Error fixing lastMessageSenderId: $e');
+    }
+  }
+  
   Future<void> _loadChatParticipant() async {
     final user = await _chatService.getChatParticipant(widget.chatId);
     if (mounted) {
@@ -64,229 +82,264 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
-// Update this method in your ChatDetailScreen class
-Future<void> _loadMessages() async {
-  setState(() {
-    _isLoading = true;
-  });
+  Future<void> _loadMessages() async {
+    setState(() {
+      _isLoading = true;
+    });
 
-  try {
-    print('Loading messages for chat: ${widget.chatId}');
-    
-    // Set up a timeout to prevent infinite loading
-    final timeoutTimer = Timer(const Duration(seconds: 8), () {
-      if (mounted && _isLoading) {
-        print('Message loading timed out for chat ${widget.chatId}');
+    try {
+      print('ChatDetailScreen: Loading messages for chat: ${widget.chatId}');
+      
+      // Cancel any existing subscription
+      await _messagesSubscription?.cancel();
+      
+      // Set up a timeout to prevent infinite loading
+      final timeoutTimer = Timer(const Duration(seconds: 10), () {
+        if (mounted && _isLoading) {
+          print('ChatDetailScreen: Message loading timed out');
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      });
+
+      // Listen to the messages stream with better error handling
+      _messagesSubscription = _chatService.getChatMessages(widget.chatId).listen(
+        (messages) {
+          timeoutTimer.cancel();
+          
+          if (mounted) {
+            print('ChatDetailScreen: Received ${messages.length} messages');
+            
+            // Log message details for debugging
+            for (int i = 0; i < messages.length && i < 5; i++) {
+              print('Message $i: ID=${messages[i].id}, Text=${messages[i].text}, Sender=${messages[i].senderId}');
+            }
+            
+            setState(() {
+              _messages = messages;
+              _isLoading = false;
+            });
+          }
+        },
+        onError: (error) {
+          timeoutTimer.cancel();
+          
+          print('ChatDetailScreen: Error loading messages: $error');
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+            
+            // Show error message to user
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Error loading messages. Please try again.'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        },
+      );
+    } catch (e) {
+      print('ChatDetailScreen: Exception in _loadMessages: $e');
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
       }
-    });
+    }
+  }
 
-    // Listen to the messages stream with better error handling
-    _chatService.getChatMessages(widget.chatId).listen(
-      (messages) {
-        timeoutTimer.cancel();
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+    
+    setState(() {
+      _isSending = true;
+    });
+    
+    // Save text and clear input immediately for better UX
+    final messageText = text;
+    _messageController.clear();
+    
+    // Create optimistic message for immediate feedback
+    final optimisticMessage = MessageModel(
+      id: 'temp-${DateTime.now().millisecondsSinceEpoch}',
+      chatId: widget.chatId,
+      senderId: _currentUserId ?? '',
+      text: messageText,
+      timestamp: DateTime.now(),
+    );
+    
+    // Add optimistic message to list
+    setState(() {
+      _messages = [optimisticMessage, ..._messages];
+    });
+    
+    try {
+      print('ChatDetailScreen: Sending message: "$messageText"');
+      final success = await _chatService.sendMessage(widget.chatId, messageText);
+      
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
         
-        if (mounted) {
-          print('Received ${messages.length} messages for chat ${widget.chatId}');
+        if (!success) {
+          print('ChatDetailScreen: Failed to send message');
+          
+          // Remove optimistic message on failure
           setState(() {
-            _messages = messages;
-            _isLoading = false;
-          });
-        }
-      },
-      onError: (error) {
-        timeoutTimer.cancel();
-        
-        print('Error loading messages for chat ${widget.chatId}: $error');
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
+            _messages = _messages.where((m) => m.id != optimisticMessage.id).toList();
           });
           
-          // Show error message to user
+          // Show error
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error loading messages. Please try again.'),
-              duration: Duration(seconds: 3),
+            const SnackBar(
+              content: Text('Could not send message. Please try again.'),
+              duration: Duration(seconds: 2),
             ),
           );
         }
-      },
-    );
-  } catch (e) {
-    print('Exception in _loadMessages for chat ${widget.chatId}: $e');
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-}
-
-// Also update _sendMessage method for better handling
-Future<void> _sendMessage() async {
-  final text = _messageController.text.trim();
-  if (text.isEmpty) return;
-  
-  setState(() {
-    _isSending = true;
-  });
-  
-  // Save text and clear input immediately for better UX
-  final messageText = text;
-  _messageController.clear();
-  
-  // Create optimistic message for immediate feedback
-  final optimisticMessage = MessageModel(
-    id: 'temp-${DateTime.now().millisecondsSinceEpoch}',
-    chatId: widget.chatId,
-    senderId: _currentUserId ?? '',
-    text: messageText,
-    timestamp: DateTime.now(),
-  );
-  
-  // Add optimistic message to list
-  setState(() {
-    _messages = [optimisticMessage, ..._messages];
-  });
-  
-  try {
-    print('Sending message to chat ${widget.chatId}: "$messageText"');
-    final success = await _chatService.sendMessage(widget.chatId, messageText);
-    
-    if (mounted) {
-      setState(() {
-        _isSending = false;
-      });
-      
-      if (!success) {
-        print('Failed to send message to chat ${widget.chatId}');
-        
-        // Remove optimistic message on failure
+      }
+    } catch (e) {
+      print('ChatDetailScreen: Error sending message: $e');
+      if (mounted) {
         setState(() {
+          _isSending = false;
+          // Remove optimistic message on error
           _messages = _messages.where((m) => m.id != optimisticMessage.id).toList();
         });
         
         // Show error
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Could not send message. Please try again.'),
+            content: Text('Error sending message. Please try again.'),
             duration: Duration(seconds: 2),
           ),
         );
       }
     }
-  } catch (e) {
-    print('Error sending message to chat ${widget.chatId}: $e');
-    if (mounted) {
-      setState(() {
-        _isSending = false;
-        // Remove optimistic message on error
-        _messages = _messages.where((m) => m.id != optimisticMessage.id).toList();
-      });
-      
-      // Show error
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error sending message. Please try again.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
   }
-}
-
 
   Future<void> _markChatAsRead() async {
     try {
-      print('Marking chat ${widget.chatId} as read');
+      print('ChatDetailScreen: Marking chat as read');
       await _chatService.markChatAsRead(widget.chatId);
     } catch (e) {
-      print('Error marking chat as read (handled): $e');
+      print('ChatDetailScreen: Error marking chat as read: $e');
       // Don't show error to user, as this is not critical
     }
   }
 
+  Future<void> _refreshMessages() async {
+    print('ChatDetailScreen: Refreshing messages');
+    await _loadMessages();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: _otherUser != null
-            ? Text(
-                _otherUser!.displayName,
-                style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-              )
-            : const Text('Chat'),
-        trailing: _otherUser?.photoURL != null
-            ? Container(
-                width: 35,
-                height: 35,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  image: DecorationImage(
-                    image: NetworkImage(_otherUser!.photoURL!),
-                    fit: BoxFit.cover,
+    // Envolver con MaterialApp para proveer MaterialLocalizations
+    return Material(
+      color: Colors.transparent,
+      child: CupertinoPageScaffold(
+        navigationBar: CupertinoNavigationBar(
+          middle: _otherUser != null
+              ? Text(
+                  _otherUser!.displayName,
+                  style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+                )
+              : const Text('Chat'),
+          trailing: _otherUser?.photoURL != null
+              ? Container(
+                  width: 35,
+                  height: 35,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    image: DecorationImage(
+                      image: NetworkImage(_otherUser!.photoURL!),
+                      fit: BoxFit.cover,
+                    ),
                   ),
-                ),
-              )
-            : null,
-      ),
-      child: SafeArea(
-        bottom: false, // Allow content to extend behind the bottom safe area
-        child: Column(
-          children: [
-            // Messages list
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CupertinoActivityIndicator())
-                  : _messages.isEmpty
-                      ? _buildEmptyChat()
-                      : _buildMessagesList(),
-            ),
-            
-            // Message input
-            _buildMessageInput(),
-            
-            // Bottom safe area padding
-            MediaQuery.of(context).padding.bottom > 0
-                ? SizedBox(height: MediaQuery.of(context).padding.bottom)
-                : const SizedBox(height: 10),
-          ],
+                )
+              : null,
+        ),
+        child: SafeArea(
+          bottom: false, // Allow content to extend behind the bottom safe area
+          child: Column(
+            children: [
+              // Messages list with pull-to-refresh
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CupertinoActivityIndicator())
+                    : _messages.isEmpty
+                        ? _buildEmptyChat()
+                        : CupertinoScrollbar(
+                            controller: _scrollController,
+                            child: RefreshIndicator(
+                              onRefresh: _refreshMessages,
+                              color: AppColors.primaryBlue,
+                              child: _buildMessagesList(),
+                            ),
+                          ),
+              ),
+              
+              // Message input
+              _buildMessageInput(),
+              
+              // Bottom safe area padding
+              MediaQuery.of(context).padding.bottom > 0
+                  ? SizedBox(height: MediaQuery.of(context).padding.bottom)
+                  : const SizedBox(height: 10),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildEmptyChat() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    // Allow pull-to-refresh even on empty chat
+    return RefreshIndicator(
+      onRefresh: _refreshMessages,
+      color: AppColors.primaryBlue,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          Icon(
-            CupertinoIcons.chat_bubble_2,
-            size: 80,
-            color: CupertinoColors.systemGrey.withOpacity(0.5),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            "No messages yet",
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: CupertinoColors.black,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              "Send a message to start the conversation!",
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: CupertinoColors.systemGrey,
+          SizedBox(
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    CupertinoIcons.chat_bubble_2,
+                    size: 80,
+                    color: CupertinoColors.systemGrey.withOpacity(0.5),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    "No messages yet",
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: CupertinoColors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    child: Text(
+                      "Send a message to start the conversation!",
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: CupertinoColors.systemGrey,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -296,23 +349,18 @@ Future<void> _sendMessage() async {
   }
 
   Widget _buildMessagesList() {
-    if (_messages.isEmpty) {
-      print('No messages to display');
-      return _buildEmptyChat();
-    }
-    
-    print('Displaying ${_messages.length} messages');
-    
     return ListView.builder(
       controller: _scrollController,
-      reverse: true,
+      reverse: true, // Display most recent messages at the bottom
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       itemCount: _messages.length,
+      physics: const AlwaysScrollableScrollPhysics(),
       itemBuilder: (context, index) {
         final message = _messages[index];
         final isMe = message.senderId == _currentUserId;
         
-        print('Message $index - ID: ${message.id}, Sender: ${message.senderId}, isMe: $isMe');
+        // For debugging issue with message display
+        print('Building message: ID=${message.id}, From=${isMe ? "Me" : "Other"}, Text="${message.text}"');
         
         final showTimestamp = index == 0 || 
             _shouldShowTimestamp(_messages[index], _messages[index - 1]);

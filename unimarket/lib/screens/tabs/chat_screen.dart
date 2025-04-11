@@ -9,6 +9,7 @@ import 'package:unimarket/screens/chat/chat_detail_screen.dart';
 import 'package:unimarket/services/chat_service.dart';
 import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:unimarket/screens/chat/response_time_indicator.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -65,7 +66,7 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
       
-      print('ChatScreen: Current user: $currentUserId');
+      print('ChatScreen: Loading chats for user: $currentUserId');
       
       // Cancel existing subscription
       await _chatSubscription?.cancel();
@@ -76,13 +77,6 @@ class _ChatScreenState extends State<ChatScreen> {
           if (_isDisposed) return;
           
           print('ChatScreen: Received ${chats.length} chats');
-          
-          // Sort chats by last message time
-          chats.sort((a, b) {
-            if (a.lastMessageTime == null) return 1;
-            if (b.lastMessageTime == null) return -1;
-            return b.lastMessageTime!.compareTo(a.lastMessageTime!);
-          });
           
           // Update state with the chats
           setState(() {
@@ -123,6 +117,17 @@ class _ChatScreenState extends State<ChatScreen> {
                 print('ChatScreen: Error loading user for chat ${chat.id}: $e');
               }
             }
+          }
+          
+          // Debug chat data again
+          for (final chat in _chats) {
+            print('------- CHAT DATA ${chat.id} -------');
+            print('lastMessageSenderId: ${chat.lastMessageSenderId}');
+            print('currentUserId: $currentUserId');
+            print('lastMessageTime: ${chat.lastMessageTime}');
+            print('hasUnreadMessages: ${chat.hasUnreadMessages}');
+            print('lastMessage: ${chat.lastMessage}');
+            print('-------------------------------------');
           }
           
           if (mounted && !_isDisposed) {
@@ -306,8 +311,8 @@ class _ChatScreenState extends State<ChatScreen> {
         final chat = _chats[index];
         final user = _chatUsers[chat.id];
         
-        // Better handling of user display name
-        String displayName = 'Unknown User';
+        // Better handling of user name
+        String displayName = 'Unknown user';
         
         if (user != null) {
           displayName = user.displayName;
@@ -319,6 +324,15 @@ class _ChatScreenState extends State<ChatScreen> {
         if (chat.lastMessage != null && chat.lastMessage!.isNotEmpty) {
           lastMessage = chat.lastMessage!;
         }
+        
+        // Debugging to help identify data issues
+        print('Building chat item for ${chat.id}:');
+        print('  - User: ${user?.displayName ?? "unknown"}');
+        print('  - Last message: $lastMessage');
+        print('  - Last message time: ${chat.lastMessageTime}');
+        print('  - Last message sender: ${chat.lastMessageSenderId}');
+        print('  - Current user: ${_chatService.currentUserId}');
+        print('  - Has unread messages: ${chat.hasUnreadMessages}');
         
         // Add separator after each item except the last
         return Column(
@@ -463,6 +477,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             ),
+            
+            // Response time indicator
+            if (chat.lastMessageTime != null && chat.lastMessageSenderId != null)
+              ChatResponseTimeIndicator(
+                lastMessageTime: chat.lastMessageTime,
+                lastMessageSenderId: chat.lastMessageSenderId!,
+                currentUserId: _chatService.currentUserId ?? '',
+              ),
+            
             // Add separator after each item except the last
             if (index < _chats.length - 1)
               Container(
