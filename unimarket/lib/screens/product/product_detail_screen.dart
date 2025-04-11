@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/models/product_model.dart';
 import 'package:unimarket/models/user_model.dart';
+import 'package:unimarket/screens/profile/user_profile_screen.dart';
 import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/widgets/buttons/contact_seller_button.dart';
@@ -321,8 +322,24 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
-  Widget _buildSellerInfo() {
-    return Padding(
+ 
+ // En product_detail_screen.dart, modifica el método _buildSellerInfo()
+Widget _buildSellerInfo() {
+  return GestureDetector(  // Envuelve todo el widget con GestureDetector para hacerlo tocable
+    onTap: () {
+      if (_seller != null) {
+        Navigator.push(
+          context,
+          CupertinoPageRoute(
+            builder: (context) => UserProfileScreen(
+              userId: _seller!.id,
+              initialUserData: _seller,
+            ),
+          ),
+        );
+      }
+    },
+    child: Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
@@ -403,8 +420,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ],
             ),
           ),
+          
+          // Agregar un indicador visual de que es tocable
+          Icon(
+            CupertinoIcons.chevron_right,
+            color: CupertinoColors.systemGrey,
+            size: 18,
+          ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
+
 }
