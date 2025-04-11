@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:unimarket/models/message_model.dart';
 import 'package:unimarket/models/user_model.dart';
+import 'package:unimarket/screens/profile/user_profile_screen.dart';
 import 'package:unimarket/services/chat_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
@@ -239,20 +240,35 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    // Envolver con MaterialApp para proveer MaterialLocalizations
-    return Material(
-      color: Colors.transparent,
-      child: CupertinoPageScaffold(
-        navigationBar: CupertinoNavigationBar(
-          middle: _otherUser != null
-              ? Text(
-                  _otherUser!.displayName,
-                  style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-                )
-              : const Text('Chat'),
-          trailing: _otherUser?.photoURL != null
-              ? Container(
+ Widget build(BuildContext context) {
+  // Envolver con MaterialApp para proveer MaterialLocalizations
+  return Material(
+    color: Colors.transparent,
+    child: CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: _otherUser != null
+            ? Text(
+                _otherUser!.displayName,
+                style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+              )
+            : const Text('Chat'),
+        trailing: _otherUser?.photoURL != null
+            ? GestureDetector(  // Añadir GestureDetector para hacer clickeable la foto
+                onTap: () {
+                  if (_otherUser != null) {
+                    // Navegar al perfil del usuario
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (context) => UserProfileScreen(
+                          userId: _otherUser!.id,
+                          initialUserData: _otherUser,
+                        ),
+                      ),
+                    );
+                  }
+                },
+                child: Container(
                   width: 35,
                   height: 35,
                   decoration: BoxDecoration(
@@ -262,9 +278,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       fit: BoxFit.cover,
                     ),
                   ),
-                )
-              : null,
-        ),
+                ),
+              )
+            : null,
+      ),
         child: SafeArea(
           bottom: false, // Allow content to extend behind the bottom safe area
           child: Column(
