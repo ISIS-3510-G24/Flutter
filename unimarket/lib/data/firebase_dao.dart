@@ -1022,4 +1022,77 @@ Future<bool> markChatAsRead(String chatId, String userId) async {
   }
 }
 
+Future<List<Map<String, dynamic>>> getUserPurchaseHistory() async {
+  final userId = getCurrentUserId();
+  if (userId == null) {
+    print("No user is currently logged in.");
+    return [];
+  }
+
+  try {
+    final snapshot = await _firestore
+        .collection('orders')
+        .where('buyerID', isEqualTo: userId)
+        .where('status', isEqualTo: 'Purchased') // Solo órdenes completadas
+        .get();
+
+    final List<Map<String, dynamic>> orders = await Future.wait(snapshot.docs.map((doc) async {
+      final product = await getProductById(doc['productID']);
+      return {
+        "orderId": doc.id,
+        "productId": doc['productID'],
+        "tags": product != null ? product['labels'] : [], // Obtener labels del producto
+        "name": product != null ? product['title'] : "Product ID: ${doc['productID']}",
+        "price": doc['price'],
+      };
+    }).toList());
+
+    print("Fetched orders: $orders");
+    return orders;
+  } catch (e) {
+    print("Error fetching user purchase history: $e");
+    return [];
+  }
+}
+
+Future<List<Map<String, dynamic>>> getPopularProductsByTags(List<String> tags) async {
+  try {
+    print("Fetching products for tags: $tags");
+
+    final snapshot = await _firestore
+        .collection('Product')
+        .where('labels', arrayContainsAny: tags)
+        .get();
+
+    final products = snapshot.docs.map((doc) {
+      // Verificar si el campo imageUrls existe y es un array
+      final imageUrls = doc.data().containsKey('imageUrls') && doc['imageUrls'] is List
+          ? doc['imageUrls'] as List
+          : [];
+
+      // Filtrar las que NO sean content://
+      final validImages = imageUrls.where((url) =>
+          url is String && !url.toString().startsWith('content://')).toList();
+
+      // Usar la primera imagen válida o el placeholder
+      final image = validImages.isNotEmpty
+          ? validImages.first
+          : "assets/svgs/ImagePlaceHolder.svg";
+
+      return {
+        "productId": doc.id,
+        "name": doc['title'],
+        "tags": doc['labels'],
+        "image": image,
+        "price": doc['price'],
+      };
+    }).toList();
+
+    print("Fetched products: $products");
+    return products;
+  } catch (e) {
+    print("Error fetching popular products by tags: $e");
+    return [];
+  }
+}
 }
