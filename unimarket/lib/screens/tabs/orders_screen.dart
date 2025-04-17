@@ -27,6 +27,64 @@ class _OrdersScreenState extends State<OrdersScreen> {
     _fetchBuyingOrders();
     _fetchHistoryOrders();
     _fetchSellingOrders();
+    _checkAndShowPeakHourNotification(); // Llama al método para mostrar la notificación
+  }
+
+  Future<void> _checkAndShowPeakHourNotification() async {
+    try {
+      // Obtener todas las órdenes desde Firestore
+      final snapshot = await FirebaseFirestore.instance.collection('orders').get();
+      final orders = snapshot.docs;
+
+      // Analizar las órdenes para determinar las horas pico
+      final Map<int, int> ordersByHour = {};
+      for (var order in orders) {
+        final orderDate = (order['orderDate'] as Timestamp).toDate();
+        final hour = orderDate.hour;
+
+        if (ordersByHour.containsKey(hour)) {
+          ordersByHour[hour] = ordersByHour[hour]! + 1;
+        } else {
+          ordersByHour[hour] = 1;
+        }
+      }
+
+      // Ordenar las horas por cantidad de órdenes
+      final sortedHours = ordersByHour.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      // Tomar la hora con mayor actividad
+      if (sortedHours.isNotEmpty) {
+        //final currentHour = DateTime.now().hour; // Hora actual
+        //final peakHour = sortedHours.first.key; // Hora pico calculada
+
+        final currentHour = DateTime.now().hour; // Hora actual
+        final peakHour = currentHour; // Forzar que la hora pico sea la hora actual
+
+        // Verificar si la hora actual coincide con la hora pico
+        if (currentHour == peakHour) {
+          _showPeakHourNotification();
+        }
+      }
+    } catch (e) {
+      print("Error analyzing orders: $e");
+    }
+  }
+
+  void _showPeakHourNotification() {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text("Last Chance!"),
+        content: Text("Lots of users are buying now. Hurry up and place your order before your items sell out!"),
+        actions: [
+          CupertinoDialogAction(
+            child: Text("OK"),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _fetchBuyingOrders() async {
