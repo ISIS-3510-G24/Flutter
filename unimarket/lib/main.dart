@@ -17,7 +17,8 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-
+  await Hive.initFlutter();
+  await HiveFindStorage.initialize();
  
   await HiveChatStorage.initialize();
 
