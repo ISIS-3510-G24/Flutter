@@ -55,11 +55,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
       // Tomar la hora con mayor actividad
       if (sortedHours.isNotEmpty) {
-        //final currentHour = DateTime.now().hour; // Hora actual
-        //final peakHour = sortedHours.first.key; // Hora pico calculada
-
         final currentHour = DateTime.now().hour; // Hora actual
-        final peakHour = currentHour; // Forzar que la hora pico sea la hora actual
+        final peakHour = sortedHours.first.key; // Hora pico calculada
+
+        //final currentHour = DateTime.now().hour; // Hora actual
+        //final peakHour = currentHour; // Forzar que la hora pico sea la hora actual
 
         // Verificar si la hora actual coincide con la hora pico
         if (currentHour == peakHour) {
