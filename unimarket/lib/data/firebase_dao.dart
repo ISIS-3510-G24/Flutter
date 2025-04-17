@@ -1041,7 +1041,7 @@ Future<List<Map<String, dynamic>>> getUserPurchaseHistory() async {
       return {
         "orderId": doc.id,
         "productId": doc['productID'],
-        "tags": product != null ? product['labels'] : [], // Obtener labels del producto
+        "tags": product != null ? List<String>.from(product['labels'] ?? []) : [], // Convertir a List<String>
         "name": product != null ? product['title'] : "Product ID: ${doc['productID']}",
         "price": doc['price'],
       };
@@ -1055,6 +1055,45 @@ Future<List<Map<String, dynamic>>> getUserPurchaseHistory() async {
   }
 }
 
+Future<List<Map<String, dynamic>>> getFindsByTags(List<String> tags) async {
+  if (tags.isEmpty) {
+    print("No tags provided for fetching finds.");
+    return []; // Retornar una lista vacía si no hay etiquetas
+  }
+
+  try {
+    print("Fetching finds for tags: $tags");
+
+    final snapshot = await _firestore
+        .collection('finds')
+        .where('labels', arrayContainsAny: tags)
+        .where('status', isEqualTo: 'active') // Solo finds activos
+        .get();
+
+    final finds = snapshot.docs.map((doc) {
+      return {
+        "findId": doc.id,
+        "title": doc['title'],
+        "description": doc['description'],
+        "labels": doc['labels'],
+        "image": doc['image'] ?? "assets/svgs/ImagePlaceHolder.svg",
+        "major": doc['major'],
+        "offerCount": doc['offerCount'],
+        "status": doc['status'],
+        "timestamp": doc['timestamp'],
+        "upvoteCount": doc['upvoteCount'],
+        "userId": doc['userId'],
+        "userName": doc['userName'],
+      };
+    }).toList();
+
+    print("Fetched finds: $finds");
+    return finds;
+  } catch (e) {
+    print("Error fetching finds by tags: $e");
+    return [];
+  }
+}
 Future<List<Map<String, dynamic>>> getPopularProductsByTags(List<String> tags) async {
   try {
     print("Fetching products for tags: $tags");
