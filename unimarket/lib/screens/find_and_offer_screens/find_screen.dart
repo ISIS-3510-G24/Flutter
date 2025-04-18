@@ -9,6 +9,7 @@ import 'package:unimarket/screens/upload/create_offer_screen.dart';
 import 'package:unimarket/services/find_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/services/user_service.dart';
+import 'dart:isolate';
 
 class FindsScreen extends StatefulWidget {
   final FindModel find;
@@ -51,24 +52,32 @@ class _FindsScreenState extends State<FindsScreen> {
   }
 
   Future<void> _applyFilter(String filter) async {
-    // Obtener el userId del usuario actual
     final userId = await _getCurrentUserId();
     if (userId == null) {
       print("No user is currently logged in.");
       return;
     }
 
-    // Guardar el filtro en SharedPreferences con una clave específica del usuario
+    // Guardar el filtro en SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString("offer_filter_$userId", filter);
 
-    // Aplicar el filtro a la lista de ofertas
+    // Usar un isolate para ordenar las ofertas
+    final ReceivePort receivePort = ReceivePort();
+    await Isolate.spawn(_filterOffersInIsolate, receivePort.sendPort);
+
+    final SendPort sendPort = await receivePort.first as SendPort;
+    final responsePort = ReceivePort();
+
+    // Enviar las ofertas y el filtro al isolate
+    sendPort.send([_offers, filter, responsePort.sendPort]);
+
+    // Esperar la respuesta del isolate
+    final sortedOffers = await responsePort.first as List<OfferModel>;
+
+    // Actualizar la lista de ofertas en el hilo principal
     setState(() {
-      if (filter == "high_to_low") {
-        _offers.sort((a, b) => b.price.compareTo(a.price));
-      } else if (filter == "low_to_high") {
-        _offers.sort((a, b) => a.price.compareTo(b.price));
-      }
+      _offers = sortedOffers;
     });
 
     print("Applied filter for user $userId: $filter");
@@ -597,4 +606,25 @@ class _FindsScreenState extends State<FindsScreen> {
       ),
     );
   }
+}
+
+void _filterOffersInIsolate(SendPort sendPort) {
+  final port = ReceivePort();
+  sendPort.send(port.sendPort);
+
+  port.listen((message) {
+    final List<OfferModel> offers = message[0];
+    final String filter = message[1];
+    final SendPort replyPort = message[2];
+
+    // Aplicar el filtro
+    if (filter == "high_to_low") {
+      offers.sort((a, b) => b.price.compareTo(a.price));
+    } else if (filter == "low_to_high") {
+      offers.sort((a, b) => a.price.compareTo(b.price));
+    }
+
+    // Enviar la lista ordenada de vuelta al hilo principal
+    replyPort.send(offers);
+  });
 }
