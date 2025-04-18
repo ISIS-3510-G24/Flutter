@@ -9,6 +9,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:unimarket/data/hive_chat_storage.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:unimarket/data/hive_find_storage.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,10 +18,16 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  await Hive.initFlutter();
+  await HiveFindStorage.initialize();
+ 
+
+
   await FirebaseAppCheck.instance.activate(
 
      appleProvider: AppleProvider.appAttest,
   );
+
 
   await HiveChatStorage.initialize();
 
