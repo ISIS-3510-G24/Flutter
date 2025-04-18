@@ -40,9 +40,15 @@ class _FindsScreenState extends State<FindsScreen> {
       final offers = await _findService.getOffersForFind(widget.find.id);
       setState(() {
         _offers = offers;
-        _isLoading = false;
       });
       print("Loaded ${offers.length} offers for find: ${widget.find.id}");
+
+      // Aplicar el filtro después de cargar las ofertas
+      await _loadSavedFilter();
+
+      setState(() {
+        _isLoading = false;
+      });
     } catch (e) {
       print("Error loading offers: $e");
       setState(() {
