@@ -11,6 +11,10 @@ import 'package:unimarket/data/hive_chat_storage.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/data/hive_find_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:firebase_in_app_messaging/firebase_in_app_messaging.dart';
+import 'package:unimarket/services/order_analysis_service.dart';
+
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +46,14 @@ void main() async {
         FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
         return true;
     };
+
+
+  FirebaseInAppMessaging.instance.setMessagesSuppressed(false);
+
+  final orderAnalysisService = OrderAnalysisService();
+  final peakHours = await orderAnalysisService.findPeakHours();
+
+  print("Peak hours: $peakHours");
 
   runApp(const UniMarketApp());
 }
