@@ -6,6 +6,8 @@ import 'package:unimarket/screens/upload/confirm_product_screen.dart';
 import 'package:unimarket/screens/find_and_offer_screens/find_screen.dart';
 import 'package:unimarket/models/find_model.dart';
 import 'package:unimarket/models/offer_model.dart';
+import 'package:unimarket/models/recommendation_model.dart';
+import 'package:unimarket/services/recommendation_service.dart';
 import 'package:unimarket/services/find_service.dart';
 import 'package:unimarket/screens/upload/create_offer_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';
@@ -17,12 +19,11 @@ class FindAndOfferScreen extends StatefulWidget {
   State<FindAndOfferScreen> createState() => _FindAndOfferScreenState();
 }
 
-// 1. Primero, actualiza la clase _FindAndOfferScreenState para añadir las nuevas variables:
-
 class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   String _selectedCategory = "All requests"; 
   final FindService _findService = FindService();
   List<FindModel> _finds = [];
+  List<Map<String, dynamic>> _recommendedFinds = []; // Nueva lista para finds recomendados
   List<FindModel> _majorFinds = []; // Nueva lista para finds por major
   String? _userMajor; // Para almacenar el major del usuario
   bool _isLoading = true;
@@ -34,13 +35,54 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
     {"title": "Selling Item 1", "subtitle": "Description 1"},
     {"title": "Selling Item 2", "subtitle": "Description 2"},
   ];
+  List<RecommendationModel> _recommendedProducts = []; // Nueva lista para productos recomendados
 
   @override
-  void initState() {
-    super.initState();
-    _loadUserDataAndFinds(); // Nuevo método
-  }
+void initState() {
+  super.initState();
+  _loadUserDataAndFinds();
+  _loadRecommendedProducts();
+  _loadRecommendedFinds(); // Cargar productos recomendados
+}
 
+
+Future<void> _loadRecommendedFinds() async {
+  final recommendationService = RecommendationService();
+
+  try {
+    print("Fetching recommended finds...");
+    final recommendedFinds = await recommendationService.getRecommendedFinds();
+    setState(() {
+      _recommendedFinds = recommendedFinds;
+      _isLoading = false; // Cambiar el estado a false después de cargar los datos
+    });
+    print("Loaded recommended finds: $_recommendedFinds");
+  } catch (e) {
+    print("Error loading recommended finds: $e");
+    setState(() {
+      _isLoading = false; // Cambiar el estado a false incluso si ocurre un error
+    });
+  }
+}
+
+  Future<void> _loadRecommendedProducts() async {
+  final recommendationService = RecommendationService();
+
+  try {
+    print("Fetching recommended products...");
+    final recommendedProducts = await recommendationService.getRecommendedProducts();
+    setState(() {
+      _recommendedProducts = recommendedProducts;
+      _isLoading = false; // Cambiar el estado a false después de cargar los datos
+    });
+    print("Loaded recommended products: $_recommendedProducts");
+  } catch (e) {
+    print("Error loading recommended products: $e");
+    setState(() {
+      _isLoading = false; // Cambiar el estado a false incluso si ocurre un error
+    });
+  }
+}
   // 2. Nuevo método para cargar el major del usuario y luego los finds
   Future<void> _loadUserDataAndFinds() async {
     try {
@@ -110,6 +152,186 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
       });
     }
   }
+
+  Widget _buildRecommendedList() {
+  if (_recommendedProducts.isEmpty) {
+    return Center(
+      child: Text(
+        "No recommendations available.",
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      ),
+    );
+  }
+
+  return ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: _recommendedProducts.length,
+    itemBuilder: (context, index) {
+      final product = _recommendedProducts[index];
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: CupertinoColors.systemGrey6,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            // Imagen del producto
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: AppColors.transparentGrey,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: product.image.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        product.image,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => const Icon(
+                          CupertinoIcons.photo,
+                          color: CupertinoColors.white,
+                        ),
+                      ),
+                    )
+                  : const Icon(
+                      CupertinoIcons.photo,
+                      color: CupertinoColors.white,
+                    ),
+            ),
+            const SizedBox(width: 10),
+            // Texto del producto
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    "\$${product.price}",
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: CupertinoColors.systemGrey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Widget _buildRecommendedFindsList() {
+  if (_recommendedFinds.isEmpty) {
+    return Center(
+      child: Text(
+        "No recommendations available.",
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      ),
+    );
+  }
+
+  return ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: _recommendedFinds.length,
+    itemBuilder: (context, index) {
+      final findMap = _recommendedFinds[index];
+      final find = FindModel.fromMap(findMap); // Convertir Map<String, dynamic> a FindModel
+
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (ctx) => FindsScreen(find: find), // Navegar a FindsScreen
+            ),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: CupertinoColors.systemGrey6,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              // Imagen del find
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: AppColors.transparentGrey,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+               child: find.image.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          find.image,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => const Icon(
+                            CupertinoIcons.photo,
+                            color: CupertinoColors.white,
+                          ),
+                        ),
+                      )
+                    : const Icon(
+                        CupertinoIcons.photo,
+                        color: CupertinoColors.white,
+                      ),
+              ),
+              const SizedBox(width: 10),
+              // Texto del find
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      find.title,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      find.description,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: CupertinoColors.systemGrey,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
 
   // 4. Nuevo método para construir la sección "From your major"
   Widget _buildFromMajorSection() {
@@ -218,86 +440,93 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
     );
   }
 
-  // 5. Actualiza el método build para usar _buildFromMajorSection
   @override
-  Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(
-          "Find & Offer",
-          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-        ),
+Widget build(BuildContext context) {
+  return CupertinoPageScaffold(
+    navigationBar: CupertinoNavigationBar(
+      middle: Text(
+        "Find & Offer",
+        style: GoogleFonts.inter(fontWeight: FontWeight.bold),
       ),
-      child: SafeArea(
-        child: Stack(
-          children: [
-            // ---- CONTENIDO PRINCIPAL SCROLLEABLE ----
-            Positioned.fill(
-              child: _isLoading
-                  ? const Center(child: CupertinoActivityIndicator())
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.only(bottom: 80),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildTopRow(),
-                          // "All" section
-                          _buildSectionHeader(
-                            title: "All",
-                            onSeeMore: () => debugPrint("See more: All"),
-                          ),
-                          _buildMajorHorizontalList(),
+    ),
+    child: SafeArea(
+      child: Stack(
+        children: [
+          // ---- CONTENIDO PRINCIPAL SCROLLEABLE ----
+          Positioned.fill(
+            child: _isLoading
+                ? const Center(child: CupertinoActivityIndicator())
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.only(bottom: 80),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildTopRow(),
+                        // "All" section
+                        _buildSectionHeader(
+                          title: "All",
+                          onSeeMore: () => debugPrint("See more: All"),
+                        ),
+                        _buildMajorHorizontalList(),
 
-                          // "From your major" section - Actualizada
-                          _buildSectionHeader(
-                            title: "From your major",
-                            onSeeMore: () => debugPrint("See more: From your major"),
-                          ),
-                          _buildFromMajorSection(), // Usando el nuevo método
+                        // "From your major" section
+                        _buildSectionHeader(
+                          title: "From your major",
+                          onSeeMore: () => debugPrint("See more: From your major"),
+                        ),
+                        _buildFromMajorSection(),
 
-                          // "Most popular" section
-                          _buildSectionHeader(
-                            title: "Most popular",
-                            onSeeMore: () => debugPrint("See more: Most popular"),
-                          ),
-                          _buildMostPopularList(),
-                        ],
-                      ),
+                        // "Most popular" section
+                        _buildSectionHeader(
+                          title: "Most popular",
+                          onSeeMore: () => debugPrint("See more: Most popular"),
+                        ),
+                        _buildMostPopularList(),
+
+                     
+                        // "Recommended Finds" section
+                        _buildSectionHeader(
+                          title: "Finds According to Your Orders!",
+                          onSeeMore: () => debugPrint(" "),
+                        ),
+                        _buildRecommendedFindsList(),
+                      ],
                     ),
-            ),
-
-            // ---- BOTÓN FLOTANTE ----
-            Positioned(
-              right: 20,
-              bottom: 20,
-              child: CupertinoButton(
-                color: AppColors.primaryBlue,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                borderRadius: BorderRadius.circular(30),
-                child: Text(
-                  "New Find",
-                  style: GoogleFonts.inter(
-                    color: CupertinoColors.white,
-                    fontWeight: FontWeight.bold,
                   ),
+          ),
+
+          // ---- BOTÓN FLOTANTE ----
+          Positioned(
+            right: 20,
+            bottom: 20,
+            child: CupertinoButton(
+              color: AppColors.primaryBlue,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              borderRadius: BorderRadius.circular(30),
+              child: Text(
+                "New Find",
+                style: GoogleFonts.inter(
+                  color: CupertinoColors.white,
+                  fontWeight: FontWeight.bold,
                 ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                      builder: (ctx) => const ConfirmProductScreen(
-                        postType: "offer",
-                      ),
-                    ),
-                  );
-                },
               ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (ctx) => const ConfirmProductScreen(
+                      postType: "offer",
+                    ),
+                  ),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
 // Este widget se mostrará cuando no haya ofertas para un find
 

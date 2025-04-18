@@ -46,6 +46,25 @@ class FindModel {
     );
   }
 
+  factory FindModel.fromMap(Map<String, dynamic> map) {
+    return FindModel(
+      id: map['findId'] ?? '',
+      title: map['title'] ?? '',
+      description: map['description'] ?? '',
+      labels: List<String>.from(map['labels'] ?? []),
+      image: map['image'] ?? '',
+      major: map['major'] ?? '',
+      offerCount: map['offerCount'] ?? 0,
+      status: map['status'] ?? '',
+      timestamp: (map['timestamp'] as Timestamp).toDate(),
+      upvoteCount: map['upvoteCount'] ?? 0,
+      userId: map['userId'] ?? '',
+      userName: map['userName'] ?? '',
+    );
+  }
+
+
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
