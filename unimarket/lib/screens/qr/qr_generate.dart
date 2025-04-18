@@ -33,32 +33,12 @@ class _QrGenerateState extends State<QrGenerate> {
   Future<void> _fetchProducts() async {
   const llaveCache = 'qr_productos';
   try {
-    final fileInfo = await cache.getFileFromCache(llaveCache);
-    if (fileInfo != null) {
-      print("Fetched products successfully from cache!");
-      //Como el Cache Manager administra todo como archivos JSON, 
-      //Es necesario hacerle transformaciones
-      final file = fileInfo.file;
-      final jsonStr = await file.readAsString();
-      final decoded = json.decode(jsonStr) as Map<String, dynamic>;
-      //Paso final, debería funcionar igual
-      final cachedMap = decoded.map((key, value) =>
-        MapEntry(key, Map<String, dynamic>.from(value as Map)));
-
-      setState(() {
-        _productsWithHashes = cachedMap;
-        _isLoading = false;
-      });
-
-      print("Loaded products from cache");
-      return;
-    }
-
-    // Si no funciona el cache, ir por la de firebase
+    // Primero de firebase
     final productsWithHashes = await _firebaseDAO.getProductsForCurrentSELLER();
+
+    // Se actualiza el cache si lo encuentra bien
     final jsonString = json.encode(productsWithHashes);
     final bytes = Uint8List.fromList(utf8.encode(jsonString));
-    //Se manda a cache el archivo json creado, debería funcionar ojala
     await cache.putFile(llaveCache, bytes);
 
     setState(() {
@@ -66,12 +46,40 @@ class _QrGenerateState extends State<QrGenerate> {
       _isLoading = false;
     });
 
-    print("Fetched products from firebase, successfully cached them all");
+    print("Fetched products from Firebase and cached them");
   } catch (e) {
-    print("Error fetching products: $e");
-    setState(() {
-      _isLoading = false;
-    });
+    print("Error de firebase, intentando cache: $e");
+    
+    // Usar cache en caso de que no haya internet
+    try {
+      final fileInfo = await cache.getFileFromCache(llaveCache);
+      if (fileInfo != null) {
+        final file = fileInfo.file;
+        final jsonStr = await file.readAsString();
+        final decoded = json.decode(jsonStr) as Map<String, dynamic>;
+
+        final cachedMap = decoded.map((key, value) =>
+          MapEntry(key, Map<String, dynamic>.from(value as Map)));
+
+        setState(() {
+          _productsWithHashes = cachedMap;
+          _isLoading = false;
+        });
+
+        print("Funcionó el cache");
+        return;
+      } else {
+        print("No  hay ni señal ni internet");
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (cacheError) {
+      print("Error reading cache: $cacheError");
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 }
 
@@ -117,78 +125,88 @@ class _QrGenerateState extends State<QrGenerate> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("Generate QR code"),
+      navigationBar: const CupertinoNavigationBar(
+        middle: Text("Generate QR code to validate your transaction"),
       ),
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(10.0),
-          child: _isLoading
-              ? const Center(child: CupertinoActivityIndicator())
-              : _productsWithHashes == null || _productsWithHashes!.isEmpty
-                  ? const Center(child: Text("No products found."))
-                  : ListView.builder(
-                      itemCount: _productsWithHashes!.length,
-                      itemBuilder: (context, index) {
-                        final productId = _productsWithHashes!.keys.elementAt(index);
-                        final productData = _productsWithHashes![productId]!;
-                        final product = productData['product'] as Map<String, dynamic>;
-                        final hashConfirm = productData['hashConfirm'] as String;
+        child: _isLoading && (_productsWithHashes == null || _productsWithHashes!.isEmpty)
+            ? const Center(child: CupertinoActivityIndicator())
+            : CustomScrollView(
+                slivers: [
+                  CupertinoSliverRefreshControl(
+                    onRefresh: _fetchProducts,
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.all(10),
+                    sliver: _productsWithHashes == null || _productsWithHashes!.isEmpty
+                        ? const SliverFillRemaining(
+                            child: Center(child: Text("No products found.")),
+                          )
+                        : SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final productId = _productsWithHashes!.keys.elementAt(index);
+                                final productData = _productsWithHashes![productId]!;
+                                final product = productData['product'] as Map<String, dynamic>;
+                                final hashConfirm = productData['hashConfirm'] as String;
 
-                        final imageUrls = (product['imageURLs'] as List<dynamic>?) ?? [];
-                        final imageUrl = imageUrls.isNotEmpty ? imageUrls[0] as String : null;
+                                final imageUrls = (product['imageURLs'] as List<dynamic>?) ?? [];
+                                final imageUrl = imageUrls.isNotEmpty ? imageUrls[0] as String : null;
 
-                        final title = product['title'] as String? ?? 'No Title';
-                        final labels = (product['labels'] as List<dynamic>?) ?? [];
+                                final title = product['title'] as String? ?? 'No Title';
+                                final labels = (product['labels'] as List<dynamic>?) ?? [];
 
-                        return CupertinoListTile(
-                          leading: imageUrl != null
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    imageUrl,
-                                    width: 80,
-                                    height: 80,
-                                    fit: BoxFit.cover,
+                                return CupertinoListTile(
+                                  leading: imageUrl != null
+                                      ? ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: Image.network(
+                                            imageUrl,
+                                            width: 80,
+                                            height: 80,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        )
+                                      : null,
+                                  title: Text(
+                                    title,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                )
-                              : null,
-                          title: Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                                  subtitle: labels.isNotEmpty
+                                      ? Wrap(
+                                          spacing: 4,
+                                          children: labels
+                                              .map((label) => Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                    decoration: BoxDecoration(
+                                                      color: CupertinoColors.systemBlue.withOpacity(0.2),
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                    child: Text(
+                                                      label,
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                        color: CupertinoColors.systemBlue,
+                                                      ),
+                                                    ),
+                                                  ))
+                                              .toList(),
+                                        )
+                                      : null,
+                                  onTap: () => _showQrPopup(hashConfirm),
+                                );
+                              },
+                              childCount: _productsWithHashes!.length,
                             ),
                           ),
-                          subtitle: labels.isNotEmpty
-                              ? Wrap(
-                                  spacing: 4,
-                                  children: labels
-                                      .map((label) => Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: CupertinoColors.systemBlue.withOpacity(0.2),
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Text(
-                                              label,
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: CupertinoColors.systemBlue,
-                                              ),
-                                            ),
-                                          ))
-                                      .toList(),
-                                )
-                              : null,
-                          onTap: () {
-                            _showQrPopup(hashConfirm);
-                          },
-                        );
-                      },
-                    ),
-        ),
+                  ),
+                ],
+              ),
       ),
     );
   }
+
 }
