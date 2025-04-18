@@ -30,13 +30,28 @@ class _QrGenerateState extends State<QrGenerate> {
     _fetchProducts();
   }
 
+  void _showNoConnectionPopup() {
+  showCupertinoDialog(
+    context: context,
+    builder: (_) => CupertinoAlertDialog(
+      title: const Text("Connection Error"),
+      content: const Text("Sorry, there is no active internet connection. Please try again."),
+      actions: [
+        CupertinoDialogAction(
+          child: const Text("OK"),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    ),
+  );
+}
+
+
   Future<void> _fetchProducts() async {
   const llaveCache = 'qr_productos';
   try {
-    // Primero de firebase
     final productsWithHashes = await _firebaseDAO.getProductsForCurrentSELLER();
 
-    // Se actualiza el cache si lo encuentra bien
     final jsonString = json.encode(productsWithHashes);
     final bytes = Uint8List.fromList(utf8.encode(jsonString));
     await cache.putFile(llaveCache, bytes);
@@ -48,9 +63,7 @@ class _QrGenerateState extends State<QrGenerate> {
 
     print("Fetched products from Firebase and cached them");
   } catch (e) {
-    print("Error de firebase, intentando cache: $e");
-    
-    // Usar cache en caso de que no haya internet
+    print("Error fetching products from Firebase, trying with cache...: $e");
     try {
       final fileInfo = await cache.getFileFromCache(llaveCache);
       if (fileInfo != null) {
@@ -59,25 +72,33 @@ class _QrGenerateState extends State<QrGenerate> {
         final decoded = json.decode(jsonStr) as Map<String, dynamic>;
 
         final cachedMap = decoded.map((key, value) =>
-          MapEntry(key, Map<String, dynamic>.from(value as Map)));
+            MapEntry(key, Map<String, dynamic>.from(value as Map)));
 
         setState(() {
           _productsWithHashes = cachedMap;
           _isLoading = false;
         });
 
-        print("Funcionó el cache");
+        print("Loaded products from cache as fallback");
         return;
       } else {
-        print("No  hay ni señal ni internet");
         setState(() {
+          _productsWithHashes = null;
           _isLoading = false;
+        });
+        //Pop up por si no funciona ni el uno ni el otro
+        Future.microtask(() {
+          _showNoConnectionPopup();
         });
       }
     } catch (cacheError) {
       print("Error reading cache: $cacheError");
       setState(() {
+        _productsWithHashes = null;
         _isLoading = false;
+      });
+      Future.microtask(() {
+        _showNoConnectionPopup();
       });
     }
   }
@@ -138,7 +159,7 @@ class _QrGenerateState extends State<QrGenerate> {
                   ),
                   SliverPadding(
                     padding: const EdgeInsets.all(10),
-                    sliver: _productsWithHashes == null || _productsWithHashes!.isEmpty
+                    sliver: (_productsWithHashes != null && _productsWithHashes!.isEmpty)
                         ? const SliverFillRemaining(
                             child: Center(child: Text("No products found.")),
                           )
