@@ -36,6 +36,7 @@ dependency_overrides:
 dependencies:
   cached_network_image: ^3.2.3
   sqflite: ^2.0.0+3
+  speech_to_text: ^5.6.1
   cupertino_progress_bar: ^0.2.0
   flutter:
     sdk: flutter
