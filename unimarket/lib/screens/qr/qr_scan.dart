@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:unimarket/data/firebase_dao.dart';
-
+import 'package:unimarket/screens/tabs/profile_screen.dart';
 class QrScan extends StatefulWidget {
   const QrScan({super.key});
 
@@ -73,7 +73,11 @@ class _QrScanState extends State<QrScan> {
                           CupertinoButton(
                             child: const Text('OK'),
                             onPressed: () {
-                              Navigator.of(context).pop();
+                              Navigator.pushAndRemoveUntil(
+                                context,
+                                CupertinoPageRoute(builder: (context) => ProfileScreen()),
+                                (Route<dynamic> route) => false, // Removes all previous routes
+                              );
                             },
                           ),
                         ],

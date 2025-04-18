@@ -88,6 +88,9 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   firebase_app_check: ^0.3.2+5
+
+  #Eventual Connectivicty
+  flutter_cache_manager: ^3.4.1
    
   
 
