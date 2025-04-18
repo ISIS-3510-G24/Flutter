@@ -13,6 +13,7 @@ import 'package:unimarket/data/hive_find_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:firebase_in_app_messaging/firebase_in_app_messaging.dart';
 import 'package:unimarket/services/order_analysis_service.dart';
+import 'package:flutter/foundation.dart'; // for kIsWeb
 
 
 
@@ -27,10 +28,16 @@ void main() async {
  
 
 
-  await FirebaseAppCheck.instance.activate(
-
-     appleProvider: AppleProvider.appAttest,
-  );
+  if (kIsWeb) {
+    await FirebaseAppCheck.instance.activate(
+      webProvider: ReCaptchaV3Provider('12345678'),
+    );
+  } else {
+    await FirebaseAppCheck.instance.activate(
+      appleProvider: AppleProvider.appAttest,
+    
+    );
+  }
 
 
   await HiveChatStorage.initialize();
@@ -48,7 +55,9 @@ void main() async {
     };
 
 
+  if (!kIsWeb) {
   FirebaseInAppMessaging.instance.setMessagesSuppressed(false);
+}
 
   final orderAnalysisService = OrderAnalysisService();
   final peakHours = await orderAnalysisService.findPeakHours();
