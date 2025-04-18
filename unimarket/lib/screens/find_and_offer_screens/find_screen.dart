@@ -30,7 +30,8 @@ class _FindsScreenState extends State<FindsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadOffers().then((_) => _loadSavedFilter()); // Cargar las ofertas antes de aplicar el filtro
+    _loadOffers();
+    _loadSavedFilter();
   }
 
   Future<void> _loadOffers() async {
@@ -47,23 +48,6 @@ class _FindsScreenState extends State<FindsScreen> {
         _isLoading = false;
       });
     }
-  }
-
-  Future<void> _loadSavedFilter() async {
-    // Obtener el userId del usuario actual
-    final userId = await _getCurrentUserId();
-    if (userId == null) {
-      print("No user is currently logged in.");
-      return;
-    }
-
-    // Cargar el filtro desde SharedPreferences usando la clave específica del usuario
-    final prefs = await SharedPreferences.getInstance();
-    final savedFilter = prefs.getString("offer_filter_$userId") ?? "low_to_high"; // Filtro predeterminado
-    print("Loaded saved filter for user $userId: $savedFilter");
-
-    // Aplicar el filtro guardado
-    _applyFilter(savedFilter);
   }
 
   Future<void> _applyFilter(String filter) async {
@@ -88,6 +72,23 @@ class _FindsScreenState extends State<FindsScreen> {
     });
 
     print("Applied filter for user $userId: $filter");
+  }
+
+  Future<void> _loadSavedFilter() async {
+    // Obtener el userId del usuario actual
+    final userId = await _getCurrentUserId();
+    if (userId == null) {
+      print("No user is currently logged in.");
+      return;
+    }
+
+    // Cargar el filtro desde SharedPreferences usando la clave específica del usuario
+    final prefs = await SharedPreferences.getInstance();
+    final savedFilter = prefs.getString("offer_filter_$userId") ?? "low_to_high"; // Filtro predeterminado
+    print("Loaded saved filter for user $userId: $savedFilter");
+
+    // Aplicar el filtro guardado
+    _applyFilter(savedFilter);
   }
 
   Future<String?> _getCurrentUserId() async {
