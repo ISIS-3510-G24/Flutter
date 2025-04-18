@@ -58,4 +58,9 @@ class FindService {
       price: price,
     );
   }
+
+  // Subir imagen de oferta
+  Future<String?> uploadOfferImage(String filePath, String offerId) async {
+    return await _firebaseDAO.uploadOfferImage(filePath, offerId);
+  }
 }
