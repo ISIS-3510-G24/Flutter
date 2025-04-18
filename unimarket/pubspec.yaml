@@ -34,6 +34,8 @@ dependency_overrides:
   uuid: ^3.0.7
 
 dependencies:
+  cached_network_image: ^3.2.3
+  sqflite: ^2.0.0+3
   cupertino_progress_bar: ^0.2.0
   flutter:
     sdk: flutter
