@@ -1,12 +1,14 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:unimarket/models/find_model.dart';
 import 'package:unimarket/models/offer_model.dart';
 import 'package:unimarket/screens/upload/confirm_product_screen.dart';
 import 'package:unimarket/screens/upload/create_offer_screen.dart';
 import 'package:unimarket/services/find_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:unimarket/services/user_service.dart';
 
 class FindsScreen extends StatefulWidget {
   final FindModel find;
@@ -28,7 +30,7 @@ class _FindsScreenState extends State<FindsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadOffers();
+    _loadOffers().then((_) => _loadSavedFilter()); // Cargar las ofertas antes de aplicar el filtro
   }
 
   Future<void> _loadOffers() async {
@@ -45,6 +47,53 @@ class _FindsScreenState extends State<FindsScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _loadSavedFilter() async {
+    // Obtener el userId del usuario actual
+    final userId = await _getCurrentUserId();
+    if (userId == null) {
+      print("No user is currently logged in.");
+      return;
+    }
+
+    // Cargar el filtro desde SharedPreferences usando la clave específica del usuario
+    final prefs = await SharedPreferences.getInstance();
+    final savedFilter = prefs.getString("offer_filter_$userId") ?? "low_to_high"; // Filtro predeterminado
+    print("Loaded saved filter for user $userId: $savedFilter");
+
+    // Aplicar el filtro guardado
+    _applyFilter(savedFilter);
+  }
+
+  Future<void> _applyFilter(String filter) async {
+    // Obtener el userId del usuario actual
+    final userId = await _getCurrentUserId();
+    if (userId == null) {
+      print("No user is currently logged in.");
+      return;
+    }
+
+    // Guardar el filtro en SharedPreferences con una clave específica del usuario
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("offer_filter_$userId", filter);
+
+    // Aplicar el filtro a la lista de ofertas
+    setState(() {
+      if (filter == "high_to_low") {
+        _offers.sort((a, b) => b.price.compareTo(a.price));
+      } else if (filter == "low_to_high") {
+        _offers.sort((a, b) => a.price.compareTo(b.price));
+      }
+    });
+
+    print("Applied filter for user $userId: $filter");
+  }
+
+  Future<String?> _getCurrentUserId() async {
+    // Aquí puedes usar un servicio como UserService para obtener el userId
+    final user = await UserService().getCurrentUserProfile();
+    return user?.id;
   }
 
   @override
@@ -73,12 +122,38 @@ class _FindsScreenState extends State<FindsScreen> {
                     // Sección de Ofertas
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-                      child: Text(
-                        "Available Offers",
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "Available Offers",
+                            style: GoogleFonts.inter(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: _showFilterDialog, // Mostrar el diálogo de filtro
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  CupertinoIcons.sort_down,
+                                  size: 18,
+                                  color: AppColors.primaryBlue,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "Filter",
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    color: AppColors.primaryBlue,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     
@@ -488,6 +563,36 @@ class _FindsScreenState extends State<FindsScreen> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  // Mostrar diálogo de filtro
+  void _showFilterDialog() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => CupertinoActionSheet(
+        title: const Text("Sort Offers"),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              _applyFilter("high_to_low");
+              Navigator.pop(context);
+            },
+            child: const Text("Price: High to Low"),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              _applyFilter("low_to_high");
+              Navigator.pop(context);
+            },
+            child: const Text("Price: Low to High"),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("Cancel"),
+        ),
       ),
     );
   }
