@@ -1,8 +1,13 @@
 import 'package:hive_flutter/hive_flutter.dart';
 
 class HiveFindStorage {
-  // Nombre de la caja
+  // Nombres de las cajas
   static const String _findBoxName = 'pendingFinds';
+  static const String _offlineFindsBoxName = 'offline_finds';
+
+  // Cajas almacenadas en memoria
+  static Box? _findBox;
+  static Box? _offlineFindsBox;
 
   static bool isInitialized = false;
 
@@ -15,11 +20,12 @@ class HiveFindStorage {
 
     try {
       print('HiveFindStorage: Initializing Hive...');
-      if (!Hive.isBoxOpen(_findBoxName)) {
-        await Hive.openBox(_findBoxName);
-        print('HiveFindStorage: Opened $_findBoxName box');
-      }
+
+      _findBox = await _openBoxIfNeeded(_findBoxName);
+      _offlineFindsBox = await _openBoxIfNeeded(_offlineFindsBoxName);
+
       isInitialized = true;
+      print('HiveFindStorage: Initialization complete');
     } catch (e) {
       print('HiveFindStorage: Error initializing storage: $e');
       isInitialized = false;
@@ -27,30 +33,40 @@ class HiveFindStorage {
     }
   }
 
+  // Abrir la caja si no está abierta aún
+  static Future<Box> _openBoxIfNeeded(String name) async {
+    if (Hive.isBoxOpen(name)) {
+      return Hive.box(name);
+    } else {
+      return await Hive.openBox(name);
+    }
+  }
+
   // Guardar un "find" localmente
   static Future<void> saveFind(Map<String, dynamic> find) async {
-    final box = await Hive.openBox('offline_finds');
+    final box = _offlineFindsBox ??= await _openBoxIfNeeded(_offlineFindsBoxName);
     final key = DateTime.now().millisecondsSinceEpoch.toString(); // clave única
     await box.put(key, find);
+    print('HiveFindStorage: Saved find with key $key');
   }
+
   // Obtener todos los "finds" guardados localmente
-  // HiveFindStorage.dart
- static Future<Map<String, Map<String, dynamic>>> getAllFinds() async {
-    final box = await Hive.openBox('offline_finds');
+  static Future<Map<String, Map<String, dynamic>>> getAllFinds() async {
+    final box = _offlineFindsBox ??= await _openBoxIfNeeded(_offlineFindsBoxName);
     return Map<String, Map<String, dynamic>>.from(box.toMap());
   }
 
-
   // Eliminar un "find" después de subirlo
   static Future<void> deleteFind(String key) async {
-    final box = await Hive.openBox('offline_finds');
+    final box = _offlineFindsBox ??= await _openBoxIfNeeded(_offlineFindsBoxName);
     await box.delete(key);
+    print('HiveFindStorage: Deleted find with key $key');
   }
 
   // Limpiar todos los "finds" locales
   static Future<void> clearAllFinds() async {
     try {
-      final box = Hive.box(_findBoxName);
+      final box = _findBox ??= await _openBoxIfNeeded(_findBoxName);
       await box.clear();
       print('HiveFindStorage: All finds cleared');
     } catch (e) {
