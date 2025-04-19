@@ -6,6 +6,7 @@ import 'package:unimarket/screens/ble_scan/seller_ble_advertiser.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class QrGenerate extends StatefulWidget {
   const QrGenerate({super.key});
@@ -48,59 +49,95 @@ class _QrGenerateState extends State<QrGenerate> {
 
 
   Future<void> _fetchProducts() async {
-  const llaveCache = 'qr_productos';
+  const cacheKey = 'qr_productos';
+  
   try {
+    // 1. Try fetching fresh data from Firebase
     final productsWithHashes = await _firebaseDAO.getProductsForCurrentSELLER();
 
-    final jsonString = json.encode(productsWithHashes);
-    final bytes = Uint8List.fromList(utf8.encode(jsonString));
-    await cache.putFile(llaveCache, bytes);
+    // 2. Convert Firestore data to cacheable format
+    final cacheableData = _convertFirestoreData(productsWithHashes);
 
-    setState(() {
-      _productsWithHashes = productsWithHashes;
-      _isLoading = false;
-    });
+    // 3. Store in cache
+    await _storeInCache(cacheKey, cacheableData);
 
-    print("Fetched products from Firebase and cached them");
-  } catch (e) {
-    print("Error fetching products from Firebase, trying with cache...: $e");
-    try {
-      final fileInfo = await cache.getFileFromCache(llaveCache);
-      if (fileInfo != null) {
-        final file = fileInfo.file;
-        final jsonStr = await file.readAsString();
-        final decoded = json.decode(jsonStr) as Map<String, dynamic>;
-
-        final cachedMap = decoded.map((key, value) =>
-            MapEntry(key, Map<String, dynamic>.from(value as Map)));
-
-        setState(() {
-          _productsWithHashes = cachedMap;
-          _isLoading = false;
-        });
-
-        print("Loaded products from cache as fallback");
-        return;
-      } else {
-        setState(() {
-          _productsWithHashes = null;
-          _isLoading = false;
-        });
-        //Pop up por si no funciona ni el uno ni el otro
-        Future.microtask(() {
-          _showNoConnectionPopup();
-        });
-      }
-    } catch (cacheError) {
-      print("Error reading cache: $cacheError");
+    // 4. Update UI if widget is still mounted
+    if (mounted) {
       setState(() {
-        _productsWithHashes = null;
+        _productsWithHashes = productsWithHashes;
         _isLoading = false;
       });
-      Future.microtask(() {
-        _showNoConnectionPopup();
-      });
     }
+
+    debugPrint("Successfully fetched products from Firebase");
+  } catch (e) {
+    debugPrint("Error fetching from Firebase: $e");
+    await _handleFetchError(cacheKey);
+  }
+}
+
+// Helper method to convert Firestore-specific types
+Map<String, dynamic> _convertFirestoreData(Map<String, dynamic> originalData) {
+  return originalData.map((key, value) {
+    // Handle nested conversion
+    dynamic convertValue(dynamic v) {
+      if (v == null) return null;
+      if (v is Timestamp) {
+        return v.toDate().toIso8601String(); // ISO format for dates
+      } else if (v is Map) {
+        return v.map((k, v) => MapEntry(k, convertValue(v)));
+      } else if (v is List) {
+        return v.map((e) => convertValue(e)).toList();
+      }
+      return v;
+    }
+
+    return MapEntry(key, convertValue(value));
+  });
+}
+
+// Helper method to store data in cache
+Future<void> _storeInCache(String key, Map<String, dynamic> data) async {
+  try {
+    final jsonString = json.encode(data);
+    final bytes = Uint8List.fromList(utf8.encode(jsonString));
+    await cache.putFile(key, bytes);
+  } catch (e) {
+    debugPrint("Error storing in cache: $e");
+    throw e; // Re-throw to trigger fallback
+  }
+}
+
+// Helper method to handle errors and fallback to cache
+Future<void> _handleFetchError(String cacheKey) async {
+  try {
+    debugPrint("Attempting to load from cache...");
+    final fileInfo = await cache.getFileFromCache(cacheKey);
+    
+    if (fileInfo != null ) {
+      final jsonStr = await fileInfo.file.readAsString();
+      final decoded = json.decode(jsonStr) as Map<String, dynamic>;
+
+      if (mounted) {
+        setState(() {
+          _productsWithHashes = decoded.cast<String, Map<String, dynamic>>();
+          _isLoading = false;
+        });
+      }
+      debugPrint("Loaded products from cache");
+      return;
+    }
+  } catch (cacheError) {
+    debugPrint("Cache read error: $cacheError");
+  }
+
+  // If we get here, both network and cache failed
+  if (mounted) {
+    setState(() {
+      _productsWithHashes = null;
+      _isLoading = false;
+    });
+    _showNoConnectionPopup();
   }
 }
 
@@ -150,9 +187,11 @@ class _QrGenerateState extends State<QrGenerate> {
         middle: Text("Generate QR code to validate your transaction"),
       ),
       child: SafeArea(
-        child: _isLoading && (_productsWithHashes == null || _productsWithHashes!.isEmpty)
+        child: _isLoading
             ? const Center(child: CupertinoActivityIndicator())
-            : CustomScrollView(
+            : _productsWithHashes == null
+                ? const Center(child: Text("Failed to load products"))
+                : CustomScrollView(
                 slivers: [
                   CupertinoSliverRefreshControl(
                     onRefresh: _fetchProducts,
