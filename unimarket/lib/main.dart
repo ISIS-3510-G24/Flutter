@@ -1,5 +1,5 @@
 import 'dart:ui';
-
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -21,9 +21,18 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
   await Hive.initFlutter();
   await HiveFindStorage.initialize();
  
+
+
+  await FirebaseAppCheck.instance.activate(
+
+     appleProvider: AppleProvider.appAttest,
+  );
+
+
   await HiveChatStorage.initialize();
 
   FirebaseFirestore.instance.settings = 
