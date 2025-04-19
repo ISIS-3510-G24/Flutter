@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class FindModel {
   final String id;
-  final String title;
+  String title;
   String description;
   final String image;
   final List<String> labels;
