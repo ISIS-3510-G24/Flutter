@@ -1134,4 +1134,33 @@ Future<List<Map<String, dynamic>>> getPopularProductsByTags(List<String> tags) a
     return [];
   }
 }
+
+Future<String?> uploadOfferImage(String filePath, String offerId) async {
+  try {
+    // Crear el archivo a partir de la ruta
+    final File file = File(filePath);
+    
+ 
+    final String fileName = path.basename(filePath);
+    
+
+    Reference ref = FirebaseStorage.instance.ref().child('offer_images/$offerId/$fileName');
+    
+
+    UploadTask uploadTask = ref.putFile(file);
+    
+
+    TaskSnapshot snapshot = await uploadTask.whenComplete(() => {});
+    
+    // Obtener la URL de descarga
+    String downloadUrl = await snapshot.ref.getDownloadURL();
+    print("Download URL: $downloadUrl");
+    
+    return downloadUrl;
+  } catch (e) {
+    print("Error uploading offer image: $e");
+    return null;
+  }
+}
+
 }
