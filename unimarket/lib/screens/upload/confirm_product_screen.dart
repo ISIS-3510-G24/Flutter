@@ -8,6 +8,7 @@ import 'package:unimarket/data/hive_find_storage.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:async';
 import 'package:http/http.dart' as http;
+import 'package:unimarket/screens/find_and_offer_screens/audio_to_text_screen.dart';
 
 class ConfirmProductScreen extends StatefulWidget {
   final String postType; // "find" o "offer"
@@ -53,6 +54,8 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
 
     _loadMajors();
   }
+
+  
 
   Future<void> _loadMajors() async {
     try {
@@ -176,6 +179,36 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
     );
   }
 
+  void _openAudioToTextScreen() {
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (context) => AudioToTextScreen(
+          onTextGenerated: (generatedText) {
+            setState(() {
+              _descriptionController.text = generatedText;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  void _openAudioToTextScreenForTitle() {
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (context) => AudioToTextScreen(
+          onTextGenerated: (generatedText) {
+            setState(() {
+              _titleController.text = generatedText; // Actualiza el título con el texto generado
+            });
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _connectivitySubscription?.cancel();
@@ -207,6 +240,15 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
                   controller: _titleController,
                   placeholder: "Title",
                   padding: const EdgeInsets.all(16),
+                  maxLines: 1,
+                  suffix: CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _openAudioToTextScreenForTitle, // Abre la pantalla de grabación para el título
+                    child: const Icon(
+                      CupertinoIcons.mic,
+                      color: AppColors.primaryBlue,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 CupertinoTextField(
@@ -214,6 +256,14 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
                   placeholder: "Description",
                   padding: const EdgeInsets.all(16),
                   maxLines: 3,
+                  suffix: CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _openAudioToTextScreen, // Abre la pantalla de Audio to Text
+                    child: const Icon(
+                      CupertinoIcons.mic,
+                      color: AppColors.primaryBlue,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 CupertinoTextField(
@@ -295,6 +345,7 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
       ),
     );
   }
+  
 
   void _showMajorPicker(BuildContext context) {
     showCupertinoModalPopup(

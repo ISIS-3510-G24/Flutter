@@ -10,6 +10,7 @@ import 'package:unimarket/services/find_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/services/user_service.dart';
 import 'dart:isolate';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class FindsScreen extends StatefulWidget {
   final FindModel find;
@@ -434,20 +435,22 @@ class _FindsScreenState extends State<FindsScreen> {
                   child: SizedBox(
                     height: 120,
                     width: double.infinity,
-                    child: Image.network(
-                      offer.image,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => const Center(
+                    child: CachedNetworkImage(
+                      imageUrl: offer.image, // URL de la imagen
+                      placeholder: (context, url) => const Center(
+                        child: CupertinoActivityIndicator(),
+                      ), // Indicador de carga
+                      errorWidget: (context, url, error) => const Center(
                         child: Icon(
                           CupertinoIcons.photo,
                           size: 40,
                           color: CupertinoColors.systemGrey,
                         ),
-                      ),
+                      ), // Icono en caso de error
+                      fit: BoxFit.cover,
                     ),
                   ),
                 ),
-                
               // Detalles de la oferta
               Padding(
                 padding: const EdgeInsets.all(12),
@@ -458,160 +461,155 @@ class _FindsScreenState extends State<FindsScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          "\$${offer.price.toStringAsFixed(2)}",
-                          style: GoogleFonts.inter(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primaryBlue,
-                          ),
-                        ),
-                        Text(
-                          offer.status,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: offer.status.toLowerCase() == 'active'
-                                ? Colors.green
-                                : Colors.orange,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    
-                    // Descripción de la oferta
-                    Text(
-                      offer.description,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        color: CupertinoColors.systemGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    // Información del usuario
-                    Row(
-                      children: [
-                        const Icon(
-                          CupertinoIcons.person_circle_fill,
+                      Text(
+                        "\$${offer.price.toStringAsFixed(2)}",
+                        style: GoogleFonts.inter(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                           color: AppColors.primaryBlue,
-                          size: 16,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          offer.userName,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
+                      ),
+                      Text(
+                        offer.status,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: offer.status.toLowerCase() == 'active'
+                              ? Colors.green
+                              : Colors.orange,
                         ),
-                        const Spacer(),
-                        Text(
-                          _formatDate(offer.timestamp),
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: CupertinoColors.systemGrey,
-                          ),
-                        ),
-                      ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Descripción de la oferta
+                  Text(
+                    offer.description,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: CupertinoColors.systemGrey,
                     ),
-                    
-                    const SizedBox(height: 12),
-                    
-                    // Botón de contactar
-                    SizedBox(
-                      width: double.infinity,
-                      child: CupertinoButton(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  const SizedBox(height: 12),
+                  // Información del usuario
+                  Row(
+                    children: [
+                      const Icon(
+                        CupertinoIcons.person_circle_fill,
                         color: AppColors.primaryBlue,
-                        borderRadius: BorderRadius.circular(8),
-                        onPressed: () {
-                          // Acción de contactar
-                          _showContactDialog(offer);
-                        },
-                        child: Text(
-                          "Contact",
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: CupertinoColors.white
-                          ),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        offer.userName,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        _formatDate(offer.timestamp),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: CupertinoColors.systemGrey,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Botón de contactar
+                  SizedBox(
+                    width: double.infinity,
+                    child: CupertinoButton(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      color: AppColors.primaryBlue,
+                      borderRadius: BorderRadius.circular(8),
+                      onPressed: () {
+                        _showContactDialog(offer);
+                      },
+                      child: Text(
+                        "Contact",
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: CupertinoColors.white,
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // Helper para formatear fecha
-  String _formatDate(DateTime date) {
-    return "${date.day}/${date.month}/${date.year}";
-  }
-
-  // Mostrar diálogo de contacto
-  void _showContactDialog(OfferModel offer) {
-    showCupertinoDialog(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text("Contact the seller"),
-        content: Text(
-          "Do you want to contact ${offer.userName} about their \$${offer.price.toStringAsFixed(2)} offer?",
+            ),
+          ],
         ),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text("Cancelar"),
-            onPressed: () => Navigator.pop(context),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            child: const Text("Contactar"),
-            onPressed: () {
-              Navigator.pop(context);
-              // Aquí iría la lógica para contactar al vendedor
-              // (por ejemplo, abrir chat, enviar mensaje, etc.)
-            },
-          ),
-        ],
-      ),
-    );
-  }
+      );
+    },
+  );
+}
 
-  // Mostrar diálogo de filtro
-  void _showFilterDialog() {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (context) => CupertinoActionSheet(
-        title: const Text("Sort Offers"),
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () {
-              _applyFilter("high_to_low");
-              Navigator.pop(context);
-            },
-            child: const Text("Price: High to Low"),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              _applyFilter("low_to_high");
-              Navigator.pop(context);
-            },
-            child: const Text("Price: Low to High"),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
+// Helper para formatear fecha
+String _formatDate(DateTime date) {
+  return "${date.day}/${date.month}/${date.year}";
+}
+
+// Mostrar diálogo de contacto
+void _showContactDialog(OfferModel offer) {
+  showCupertinoDialog(
+    context: context,
+    builder: (context) => CupertinoAlertDialog(
+      title: const Text("Contact the seller"),
+      content: Text(
+        "Do you want to contact ${offer.userName} about their \$${offer.price.toStringAsFixed(2)} offer?",
+      ),
+      actions: [
+        CupertinoDialogAction(
+          child: const Text("Cancelar"),
           onPressed: () => Navigator.pop(context),
-          child: const Text("Cancel"),
         ),
+        CupertinoDialogAction(
+          isDefaultAction: true,
+          child: const Text("Contactar"),
+          onPressed: () {
+            Navigator.pop(context);
+            // Aquí iría la lógica para contactar al vendedor
+            // (por ejemplo, abrir chat, enviar mensaje, etc.)
+          },
+        ),
+      ],
+    ),
+  );
+}
+
+// Mostrar diálogo de filtro
+void _showFilterDialog() {
+  showCupertinoModalPopup(
+    context: context,
+    builder: (context) => CupertinoActionSheet(
+      title: const Text("Sort Offers"),
+      actions: [
+        CupertinoActionSheetAction(
+          onPressed: () {
+            _applyFilter("high_to_low");
+            Navigator.pop(context);
+          },
+          child: const Text("Price: High to Low"),
+        ),
+        CupertinoActionSheetAction(
+          onPressed: () {
+            _applyFilter("low_to_high");
+            Navigator.pop(context);
+          },
+          child: const Text("Price: Low to High"),
+        ),
+      ],
+      cancelButton: CupertinoActionSheetAction(
+        onPressed: () => Navigator.pop(context),
+        child: const Text("Cancel"),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 void _filterOffersInIsolate(SendPort sendPort) {

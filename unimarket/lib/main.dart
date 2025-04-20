@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart'; // for kIsWeb
 
 
 
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -54,15 +55,6 @@ void main() async {
         return true;
     };
 
-
-  if (!kIsWeb) {
-  FirebaseInAppMessaging.instance.setMessagesSuppressed(false);
-}
-
-  final orderAnalysisService = OrderAnalysisService();
-  final peakHours = await orderAnalysisService.findPeakHours();
-
-  print("Peak hours: $peakHours");
 
   runApp(const UniMarketApp());
 }

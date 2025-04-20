@@ -64,7 +64,9 @@ packages:
       sha256: "8aab1771e1243a5063b8b0ff68042d67334e3feab9e95b9490f9a6ebf73b42ea"
       url: "https://pub.dev"
     source: hosted
+
     version: "2.1.2"
+
   camera:
     dependency: "direct main"
     description:
@@ -543,7 +545,9 @@ packages:
     source: hosted
     version: "3.0.0"
   flutter_cache_manager:
-    dependency: "direct main"
+
+    dependency: transitive
+
     description:
       name: flutter_cache_manager
       sha256: "400b6592f16a4409a7f2bb929a9a7e38c72cceb8ffb99ee57bbf2cb2cecf8386"
@@ -741,6 +745,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.19.0"
+  js:
+    dependency: transitive
+    description:
+      name: js
+      sha256: f2c445dce49627136094980615a031419f7f3eb393237e4ecd97ac15dea343f3
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.6.7"
   json_annotation:
     dependency: transitive
     description:
@@ -829,6 +841,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.5.0"
+  octo_image:
+    dependency: transitive
+    description:
+      name: octo_image
+      sha256: "34faa6639a78c7e3cbe79be6f9f96535867e879748ade7d17c9b1ae7536293bd"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.0"
   path:
     dependency: transitive
     description:
@@ -893,6 +913,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
+  pedantic:
+    dependency: transitive
+    description:
+      name: pedantic
+      sha256: "67fc27ed9639506c856c840ccce7594d0bdcd91bc8d53d6e52359449a1d50602"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.11.1"
   permission_handler:
     dependency: "direct main"
     description:
@@ -1065,6 +1093,7 @@ packages:
       sha256: "254ee5351d6cb365c859e20ee823c3bb479bf4a293c22d17a9f1bf144ce86f7c"
       url: "https://pub.dev"
     source: hosted
+
     version: "1.10.1"
   sqflite:
     dependency: transitive
@@ -1074,30 +1103,37 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.2"
+    
   sqflite_android:
     dependency: transitive
     description:
       name: sqflite_android
+
       sha256: "2b3070c5fa881839f8b402ee4a39c1b4d561704d4ebbbcfb808a119bc2a1701b"
       url: "https://pub.dev"
     source: hosted
     version: "2.4.1"
+
   sqflite_common:
     dependency: transitive
     description:
       name: sqflite_common
+
       sha256: "84731e8bfd8303a3389903e01fb2141b6e59b5973cacbb0929021df08dddbe8b"
       url: "https://pub.dev"
     source: hosted
     version: "2.5.5"
+
   sqflite_darwin:
     dependency: transitive
     description:
       name: sqflite_darwin
+
       sha256: "279832e5cde3fe99e8571879498c9211f3ca6391b0d818df4e17d9fff5c6ccb3"
       url: "https://pub.dev"
     source: hosted
     version: "2.4.2"
+
   sqflite_platform_interface:
     dependency: transitive
     description:
@@ -1137,7 +1173,9 @@ packages:
       sha256: "921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43"
       url: "https://pub.dev"
     source: hosted
+
     version: "1.4.1"
+
   synchronized:
     dependency: transitive
     description:
@@ -1146,6 +1184,7 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.3.1"
+
   term_glyph:
     dependency: transitive
     description:
