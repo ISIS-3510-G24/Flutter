@@ -119,9 +119,17 @@ Future<void> _loadRecommendedFinds() async {
     // Cargar los Finds cercanos
     final nearbyFinds = await getFindsByLocation();
 
+    // Cargamos los finds por major si el usuario tiene un major asignado
+      List<FindModel> majorFinds = [];
+      if (_userMajor != null && _userMajor!.isNotEmpty) {
+        majorFinds = await _findService.getFindsByMajor(_userMajor!);
+        print("Loaded ${majorFinds.length} finds from user's major: $_userMajor");
+      }
+
     setState(() {
       _finds = finds; // Todos los Finds
       _nearbyFinds = nearbyFinds; // Finds cercanos
+      _majorFinds = majorFinds;
       _isLoading = false;
     });
 
@@ -458,203 +466,209 @@ Widget _buildNearbyFindsList() {
 
   // 4. Nuevo método para construir la sección "From your major"
   Widget _buildFromMajorSection() {
-    if (_majorFinds.isEmpty) {
-      // Si no hay finds del major del usuario, mostramos los items por defecto
-      return _buildVerticalList(_wishlistItems, showBuyButton: false);
-    }
-    
-    // Convertimos los finds a un formato similar a los items de _wishlistItems
-    final List<Map<String, String>> majorItems = _majorFinds.map((find) {
-      return {
-        "title": find.title,
-        "subtitle": find.description,
-        "id": find.id,
-        "image": find.image,
-      };
-    }).toList();
-    
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: majorItems.length > 2 ? 2 : majorItems.length, // Mostrar máximo 2 items
-      itemBuilder: (ctx, index) {
-        final item = majorItems[index];
-        final find = _majorFinds[index]; // Obtener el find original
-        
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: CupertinoColors.systemGrey6,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              // Imagen o icono por defecto
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: AppColors.transparentGrey,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: find.image.isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          find.image,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => const Icon(
-                            CupertinoIcons.photo,
-                            color: CupertinoColors.white,
-                          ),
+  if (_majorFinds.isEmpty) {
+    return Center(
+      child: Text(
+        "No finds available for your major.",
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      ),
+    );
+  }
+
+  return ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: _majorFinds.length,
+    itemBuilder: (ctx, index) {
+      final find = _majorFinds[index];
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: CupertinoColors.systemGrey6,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            // Imagen o icono por defecto
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: AppColors.transparentGrey,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: find.image.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        find.image,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => const Icon(
+                          CupertinoIcons.photo,
+                          color: CupertinoColors.white,
                         ),
-                      )
-                    : const Icon(
-                        CupertinoIcons.photo,
-                        color: CupertinoColors.white,
+                      ),
+                    )
+                  : const Icon(
+                      CupertinoIcons.photo,
+                      color: CupertinoColors.white,
+                    ),
+            ),
+            const SizedBox(width: 10),
+            // Texto
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    find.title,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    find.description,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: CupertinoColors.systemGrey,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+  @override
+Widget build(BuildContext context) {
+  return FutureBuilder<UniversityBuilding?>(
+    future: _getNearestBuilding(), // Método para obtener el edificio más cercano
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Center(child: CupertinoActivityIndicator());
+      }
+
+      if (snapshot.hasError) {
+        return Center(
+          child: Text(
+            "Error loading location",
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              color: CupertinoColors.systemGrey,
+            ),
+          ),
+        );
+      }
+
+      final nearestBuilding = snapshot.data;
+      final nearestBuildingName = nearestBuilding?.name;
+
+      return CupertinoPageScaffold(
+        navigationBar: CupertinoNavigationBar(
+          middle: Text(
+            "Find & Offer",
+            style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+          ),
+        ),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              // ---- CONTENIDO PRINCIPAL SCROLLEABLE ----
+              Positioned.fill(
+                child: _isLoading
+                    ? const Center(child: CupertinoActivityIndicator())
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.only(bottom: 80),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildTopRow(),
+
+                            // "All" section
+                            _buildSectionHeader(
+                              title: "All",
+                              onSeeMore: () => debugPrint("See more: All"),
+                            ),
+                            _buildMajorHorizontalList(),
+
+                            // "Finds Nearby" section
+                            _buildSectionHeader(
+                              title: nearestBuildingName != null
+                                  ? "Finds Nearby ($nearestBuildingName)"
+                                  : "Finds Nearby",
+                              onSeeMore: () => debugPrint("See more: Finds Nearby!"),
+                            ),
+                            _buildNearbyFindsList(),
+
+                            // "From your major" section
+                            _buildSectionHeader(
+                              title: "From your major",
+                              onSeeMore: () => debugPrint("See more: From your major"),
+                            ),
+                            _buildFromMajorSection(),
+
+                            // "Most popular" section
+                            _buildSectionHeader(
+                              title: "Most popular",
+                              onSeeMore: () => debugPrint("See more: Most popular"),
+                            ),
+                            _buildMostPopularList(),
+
+                     
+                            // "Recommended Finds" section
+                            _buildSectionHeader(
+                              title: "Finds According to Your Orders!",
+                              onSeeMore: () => debugPrint(" "),
+                            ),
+                            _buildRecommendedFindsList(),
+                          ],
+                        ),
                       ),
               ),
-              const SizedBox(width: 10),
-              // Texto
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item["title"] ?? "",
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
+
+              // ---- BOTÓN FLOTANTE ----
+              Positioned(
+                right: 20,
+                bottom: 20,
+                child: CupertinoButton(
+                  color: AppColors.primaryBlue,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  borderRadius: BorderRadius.circular(30),
+                  child: Text(
+                    "New Find",
+                    style: GoogleFonts.inter(
+                      color: CupertinoColors.white,
+                      fontWeight: FontWeight.bold,
                     ),
-                    Text(
-                      item["subtitle"] ?? "",
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: CupertinoColors.systemGrey,
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (ctx) => const ConfirmProductScreen(
+                          postType: "offer",
+                        ),
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              // Flecha de navegación
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                      builder: (ctx) => CreateOfferScreen(findId: find.id)
-                      ),
-                  );
-                },
-                child: const Icon(
-                  CupertinoIcons.chevron_forward,
-                  color: CupertinoColors.systemGrey,
+                    );
+                  },
                 ),
               ),
             ],
           ),
-        );
-      },
-    );
-  }
-
-  @override
-Widget build(BuildContext context) {
-  return CupertinoPageScaffold(
-    navigationBar: CupertinoNavigationBar(
-      middle: Text(
-        "Find & Offer",
-        style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-      ),
-    ),
-    child: SafeArea(
-      child: Stack(
-        children: [
-          // ---- CONTENIDO PRINCIPAL SCROLLEABLE ----
-          Positioned.fill(
-            child: _isLoading
-                ? const Center(child: CupertinoActivityIndicator())
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.only(bottom: 80),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildTopRow(),
-                        // "All" section
-                        _buildSectionHeader(
-                          title: "All",
-                          onSeeMore: () => debugPrint("See more: All"),
-                        ),
-                        _buildMajorHorizontalList(),
-
-                        // "Finds Nearby!" section
-                        _buildSectionHeader(
-                          title: "Finds Nearby!",
-                          onSeeMore: () => debugPrint("See more: Finds Nearby!"),
-                        ),
-                        _buildNearbyFindsList(),
-
-                        // "From your major" section
-                        _buildSectionHeader(
-                          title: "From your major",
-                          onSeeMore: () => debugPrint("See more: From your major"),
-                        ),
-                        _buildFromMajorSection(),
-
-                        // "Most popular" section
-                        _buildSectionHeader(
-                          title: "Most popular",
-                          onSeeMore: () => debugPrint("See more: Most popular"),
-                        ),
-                        _buildMostPopularList(),
-
-                     
-                        // "Recommended Finds" section
-                        _buildSectionHeader(
-                          title: "Finds According to Your Orders!",
-                          onSeeMore: () => debugPrint(" "),
-                        ),
-                        _buildRecommendedFindsList(),
-                      ],
-                    ),
-                  ),
-          ),
-
-          // ---- BOTÓN FLOTANTE ----
-          Positioned(
-            right: 20,
-            bottom: 20,
-            child: CupertinoButton(
-              color: AppColors.primaryBlue,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              borderRadius: BorderRadius.circular(30),
-              child: Text(
-                "New Find",
-                style: GoogleFonts.inter(
-                  color: CupertinoColors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (ctx) => const ConfirmProductScreen(
-                      postType: "offer",
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    ),
+        ),
+      );
+    },
   );
 }
 
@@ -910,11 +924,13 @@ Widget _buildMostPopularList() {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title,
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              )),
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           CupertinoButton(
             padding: EdgeInsets.zero,
             onPressed: onSeeMore,
@@ -1346,5 +1362,17 @@ Widget _buildMajorCard(FindModel find, OfferModel? offer) {
         );
       },
     );
+  }
+}
+
+Future<UniversityBuilding?> _getNearestBuilding() async {
+  try {
+    final locationService = LocationService();
+    final userPosition = await locationService.getCurrentLocation();
+    final nearestBuilding = findNearestBuilding(userPosition);
+    return nearestBuilding;
+  } catch (e) {
+    print("Error getting nearest building: $e");
+    return null;
   }
 }
