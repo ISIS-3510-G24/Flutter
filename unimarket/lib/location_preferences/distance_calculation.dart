@@ -21,9 +21,14 @@ class LocationService {
       throw Exception("Location permissions are permanently denied.");
     }
 
-    return await Geolocator.getCurrentPosition(
+    final position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
+
+    // Imprime las coordenadas obtenidas
+    print("Current location: Latitude: ${position.latitude}, Longitude: ${position.longitude}");
+
+    return position;
   }
 }
 
@@ -46,7 +51,7 @@ final List<UniversityBuilding> universityBuildings = [
     name: "ML Building",
     latitude: 4.655397867262984,
     longitude: -74.10943295187545,
-    relatedLabels: ["Accesories"],
+    relatedLabels: ["Electronics"],
   ),
   UniversityBuilding(
     name: "Library",
@@ -58,7 +63,7 @@ final List<UniversityBuilding> universityBuildings = [
     name: "Sports Complex",
     latitude: 37.7760,
     longitude: -122.4170,
-    relatedLabels: ["Electronics"],
+    relatedLabels: ["Accessories"],
   ),
 ];
 
@@ -83,7 +88,7 @@ double _degreesToRadians(double degrees) {
 }
 
 
-UniversityBuilding findNearestBuilding(Position userPosition) {
+UniversityBuilding? findNearestBuilding(Position userPosition, {double maxDistance = 1.5}) {
   UniversityBuilding? nearestBuilding;
   double shortestDistance = double.infinity;
 
@@ -95,11 +100,19 @@ UniversityBuilding findNearestBuilding(Position userPosition) {
       building.longitude,
     );
 
-    if (distance < shortestDistance) {
+    print("Building: ${building.name}, Distance: $distance km");
+
+    if (distance < shortestDistance && distance <= maxDistance) {
       shortestDistance = distance;
       nearestBuilding = building;
     }
   }
 
-  return nearestBuilding!;
+  if (nearestBuilding != null) {
+    print("Nearest building: ${nearestBuilding.name}, Distance: $shortestDistance km");
+  } else {
+    print("No buildings within $maxDistance km.");
+  }
+
+  return nearestBuilding;
 }
