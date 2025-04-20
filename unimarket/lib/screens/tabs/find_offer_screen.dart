@@ -156,20 +156,30 @@ Future<List<FindModel>> getFindsByLocation() async {
   final locationService = LocationService();
   final userPosition = await locationService.getCurrentLocation();
 
-  // Encuentra el edificio más cercano
   final nearestBuilding = findNearestBuilding(userPosition);
 
-  // Obtén todos los Finds
+  if (nearestBuilding == null) {
+    print("No nearby buildings found.");
+    return []; // No hay edificios cercanos
+  }
+
+  print("Nearest building: ${nearestBuilding.name}, Labels: ${nearestBuilding.relatedLabels}");
+
   final allFinds = await _findService.getFind();
 
-  // Filtra los Finds por etiquetas relacionadas con el edificio
+  for (var find in allFinds) {
+    print("Find: ${find.title}, Labels: ${find.labels}");
+  }
+
   final filteredFinds = allFinds.where((find) {
     return nearestBuilding.relatedLabels.any((label) => find.labels.contains(label));
   }).toList();
 
+  print("Filtered finds: ${filteredFinds.map((find) => find.title).toList()}");
+
   return filteredFinds;
 }
-
+ 
 
   Widget _buildRecommendedList() {
   if (_recommendedProducts.isEmpty) {
