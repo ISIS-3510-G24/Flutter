@@ -605,7 +605,7 @@ Widget build(BuildContext context) {
                             // "Finds Nearby" section
                             _buildSectionHeader(
                               title: nearestBuildingName != null
-                                  ? "Finds Nearby ($nearestBuildingName)"
+                                  ? "Related to your location! ($nearestBuildingName)"
                                   : "Finds Nearby",
                               onSeeMore: () => debugPrint("See more: Finds Nearby!"),
                             ),
