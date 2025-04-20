@@ -48,19 +48,19 @@ class UniversityBuilding {
 
 final List<UniversityBuilding> universityBuildings = [
   UniversityBuilding(
-    name: "ML Building",
+    name: "RGD Building",
     latitude: 4.655397867262984,
     longitude: -74.10943295187545,
     relatedLabels: ["Electronics"],
   ),
   UniversityBuilding(
-    name: "Library",
+    name: "C Building",
     latitude: 37.7750,
     longitude: -122.4183,
     relatedLabels: [ "Academics"],
   ),
   UniversityBuilding(
-    name: "Sports Complex",
+    name: "ML Building",
     latitude: 37.7760,
     longitude: -122.4170,
     relatedLabels: ["Accessories"],
