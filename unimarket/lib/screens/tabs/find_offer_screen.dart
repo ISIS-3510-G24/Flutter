@@ -11,6 +11,8 @@ import 'package:unimarket/services/recommendation_service.dart';
 import 'package:unimarket/services/find_service.dart';
 import 'package:unimarket/screens/upload/create_offer_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:unimarket/location_preferences/distance_calculation.dart';
+
 
 class FindAndOfferScreen extends StatefulWidget {
   const FindAndOfferScreen({Key? key}) : super(key: key);
@@ -36,6 +38,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
     {"title": "Selling Item 2", "subtitle": "Description 2"},
   ];
   List<RecommendationModel> _recommendedProducts = []; // Nueva lista para productos recomendados
+  List<FindModel> _nearbyFinds = []; // Nueva lista para finds cercanos
 
   @override
 void initState() {
@@ -43,6 +46,7 @@ void initState() {
   _loadUserDataAndFinds();
   _loadRecommendedProducts();
   _loadRecommendedFinds(); // Cargar productos recomendados
+  _loadFinds();
 }
 
 
@@ -103,55 +107,69 @@ Future<void> _loadRecommendedFinds() async {
     }
   }
 
-  // 3. Modifica el método _loadFinds para que también cargue los finds por major
   Future<void> _loadFinds() async {
+  setState(() {
+    _isLoading = true;
+  });
+
+  try {
+    // Cargar todos los Finds
+    final finds = await _findService.getFind();
+
+    // Cargar los Finds cercanos
+    final nearbyFinds = await getFindsByLocation();
+
     setState(() {
-      _isLoading = true;
+      _finds = finds; // Todos los Finds
+      _nearbyFinds = nearbyFinds; // Finds cercanos
+      _isLoading = false;
     });
-    
-    try {
-      // Cargamos todos los finds
-      final finds = await _findService.getFind();
-      
-      // Cargamos los finds por major si el usuario tiene un major asignado
-      List<FindModel> majorFinds = [];
-      if (_userMajor != null && _userMajor!.isNotEmpty) {
-        majorFinds = await _findService.getFindsByMajor(_userMajor!);
-        print("Loaded ${majorFinds.length} finds from user's major: $_userMajor");
-      }
-      
-      setState(() {
-        _finds = finds;
-        _majorFinds = majorFinds;
-        _isLoading = false;
-      });
-      
-      print("Loaded ${finds.length} total finds successfully");
-      
-    } catch (e) {
-      print("Error fetching finds: $e");
-      
-      if (mounted) {
-        showCupertinoDialog(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
-            title: const Text("Error"),
-            content: const Text("Failed to load data. Please try again later."),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text("OK"),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-            ],
-          ),
-        );
-      }
-      
-      setState(() {
-        _isLoading = false;
-      });
+
+    print("Loaded ${finds.length} total finds successfully");
+    print("Loaded ${nearbyFinds.length} nearby finds successfully");
+  } catch (e) {
+    print("Error fetching finds: $e");
+
+    if (mounted) {
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text("Error"),
+          content: const Text("Failed to load data. Please try again later."),
+          actions: [
+            CupertinoDialogAction(
+              child: const Text("OK"),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      );
     }
+
+    setState(() {
+      _isLoading = false;
+    });
   }
+}
+
+Future<List<FindModel>> getFindsByLocation() async {
+  final locationService = LocationService();
+  final userPosition = await locationService.getCurrentLocation();
+
+  // Encuentra el edificio más cercano
+  final nearestBuilding = findNearestBuilding(userPosition);
+
+  // Obtén todos los Finds
+  final allFinds = await _findService.getFind();
+
+  // Filtra los Finds por etiquetas relacionadas con el edificio
+  final filteredFinds = allFinds.where((find) {
+    return nearestBuilding.relatedLabels.any((label) => find.labels.contains(label));
+  }).toList();
+
+  return filteredFinds;
+}
+
 
   Widget _buildRecommendedList() {
   if (_recommendedProducts.isEmpty) {
@@ -284,6 +302,101 @@ Widget _buildRecommendedFindsList() {
                   borderRadius: BorderRadius.circular(8),
                 ),
                child: find.image.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          find.image,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => const Icon(
+                            CupertinoIcons.photo,
+                            color: CupertinoColors.white,
+                          ),
+                        ),
+                      )
+                    : const Icon(
+                        CupertinoIcons.photo,
+                        color: CupertinoColors.white,
+                      ),
+              ),
+              const SizedBox(width: 10),
+              // Texto del find
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      find.title,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      find.description,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: CupertinoColors.systemGrey,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+Widget _buildNearbyFindsList() {
+  if (_nearbyFinds.isEmpty) {
+    return Center(
+      child: Text(
+        "No nearby finds available.",
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      ),
+    );
+  }
+
+  return ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: _nearbyFinds.length,
+    itemBuilder: (context, index) {
+      final find = _nearbyFinds[index];
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (ctx) => FindsScreen(find: find),
+            ),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: CupertinoColors.systemGrey6,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: AppColors.transparentGrey,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: find.image.isNotEmpty
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: Image.network(
@@ -468,6 +581,13 @@ Widget build(BuildContext context) {
                           onSeeMore: () => debugPrint("See more: All"),
                         ),
                         _buildMajorHorizontalList(),
+
+                        // "Finds Nearby!" section
+                        _buildSectionHeader(
+                          title: "Finds Nearby!",
+                          onSeeMore: () => debugPrint("See more: Finds Nearby!"),
+                        ),
+                        _buildNearbyFindsList(),
 
                         // "From your major" section
                         _buildSectionHeader(
