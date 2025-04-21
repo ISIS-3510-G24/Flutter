@@ -21,11 +21,12 @@ class LocationService {
       throw Exception("Location permissions are permanently denied.");
     }
 
+    // Obtén la ubicación actual con alta precisión
     final position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
 
-    // Imprime las coordenadas obtenidas
+    // Imprime la ubicación actual para depuración
     print("Current location: Latitude: ${position.latitude}, Longitude: ${position.longitude}");
 
     return position;
@@ -48,21 +49,28 @@ class UniversityBuilding {
 
 final List<UniversityBuilding> universityBuildings = [
   UniversityBuilding(
-    name: "RGD Building",
-    latitude: 4.655397867262984,
-    longitude: -74.10943295187545,
+    name: "Q Building",
+    latitude: 4.600310063997402,
+    longitude: -74.0652599596956,
     relatedLabels: ["Electronics"],
   ),
   UniversityBuilding(
     name: "C Building",
-    latitude: 37.7750,
-    longitude: -122.4183,
+    latitude: 4.601323345591651,
+    longitude: -74.06520095111371,
     relatedLabels: [ "Academics"],
   ),
   UniversityBuilding(
     name: "ML Building",
-    latitude: 37.7760,
-    longitude: -122.4170,
+    latitude: 4.60295,
+    longitude: -74.06485,
+    relatedLabels: ["Accessories"],
+  ),
+
+  UniversityBuilding(
+    name: "Education Building",
+    latitude: 4.601195014481128,
+    longitude: -74.06624969475148,
     relatedLabels: ["Accessories"],
   ),
 ];
@@ -71,7 +79,7 @@ double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
   const double earthRadius = 6371; // Radio de la Tierra en kilómetros
 
   double dLat = _degreesToRadians(lat2 - lat1);
-  double dLon = _degreesToRadians(lon2 - lon1);
+  double dLon = _degreesToRadians(lon2 - lon1); // Corregido: lon2 - lon1
 
   double a = sin(dLat / 2) * sin(dLat / 2) +
       cos(_degreesToRadians(lat1)) *
@@ -100,7 +108,7 @@ UniversityBuilding? findNearestBuilding(Position userPosition, {double maxDistan
       building.longitude,
     );
 
-    print("Building: ${building.name}, Distance: $distance km");
+    print("Building name: ${building.name}, Distance: $distance km");
 
     if (distance < shortestDistance && distance <= maxDistance) {
       shortestDistance = distance;
