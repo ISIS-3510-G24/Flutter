@@ -45,6 +45,7 @@ void initState() {
   super.initState();
   _loadUserDataAndFinds();
   _loadRecommendedProducts();
+  
   _loadRecommendedFinds(); // Cargar productos recomendados
   _loadFinds();
 }
@@ -1368,8 +1369,28 @@ Widget _buildMajorCard(FindModel find, OfferModel? offer) {
 Future<UniversityBuilding?> _getNearestBuilding() async {
   try {
     final locationService = LocationService();
+
+    // Obtén la ubicación actual con alta precisión
     final userPosition = await locationService.getCurrentLocation();
+
+    // Imprime la ubicación actual para depuración
+    print("Updated location: Latitude: ${userPosition.latitude}, Longitude: ${userPosition.longitude}");
+
+    // Encuentra el edificio más cercano
     final nearestBuilding = findNearestBuilding(userPosition);
+
+    // Imprime el edificio más cercano para depuración
+    if (nearestBuilding != null) {
+      print("Nearest building: ${nearestBuilding.name}, Distance: ${calculateDistance(
+        userPosition.latitude,
+        userPosition.longitude,
+        nearestBuilding.latitude,
+        nearestBuilding.longitude,
+      )} km");
+    } else {
+      print("No nearby buildings found.");
+    }
+
     return nearestBuilding;
   } catch (e) {
     print("Error getting nearest building: $e");
