@@ -172,7 +172,15 @@ Future<List<FindModel>> getFindsByLocation() async {
     return []; // No hay edificios cercanos
   }
 
-  print("Nearest building: ${nearestBuilding.name}, Labels: ${nearestBuilding.relatedLabels}");
+  nearestBuilding.then((building) {
+    if (building != null) {
+      print("Nearest building: ${building.name}, Labels: ${building.relatedLabels}");
+    } else {
+      print("No nearby buildings found.");
+    }
+  }).catchError((error) {
+    print("Error fetching nearest building: $error");
+  });
 
   final allFinds = await _findService.getFind();
 
@@ -180,13 +188,19 @@ Future<List<FindModel>> getFindsByLocation() async {
     print("Find: ${find.title}, Labels: ${find.labels}");
   }
 
-  final filteredFinds = allFinds.where((find) {
-    return nearestBuilding.relatedLabels.any((label) => find.labels.contains(label));
-  }).toList();
+  final filteredFinds = await Future.wait(allFinds.map((find) async {
+    final building = await nearestBuilding;
+    return building?.relatedLabels.any((label) => find.labels.contains(label)) ?? false
+        ? find
+        : null;
+  }));
 
-  print("Filtered finds: ${filteredFinds.map((find) => find.title).toList()}");
+  // Remove null values from the list
+  final nonNullFilteredFinds = filteredFinds.whereType<FindModel>().toList();
 
-  return filteredFinds;
+  print("Filtered finds: ${filteredFinds.map((find) => find?.title).toList()}");
+
+  return filteredFinds.whereType<FindModel>().toList();
 }
  
 
@@ -1376,8 +1390,8 @@ Future<UniversityBuilding?> _getNearestBuilding() async {
     // Imprime la ubicación actual para depuración
     print("Updated location: Latitude: ${userPosition.latitude}, Longitude: ${userPosition.longitude}");
 
-    // Encuentra el edificio más cercano
-    final nearestBuilding = findNearestBuilding(userPosition);
+    // Encuentra el edificio más cercano utilizando FirebaseDAO
+    final nearestBuilding = await findNearestBuilding(userPosition);
 
     // Imprime el edificio más cercano para depuración
     if (nearestBuilding != null) {
