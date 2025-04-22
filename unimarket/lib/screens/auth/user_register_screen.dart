@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -47,51 +50,121 @@ void _showErrorAlert(String message) {
     _displayNameController.dispose();
     super.dispose();
   }
+Future<bool> _signUp() async {
+  final email = _emailController.text;
+  final bio = _bioController.text;
+  final password = _passwordController.text;
+  final displayName = _displayNameController.text;
+  final passwordConfirm = _confirmpasswordController.text;
 
-  Future<bool> _signUp() async {
-    final email = _emailController.text;
-    final bio = _bioController.text;
-    final password = _passwordController.text;
-    final displayName = _displayNameController.text;
-    final passwordConfirm = _confirmpasswordController.text;
-
-    if (selectedMajor == null) {
-      _showErrorAlert('Please select a major');
-      return false;
-    }
-    if (email.trim().isEmpty) {
-      _showErrorAlert('Please type in your email address');
-      return false;
-    }
-    if (!email.trim().contains("@") || !email.trim().contains(".co")){
-      _showErrorAlert("Please type in a valid email address");
-      return false;
-    }
-    if (bio.trim().isEmpty) {
-      _showErrorAlert('Please write something for your bio');
-      return false;
-    }
-    if (displayName.trim().isEmpty) {
-      _showErrorAlert('Please type the name you want others to see you with');
-      return false;
-    }
-    if (password.trim().isEmpty || passwordConfirm.trim().isEmpty) {
-      _showErrorAlert('Please type in your password and its confirmation');
-      return false;
-    }
-
-    if (confirmPassword(password.trim(), passwordConfirm.trim())) {
-      try {
-        await _firebaseDAO.createUser(email, password, bio, displayName, selectedMajor!);
-        return true;
-      } catch (e) {
-        print("Signup error: $e");
-        return false;
-      }
-    }
+  // Input validation
+  if (selectedMajor == null) {
+    _showErrorAlert('Please select a major');
+    return false;
+  }
+  if (email.trim().isEmpty) {
+    _showErrorAlert('Please type in your email address');
+    return false;
+  }
+  if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(email.trim())) {
+    _showErrorAlert("Please type in a valid email address");
+    return false;
+  }
+  if (bio.trim().isEmpty) {
+    _showErrorAlert('Please write something for your bio');
+    return false;
+  }
+  if (displayName.trim().isEmpty) {
+    _showErrorAlert('Please type the name you want others to see you with');
+    return false;
+  }
+  if (password.trim().isEmpty || passwordConfirm.trim().isEmpty) {
+    _showErrorAlert('Please type in your password and its confirmation');
+    return false;
+  }
+  if (!confirmPassword(password.trim(), passwordConfirm.trim())) {
+    _showErrorAlert('Passwords do not match');
     return false;
   }
 
+  try {
+    // Check internet connection first
+    final hasConnection = await _checkInternetConnection();
+    if (!hasConnection) {
+      _showNoInternetPopup();
+      return false;
+    }
+
+    await _firebaseDAO.createUser(
+      email, 
+      password, 
+      bio, 
+      displayName, 
+      selectedMajor!
+    );
+    return true;
+  } on FirebaseAuthException catch (e) {
+    _handleFirebaseAuthError(e);
+    return false;
+  } on SocketException catch (_) {
+    _showNoInternetPopup();
+    return false;
+  } catch (e) {
+    debugPrint("Signup error: $e");
+    _showErrorAlert('An unexpected error occurred. Please try again.');
+    return false;
+  }
+}
+
+Future<bool> _checkInternetConnection() async {
+  try {
+    final result = await InternetAddress.lookup('google.com');
+    return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+  } on SocketException catch (_) {
+    return false;
+  }
+}
+
+void _showNoInternetPopup() {
+  if (!mounted) return;
+  
+  showCupertinoDialog(
+    context: context,
+    builder: (_) => CupertinoAlertDialog(
+      title: const Text("No Internet Connection"),
+      content: const Text("Please check your internet connection and try again."),
+      actions: [
+        CupertinoDialogAction(
+          child: const Text("OK"),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    ),
+  );
+}
+
+void _handleFirebaseAuthError(FirebaseAuthException e) {
+  String errorMessage;
+  
+  switch (e.code) {
+    case 'email-already-in-use':
+      errorMessage = 'This email is already registered.';
+      break;
+    case 'invalid-email':
+      errorMessage = 'The email address is invalid.';
+      break;
+    case 'operation-not-allowed':
+      errorMessage = 'Email/password accounts are not enabled.';
+      break;
+    case 'weak-password':
+      errorMessage = 'The password is too weak.';
+      break;
+    default:
+      errorMessage = 'An error occurred during sign up.';
+  }
+
+  _showErrorAlert(errorMessage);
+}
 
   bool confirmPassword(String password, String confirmPassword) {
     if (password == confirmPassword){
