@@ -79,7 +79,7 @@ void initState() {
       return;
     }
     
-    _showLoginError('Invalid credentials');
+    _checkOfflineCredentials(email, password);
   } on TimeoutException {
     debugPrint('Login timed out - checking offline credentials');
     _checkOfflineCredentials(email, password);
