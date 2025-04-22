@@ -4,6 +4,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class BiometricAuthService {
   static final LocalAuthentication _localAuth = LocalAuthentication();
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+  static const _emailKey = 'biometric_email';
+  static const _passwordKey = 'biometric_password';
 
   static Future<bool> get hasBiometrics async {
     try {
@@ -29,21 +31,30 @@ class BiometricAuthService {
   }
 
   static Future<bool> hasSavedCredentials() async {
-    final email = await _secureStorage.read(key: 'biometric_email');
-    final password = await _secureStorage.read(key: 'biometric_password');
-    return email != null && password != null;
+    final creds = await getSavedCredentials();
+    return creds['email'] != null && creds['password'] != null;
   }
 
+
   static Future<Map<String, String?>> getSavedCredentials() async {
-    return {
-      'email': await _secureStorage.read(key: 'biometric_email'),
-      'password': await _secureStorage.read(key: 'biometric_password'),
-    };
+    try {
+      final email = await _secureStorage.read(key: _emailKey);
+      final password = await _secureStorage.read(key: _passwordKey);
+      return {'email': email, 'password': password};
+    } catch (e) {
+      print('Error reading credentials: $e');
+      return {'email': null, 'password': null};
+    }
   }
 
   static Future<void> saveCredentials(String email, String password) async {
-    await _secureStorage.write(key: 'biometric_email', value: email);
-    await _secureStorage.write(key: 'biometric_password', value: password);
+    try {
+      await _secureStorage.write(key: _emailKey, value: email);
+      await _secureStorage.write(key: _passwordKey, value: password);
+      print('Credentials saved successfully');
+    } catch (e) {
+      print('Error saving credentials: $e');
+    }
   }
 
   static Future<void> clearCredentials() async {

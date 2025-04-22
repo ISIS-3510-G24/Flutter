@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -58,30 +61,58 @@ void initState() {
   }
 
   Future<void> _attemptLogin(String email, String password) async {
-    try {
-      // Try online login first
-      final success = await _firebaseDAO.signIn(email, password);
-      
-      if (success && mounted) {
-        // Save credentials for future biometric login
-        await BiometricAuthService.saveCredentials(email, password);
-        Navigator.pushReplacementNamed(context, '/home');
-      } else {
-        _showLoginError();
-      }
-    } catch (e) {
-      // If online fails, check if credentials match saved ones
-      final savedCreds = await BiometricAuthService.getSavedCredentials();
-      if (savedCreds['email'] == email && savedCreds['password'] == password) {
-        if (mounted) {
-          Navigator.pushReplacementNamed(context, '/home');
-          _showOfflineWarning();
-        }
-      } else {
-        _showLoginError();
-      }
-    }
+  // First validate inputs
+  if (email.isEmpty || password.isEmpty) {
+    _showLoginError('Please enter both email and password');
+    return;
   }
+
+  try {
+    // Try online login first with timeout
+    final success = await _firebaseDAO.signIn(email, password)
+      .timeout(const Duration(seconds: 10));
+    
+    if (success && mounted) {
+      debugPrint('Online login successful');
+      await BiometricAuthService.saveCredentials(email, password);
+      Navigator.pushReplacementNamed(context, '/home');
+      return;
+    }
+    
+    _showLoginError('Invalid credentials');
+  } on TimeoutException {
+    debugPrint('Login timed out - checking offline credentials');
+    _checkOfflineCredentials(email, password);
+  } on SocketException {
+    debugPrint('No internet connection - checking offline credentials');
+    _checkOfflineCredentials(email, password);
+  } catch (e) {
+    debugPrint('Login error: $e');
+    _showLoginError('Login failed. Please try again.');
+  }
+}
+
+Future<void> _checkOfflineCredentials(String email, String password) async {
+  try {
+    debugPrint('Checking saved credentials for offline login');
+    final savedCreds = await BiometricAuthService.getSavedCredentials();
+    debugPrint('Email: ${savedCreds['email']}');
+    debugPrint('Password: ${savedCreds['password']}');
+    if (savedCreds['email'] == email && savedCreds['password'] == password) {
+      if (mounted) {
+        debugPrint('Offline login successful');
+        Navigator.pushReplacementNamed(context, '/home');
+        _showOfflineWarning();
+      }
+    } else {
+      debugPrint('Offline login failed - credentials mismatch');
+      _showLoginError('No internet connection and no matching saved credentials');
+    }
+  } catch (e) {
+    debugPrint('Offline check error: $e');
+    _showLoginError('Could not verify credentials offline');
+  }
+}
 
   void _showOfflineWarning() {
     showDialog(
@@ -99,16 +130,18 @@ void initState() {
     );
   }
 
-  void _showLoginError() {
-    showDialog(
+  void _showLoginError(String errorMessage) {
+    if (!mounted) return;
+    
+    showCupertinoDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => CupertinoAlertDialog(
         title: const Text('Login Failed'),
-        content: const Text('Invalid credentials or no internet connection'),
+        content: Text(errorMessage),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
+          CupertinoDialogAction(
             child: const Text('OK'),
+            onPressed: () => Navigator.pop(context),
           ),
         ],
       ),
