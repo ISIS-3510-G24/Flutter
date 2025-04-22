@@ -1,8 +1,13 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/data/firebase_dao.dart';
-
+import 'package:local_auth/local_auth.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:unimarket/services/auth_storage_service.dart';
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback showRegisterPage;
@@ -10,29 +15,129 @@ class LoginScreen extends StatefulWidget {
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
-  
 }
-
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
+  Future<bool> _savedCredentialsFuture = Future.value(false);
+  bool _biometricsAvailable = false;
 
-  Future<void> _handleLogin() async {
-    final email = _emailController.text;
-    final password = _passwordController.text;
+ @override
+void initState() {
+  super.initState();
+  _checkBiometrics();
+  _loadSavedEmail();
+  _savedCredentialsFuture = BiometricAuthService.hasSavedCredentials();
+}
 
-    final isLoginSuccessful = await _firebaseDAO.signIn(email, password);
+  Future<void> _checkBiometrics() async {
+    _biometricsAvailable = await BiometricAuthService.hasBiometrics;
+    setState(() {});
+  }
 
-    if (isLoginSuccessful && mounted) {
+  Future<void> _loadSavedEmail() async {
+    if (await BiometricAuthService.hasSavedCredentials()) {
+      final credentials = await BiometricAuthService.getSavedCredentials();
+      if (mounted) {
+        setState(() {
+          _emailController.text = credentials['email'] ?? '';
+        });
+      }
+    }
+  }
+
+  Future<void> _handleBiometricLogin() async {
+    if (!_biometricsAvailable) return;
+
+    final authenticated = await BiometricAuthService.authenticate();
+    if (!authenticated) return;
+
+    if (await BiometricAuthService.hasSavedCredentials()) {
+      final credentials = await BiometricAuthService.getSavedCredentials();
+      await _attemptLogin(credentials['email']!, credentials['password']!);
+    }
+  }
+
+  Future<void> _attemptLogin(String email, String password) async {
+  // First validate inputs
+  if (email.isEmpty || password.isEmpty) {
+    _showLoginError('Please enter both email and password');
+    return;
+  }
+
+  try {
+    // Try online login first with timeout
+    final success = await _firebaseDAO.signIn(email, password)
+      .timeout(const Duration(seconds: 10));
+    
+    if (success && mounted) {
+      debugPrint('Online login successful');
+      await BiometricAuthService.saveCredentials(email, password);
       Navigator.pushReplacementNamed(context, '/home');
+      return;
+    }
+    
+    _checkOfflineCredentials(email, password);
+  } on TimeoutException {
+    debugPrint('Login timed out - checking offline credentials');
+    _checkOfflineCredentials(email, password);
+  } on SocketException {
+    debugPrint('No internet connection - checking offline credentials');
+    _checkOfflineCredentials(email, password);
+  } catch (e) {
+    debugPrint('Login error: $e');
+    _showLoginError('Login failed. Please try again.');
+  }
+}
+
+Future<void> _checkOfflineCredentials(String email, String password) async {
+  try {
+    debugPrint('Checking saved credentials for offline login');
+    final savedCreds = await BiometricAuthService.getSavedCredentials();
+    debugPrint('Email: ${savedCreds['email']}');
+    debugPrint('Password: ${savedCreds['password']}');
+    if (savedCreds['email'] == email && savedCreds['password'] == password) {
+      if (mounted) {
+        debugPrint('Offline login successful');
+        Navigator.pushReplacementNamed(context, '/home');
+        _showOfflineWarning();
+      }
     } else {
-      showCupertinoDialog(
+      debugPrint('Offline login failed - credentials mismatch');
+      _showLoginError('No internet connection and no matching saved credentials');
+    }
+  } catch (e) {
+    debugPrint('Offline check error: $e');
+    _showLoginError('Could not verify credentials offline');
+  }
+}
+
+  void _showOfflineWarning() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Offline Mode'),
+        content: const Text('You are using the app in offline mode. Some features may be limited.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLoginError(String errorMessage) {
+    if (!mounted) return;
+    
+    showCupertinoDialog(
       context: context,
       builder: (context) => CupertinoAlertDialog(
         title: const Text('Login Failed'),
-        content: Text("Please check your credentials and try again"),
+        content: Text(errorMessage),
         actions: [
           CupertinoDialogAction(
             child: const Text('OK'),
@@ -41,8 +146,6 @@ class _LoginScreenState extends State<LoginScreen> {
         ],
       ),
     );
-
-    }
   }
 
 
@@ -52,7 +155,6 @@ class _LoginScreenState extends State<LoginScreen> {
     _passwordController.dispose();
     super.dispose();
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +166,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                //UniMarket image
+                // UniMarket image
                 ClipRRect(
                   borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(10),
@@ -89,7 +191,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-            
                 const SizedBox(height: 40),
             
                 // Username textbox
@@ -143,10 +244,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25),
                   child: GestureDetector(
-                    onTap: () {
-                      print("Email: ${_emailController.text}");
-                      print("Password: ${_passwordController.text}");
-                      _handleLogin();
+                    onTap: () async {
+                      debugPrint("Login attempt with email: ${_emailController.text}");
+                      await _attemptLogin(
+                        _emailController.text.trim(),
+                        _passwordController.text.trim(),
+                      );
                     },
                     child: Container(
                       padding: const EdgeInsets.all(20),
@@ -167,7 +270,54 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
+            
+                // Biometric Login Button (conditionally shown)
+                FutureBuilder<bool>(
+                future: _savedCredentialsFuture,
+                builder: (context, snapshot) {
+                  final hasSavedCredentials = snapshot.data ?? false;
+                  
+                  if (_biometricsAvailable && hasSavedCredentials) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 25),
+                      child: GestureDetector(
+                        onTap: _handleBiometricLogin,
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Color(0xFF66B7EF),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Center(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.fingerprint,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  "Login with Biometrics",
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+                const SizedBox(height: 10),
             
                 // Sign Up Text
                 Row(
