@@ -1,28 +1,53 @@
-import 'package:hive/hive.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-class AuthStorageService {
-  static const _secureStorage = FlutterSecureStorage();
-  static const _authBoxName = 'authBox';
-  static const _emailKey = 'email';
-  static const _passwordKey = 'password';
+class BiometricAuthService {
+  static final LocalAuthentication _localAuth = LocalAuthentication();
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
-  static Future<void> saveCredentials(String email, String password) async {
-    final authBox = await Hive.openBox(_authBoxName);
-    await authBox.put(_emailKey, email);
-    await _secureStorage.write(key: _passwordKey, value: password);
+  static Future<bool> get hasBiometrics async {
+    try {
+      return await _localAuth.canCheckBiometrics || await _localAuth.isDeviceSupported();
+    } catch (e) {
+      return false;
+    }
   }
 
-  static Future<Map<String, String?>> getCredentials() async {
-    final authBox = await Hive.openBox(_authBoxName);
-    final email = authBox.get(_emailKey) as String?;
-    final password = await _secureStorage.read(key: _passwordKey);
-    return {'email': email, 'password': password};
+  static Future<bool> authenticate() async {
+    try {
+      return await _localAuth.authenticate(
+        localizedReason: 'Authenticate to access your account',
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          useErrorDialogs: true,
+          stickyAuth: true,
+        ),
+      );
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<bool> hasSavedCredentials() async {
+    final email = await _secureStorage.read(key: 'biometric_email');
+    final password = await _secureStorage.read(key: 'biometric_password');
+    return email != null && password != null;
+  }
+
+  static Future<Map<String, String?>> getSavedCredentials() async {
+    return {
+      'email': await _secureStorage.read(key: 'biometric_email'),
+      'password': await _secureStorage.read(key: 'biometric_password'),
+    };
+  }
+
+  static Future<void> saveCredentials(String email, String password) async {
+    await _secureStorage.write(key: 'biometric_email', value: email);
+    await _secureStorage.write(key: 'biometric_password', value: password);
   }
 
   static Future<void> clearCredentials() async {
-    final authBox = await Hive.openBox(_authBoxName);
-    await authBox.delete(_emailKey);
-    await _secureStorage.delete(key: _passwordKey);
+    await _secureStorage.delete(key: 'biometric_email');
+    await _secureStorage.delete(key: 'biometric_password');
   }
 }

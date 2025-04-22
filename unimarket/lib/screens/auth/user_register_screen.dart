@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/data/firebase_dao.dart';
+import 'package:unimarket/services/auth_storage_service.dart';
 
 class UserRegister extends StatefulWidget {
   final VoidCallback showLoginPage;
@@ -102,6 +103,7 @@ Future<bool> _signUp() async {
       displayName, 
       selectedMajor!
     );
+    await BiometricAuthService.saveCredentials(email, password);
     return true;
   } on FirebaseAuthException catch (e) {
     _handleFirebaseAuthError(e);

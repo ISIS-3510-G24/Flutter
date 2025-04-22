@@ -12,96 +12,67 @@ class LoginScreen extends StatefulWidget {
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
-  
 }
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
-  final LocalAuthentication _localAuth = LocalAuthentication();
-  bool _supportsBiometrics = false;
-  bool _isOfflineLogin = false;
+  Future<bool> _savedCredentialsFuture = Future.value(false);
+  bool _biometricsAvailable = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _checkBiometrics();
-    _loadSavedCredentials();
-  }
+ @override
+void initState() {
+  super.initState();
+  _checkBiometrics();
+  _loadSavedEmail();
+  _savedCredentialsFuture = BiometricAuthService.hasSavedCredentials();
+}
 
   Future<void> _checkBiometrics() async {
-    try {
-      _supportsBiometrics = await _localAuth.canCheckBiometrics;
-    } catch (e) {
-      debugPrint('Biometric check error: $e');
-    }
+    _biometricsAvailable = await BiometricAuthService.hasBiometrics;
+    setState(() {});
   }
 
-  Future<void> _loadSavedCredentials() async {
-    try {
-      final credentials = await AuthStorageService.getCredentials();
-      if (credentials['email'] != null && mounted) {
+  Future<void> _loadSavedEmail() async {
+    if (await BiometricAuthService.hasSavedCredentials()) {
+      final credentials = await BiometricAuthService.getSavedCredentials();
+      if (mounted) {
         setState(() {
-          _emailController.text = credentials['email']!;
+          _emailController.text = credentials['email'] ?? '';
         });
       }
-    } catch (e) {
-      debugPrint('Error loading credentials: $e');
     }
   }
 
-  Future<bool> _authenticateWithBiometrics() async {
-    try {
-      return await _localAuth.authenticate(
-        localizedReason: 'Authenticate to login',
-        options: const AuthenticationOptions(
-          biometricOnly: true,
-          useErrorDialogs: true,
-        ),
-      );
-    } catch (e) {
-      debugPrint('Biometric auth error: $e');
-      return false;
+  Future<void> _handleBiometricLogin() async {
+    if (!_biometricsAvailable) return;
+
+    final authenticated = await BiometricAuthService.authenticate();
+    if (!authenticated) return;
+
+    if (await BiometricAuthService.hasSavedCredentials()) {
+      final credentials = await BiometricAuthService.getSavedCredentials();
+      await _attemptLogin(credentials['email']!, credentials['password']!);
     }
   }
 
-  Future<void> _handleLogin() async {
-    final email = _emailController.text;
-    final password = _passwordController.text;
-
+  Future<void> _attemptLogin(String email, String password) async {
     try {
       // Try online login first
-      final isLoginSuccessful = await _firebaseDAO.signIn(email, password);
+      final success = await _firebaseDAO.signIn(email, password);
       
-      if (isLoginSuccessful) {
-        // Save credentials for offline use
-        await AuthStorageService.saveCredentials(email, password);
-        if (mounted) {
-          Navigator.pushReplacementNamed(context, '/home');
-        }
+      if (success && mounted) {
+        // Save credentials for future biometric login
+        await BiometricAuthService.saveCredentials(email, password);
+        Navigator.pushReplacementNamed(context, '/home');
       } else {
         _showLoginError();
       }
     } catch (e) {
-      // If online fails, try offline login
-      await _attemptOfflineLogin(email, password);
-    }
-  }
-
-  Future<void> _attemptOfflineLogin(String email, String password) async {
-    try {
-      final credentials = await AuthStorageService.getCredentials();
-      
-      if (credentials['email'] == email && 
-          credentials['password'] == password) {
-        // Offer biometric login if available
-        if (_supportsBiometrics) {
-          final authenticated = await _authenticateWithBiometrics();
-          if (!authenticated) return;
-        }
-
-        setState(() => _isOfflineLogin = true);
+      // If online fails, check if credentials match saved ones
+      final savedCreds = await BiometricAuthService.getSavedCredentials();
+      if (savedCreds['email'] == email && savedCreds['password'] == password) {
         if (mounted) {
           Navigator.pushReplacementNamed(context, '/home');
           _showOfflineWarning();
@@ -109,21 +80,19 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         _showLoginError();
       }
-    } catch (e) {
-      _showLoginError();
     }
   }
 
   void _showOfflineWarning() {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => AlertDialog(
         title: const Text('Offline Mode'),
         content: const Text('You are using the app in offline mode. Some features may be limited.'),
         actions: [
-          CupertinoDialogAction(
-            child: const Text('OK'),
+          TextButton(
             onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -131,19 +100,15 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showLoginError() {
-    if (!mounted) return;
-    
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => AlertDialog(
         title: const Text('Login Failed'),
-        content: Text(_isOfflineLogin 
-            ? "Could not verify credentials offline" 
-            : "Please check your credentials and internet connection"),
+        content: const Text('Invalid credentials or no internet connection'),
         actions: [
-          CupertinoDialogAction(
-            child: const Text('OK'),
+          TextButton(
             onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -158,7 +123,6 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -169,7 +133,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                //UniMarket image
+                // UniMarket image
                 ClipRRect(
                   borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(10),
@@ -194,7 +158,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-            
                 const SizedBox(height: 40),
             
                 // Username textbox
@@ -248,10 +211,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25),
                   child: GestureDetector(
-                    onTap: () {
-                      print("Email: ${_emailController.text}");
-                      print("Password: ${_passwordController.text}");
-                      _handleLogin();
+                    onTap: () async {
+                      debugPrint("Login attempt with email: ${_emailController.text}");
+                      await _attemptLogin(
+                        _emailController.text.trim(),
+                        _passwordController.text.trim(),
+                      );
                     },
                     child: Container(
                       padding: const EdgeInsets.all(20),
@@ -272,7 +237,54 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
+            
+                // Biometric Login Button (conditionally shown)
+                FutureBuilder<bool>(
+                future: _savedCredentialsFuture,
+                builder: (context, snapshot) {
+                  final hasSavedCredentials = snapshot.data ?? false;
+                  
+                  if (_biometricsAvailable && hasSavedCredentials) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 25),
+                      child: GestureDetector(
+                        onTap: _handleBiometricLogin,
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Color(0xFF66B7EF),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Center(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.fingerprint,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  "Login with Biometrics",
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+                const SizedBox(height: 10),
             
                 // Sign Up Text
                 Row(
