@@ -162,46 +162,39 @@ Future<void> _loadRecommendedFinds() async {
 }
 
 Future<List<FindModel>> getFindsByLocation() async {
-  final locationService = LocationService();
-  final userPosition = await locationService.getCurrentLocation();
+  try {
+    // Obtener la ubicación actual usando el Singleton
+    //LocationService locationService = LocationService();
+    final locationService = LocationService();
+    final userPosition = await locationService.getCurrentLocation();
 
-  final nearestBuilding = findNearestBuilding(userPosition);
+    // Obtener el edificio más cercano
+    final nearestBuilding = await findNearestBuilding(userPosition);
 
-  if (nearestBuilding == null) {
-    print("No nearby buildings found.");
-    return []; // No hay edificios cercanos
-  }
-
-  nearestBuilding.then((building) {
-    if (building != null) {
-      print("Nearest building: ${building.name}, Labels: ${building.relatedLabels}");
-    } else {
+    if (nearestBuilding == null) {
       print("No nearby buildings found.");
+      return []; // No hay edificios cercanos
     }
-  }).catchError((error) {
-    print("Error fetching nearest building: $error");
-  });
 
-  final allFinds = await _findService.getFind();
+    print("Nearest building: ${nearestBuilding.name}, Labels: ${nearestBuilding.relatedLabels}");
 
-  for (var find in allFinds) {
-    print("Find: ${find.title}, Labels: ${find.labels}");
+    // Obtener todos los elementos disponibles (finds)
+    final allFinds = await _findService.getFind();
+
+    // Filtrar los elementos cuyos labels coincidan con los del edificio más cercano
+    final filteredFinds = allFinds.where((find) {
+      return nearestBuilding.relatedLabels.any((label) => find.labels.contains(label));
+    }).toList();
+
+    print("Filtered finds: ${filteredFinds.map((f) => f.title).toList()}");
+
+    return filteredFinds;
+  } catch (e) {
+    print("Error in getFindsByLocation: $e");
+    return [];
   }
-
-  final filteredFinds = await Future.wait(allFinds.map((find) async {
-    final building = await nearestBuilding;
-    return building?.relatedLabels.any((label) => find.labels.contains(label)) ?? false
-        ? find
-        : null;
-  }));
-
-  // Remove null values from the list
-  final nonNullFilteredFinds = filteredFinds.whereType<FindModel>().toList();
-
-  print("Filtered finds: ${filteredFinds.map((find) => find?.title).toList()}");
-
-  return filteredFinds.whereType<FindModel>().toList();
 }
+
  
 
   Widget _buildRecommendedList() {
@@ -1382,9 +1375,12 @@ Widget _buildMajorCard(FindModel find, OfferModel? offer) {
 
 Future<UniversityBuilding?> _getNearestBuilding() async {
   try {
+    //LocationService locationService = LocationService();
+    //Se mantiene inmutable la referencia
     final locationService = LocationService();
 
-    // Obtén la ubicación actual con alta precisión
+
+    // se obtien la ubicación actual con alta precisión
     final userPosition = await locationService.getCurrentLocation();
 
     // Imprime la ubicación actual para depuración
