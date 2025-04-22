@@ -3,6 +3,17 @@ import 'package:geolocator/geolocator.dart';
 import 'package:unimarket/data/firebase_dao.dart';
 
 class LocationService {
+
+  LocationService._privateConstructor();
+  // Singleton instance
+  static final _instance = LocationService._privateConstructor();
+  // Factory constructor to return the same instance
+  // This ensures that every time someone calls LocationService(), they will get the same instance
+  factory LocationService() {
+    return _instance;
+  }
+
+
   Future<Position> getCurrentLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -21,17 +32,15 @@ class LocationService {
       throw Exception("Location permissions are permanently denied.");
     }
 
-    // Obtén la ubicación actual con alta precisión
     final position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
 
-    // Imprime la ubicación actual para depuración
     print("Current location: Latitude: ${position.latitude}, Longitude: ${position.longitude}");
-
     return position;
   }
 }
+
 
 class UniversityBuilding {
   final String name;
