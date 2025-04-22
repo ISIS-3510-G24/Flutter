@@ -2,7 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/data/firebase_dao.dart';
-
+import 'package:local_auth/local_auth.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:unimarket/services/auth_storage_service.dart';
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback showRegisterPage;
@@ -13,26 +15,111 @@ class LoginScreen extends StatefulWidget {
   
 }
 
-
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
+  final LocalAuthentication _localAuth = LocalAuthentication();
+  bool _supportsBiometrics = false;
+  bool _isOfflineLogin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometrics();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _checkBiometrics() async {
+    try {
+      _supportsBiometrics = await _localAuth.canCheckBiometrics;
+    } catch (e) {
+      debugPrint('Biometric check error: $e');
+    }
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    try {
+      final credentials = await AuthStorageService.getCredentials();
+      if (credentials['email'] != null && mounted) {
+        setState(() {
+          _emailController.text = credentials['email']!;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading credentials: $e');
+    }
+  }
+
+  Future<bool> _authenticateWithBiometrics() async {
+    try {
+      return await _localAuth.authenticate(
+        localizedReason: 'Authenticate to login',
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          useErrorDialogs: true,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Biometric auth error: $e');
+      return false;
+    }
+  }
 
   Future<void> _handleLogin() async {
     final email = _emailController.text;
     final password = _passwordController.text;
 
-    final isLoginSuccessful = await _firebaseDAO.signIn(email, password);
+    try {
+      // Try online login first
+      final isLoginSuccessful = await _firebaseDAO.signIn(email, password);
+      
+      if (isLoginSuccessful) {
+        // Save credentials for offline use
+        await AuthStorageService.saveCredentials(email, password);
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      } else {
+        _showLoginError();
+      }
+    } catch (e) {
+      // If online fails, try offline login
+      await _attemptOfflineLogin(email, password);
+    }
+  }
 
-    if (isLoginSuccessful && mounted) {
-      Navigator.pushReplacementNamed(context, '/home');
-    } else {
-      showCupertinoDialog(
+  Future<void> _attemptOfflineLogin(String email, String password) async {
+    try {
+      final credentials = await AuthStorageService.getCredentials();
+      
+      if (credentials['email'] == email && 
+          credentials['password'] == password) {
+        // Offer biometric login if available
+        if (_supportsBiometrics) {
+          final authenticated = await _authenticateWithBiometrics();
+          if (!authenticated) return;
+        }
+
+        setState(() => _isOfflineLogin = true);
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/home');
+          _showOfflineWarning();
+        }
+      } else {
+        _showLoginError();
+      }
+    } catch (e) {
+      _showLoginError();
+    }
+  }
+
+  void _showOfflineWarning() {
+    showCupertinoDialog(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: const Text('Login Failed'),
-        content: Text("Please check your credentials and try again"),
+        title: const Text('Offline Mode'),
+        content: const Text('You are using the app in offline mode. Some features may be limited.'),
         actions: [
           CupertinoDialogAction(
             child: const Text('OK'),
@@ -41,8 +128,26 @@ class _LoginScreenState extends State<LoginScreen> {
         ],
       ),
     );
+  }
 
-    }
+  void _showLoginError() {
+    if (!mounted) return;
+    
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Login Failed'),
+        content: Text(_isOfflineLogin 
+            ? "Could not verify credentials offline" 
+            : "Please check your credentials and internet connection"),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
   }
 
 
