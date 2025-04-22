@@ -1163,4 +1163,30 @@ Future<String?> uploadOfferImage(String filePath, String offerId) async {
   }
 }
 
+Future<List<Map<String, dynamic>>> getUniversityBuildings() async {
+  try {
+    // Obtén la colección de edificios desde Firestore
+    final querySnapshot = await _firestore.collection('buildings').get();
+
+    // Mapea los documentos a una lista de mapas
+    final buildings = querySnapshot.docs.map((doc) {
+      final data = doc.data();
+      return {
+        "name": data['name'] ?? '',
+        "latitude": data['latitude'] ?? 0.0,
+        "longitude": data['longitude'] ?? 0.0,
+        "relatedLabels": List<String>.from(data['relatedLabels'] ?? []),
+      };
+    }).toList();
+
+    print("Fetched ${buildings.length} university buildings.");
+    return buildings;
+  } catch (e) {
+    print("Error fetching university buildings: $e");
+    return [];
+  }
+}
+
+
+
 }

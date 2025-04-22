@@ -1,8 +1,19 @@
 import 'dart:math';
-
 import 'package:geolocator/geolocator.dart';
+import 'package:unimarket/data/firebase_dao.dart';
 
 class LocationService {
+
+  LocationService._privateConstructor();
+  // Singleton instance
+  static final _instance = LocationService._privateConstructor();
+  // Factory constructor to return the same instance
+  // This ensures that every time someone calls LocationService(), they will get the same instance
+  factory LocationService() {
+    return _instance;
+  }
+
+
   Future<Position> getCurrentLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -25,12 +36,11 @@ class LocationService {
       desiredAccuracy: LocationAccuracy.high,
     );
 
-    // Imprime las coordenadas obtenidas
     print("Current location: Latitude: ${position.latitude}, Longitude: ${position.longitude}");
-
     return position;
   }
 }
+
 
 class UniversityBuilding {
   final String name;
@@ -44,28 +54,17 @@ class UniversityBuilding {
     required this.longitude,
     required this.relatedLabels,
   });
-}
 
-final List<UniversityBuilding> universityBuildings = [
-  UniversityBuilding(
-    name: "RGD Building",
-    latitude: 4.655397867262984,
-    longitude: -74.10943295187545,
-    relatedLabels: ["Electronics"],
-  ),
-  UniversityBuilding(
-    name: "C Building",
-    latitude: 37.7750,
-    longitude: -122.4183,
-    relatedLabels: [ "Academics"],
-  ),
-  UniversityBuilding(
-    name: "ML Building",
-    latitude: 37.7760,
-    longitude: -122.4170,
-    relatedLabels: ["Accessories"],
-  ),
-];
+  // Método para crear un objeto UniversityBuilding desde un mapa
+  factory UniversityBuilding.fromMap(Map<String, dynamic> data) {
+    return UniversityBuilding(
+      name: data['name'] ?? '',
+      latitude: data['latitude'] ?? 0.0,
+      longitude: data['longitude'] ?? 0.0,
+      relatedLabels: List<String>.from(data['relatedLabels'] ?? []),
+    );
+  }
+}
 
 double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
   const double earthRadius = 6371; // Radio de la Tierra en kilómetros
@@ -87,32 +86,44 @@ double _degreesToRadians(double degrees) {
   return degrees * pi / 180;
 }
 
+Future<UniversityBuilding?> findNearestBuilding(Position userPosition, {double maxDistance = 1.5}) async {
+  final firebaseDAO = FirebaseDAO();
 
-UniversityBuilding? findNearestBuilding(Position userPosition, {double maxDistance = 1.5}) {
-  UniversityBuilding? nearestBuilding;
-  double shortestDistance = double.infinity;
+  try {
+    // Obtén los edificios desde Firebase
+    final buildingMaps = await firebaseDAO.getUniversityBuildings();
 
-  for (var building in universityBuildings) {
-    double distance = calculateDistance(
-      userPosition.latitude,
-      userPosition.longitude,
-      building.latitude,
-      building.longitude,
-    );
+    // Convierte los mapas en objetos UniversityBuilding
+    final buildings = buildingMaps.map((map) => UniversityBuilding.fromMap(map)).toList();
 
-    print("Building: ${building.name}, Distance: $distance km");
+    UniversityBuilding? nearestBuilding;
+    double shortestDistance = double.infinity;
 
-    if (distance < shortestDistance && distance <= maxDistance) {
-      shortestDistance = distance;
-      nearestBuilding = building;
+    for (var building in buildings) {
+      double distance = calculateDistance(
+        userPosition.latitude,
+        userPosition.longitude,
+        building.latitude,
+        building.longitude,
+      );
+
+      print("Building name: ${building.name}, Distance: $distance km");
+
+      if (distance < shortestDistance && distance <= maxDistance) {
+        shortestDistance = distance;
+        nearestBuilding = building;
+      }
     }
-  }
 
-  if (nearestBuilding != null) {
-    print("Nearest building: ${nearestBuilding.name}, Distance: $shortestDistance km");
-  } else {
-    print("No buildings within $maxDistance km.");
-  }
+    if (nearestBuilding != null) {
+      print("Nearest building: ${nearestBuilding.name}, Distance: $shortestDistance km");
+    } else {
+      print("No buildings within $maxDistance km.");
+    }
 
-  return nearestBuilding;
+    return nearestBuilding;
+  } catch (e) {
+    print("Error finding nearest building: $e");
+    return null;
+  }
 }
