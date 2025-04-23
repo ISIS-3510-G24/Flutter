@@ -9,7 +9,6 @@ class UniversityBuildingController {
   // Método para obtener los edificios desde FirebaseDAO y convertirlos en objetos UniversityBuilding
   Future<List<UniversityBuilding>> fetchUniversityBuildings() async {
     try {
-      // Obtén los datos desde FirebaseDAO
       final List<Map<String, dynamic>> buildingMaps = await _firebaseDAO.getUniversityBuildings();
 
       // Convierte los mapas en objetos UniversityBuilding
