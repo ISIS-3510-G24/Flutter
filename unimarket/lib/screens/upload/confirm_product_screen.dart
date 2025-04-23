@@ -180,34 +180,33 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
   }
 
   void _openAudioToTextScreen() {
-    Navigator.push(
-      context,
-      CupertinoPageRoute(
-        builder: (context) => AudioToTextScreen(
-          onTextGenerated: (generatedText) {
-            setState(() {
-              _descriptionController.text = generatedText;
-            });
-          },
-        ),
+  Navigator.push(
+    context,
+    CupertinoPageRoute(
+      builder: (context) => AudioToTextScreen(
+        onTextGenerated: (generatedText) {
+          setState(() {
+            _descriptionController.text = generatedText; // Actualiza solo la descripción
+          });
+        },
       ),
-    );
-  }
-
-  void _openAudioToTextScreenForTitle() {
-    Navigator.push(
-      context,
-      CupertinoPageRoute(
-        builder: (context) => AudioToTextScreen(
-          onTextGenerated: (generatedText) {
-            setState(() {
-              _titleController.text = generatedText; // Actualiza el título con el texto generado
-            });
-          },
-        ),
+    ),
+  );
+}
+ void _openAudioToTextScreenForTitle() {
+  Navigator.push(
+    context,
+    CupertinoPageRoute(
+      builder: (context) => AudioToTextScreen(
+        onTextGenerated: (generatedText) {
+          setState(() {
+            _titleController.text = generatedText; // Actualiza solo el título
+          });
+        },
       ),
-    );
-  }
+    ),
+  );
+}
 
   @override
   void dispose() {
@@ -265,12 +264,7 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                CupertinoTextField(
-                  controller: _imageController,
-                  placeholder: "Image URL (optional)",
-                  padding: const EdgeInsets.all(16),
-                ),
+                
                 const SizedBox(height: 16),
                 Text(
                   "Select Major",
