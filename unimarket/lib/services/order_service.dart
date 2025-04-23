@@ -17,4 +17,7 @@ class OrderService {
     _firebaseDAO.updatePurchaseMetrics(labelsqueried);
     
   }
+  Future <void> checkWishlistforOrder(String orderId) async{
+    _firebaseDAO.checkWishlistforOrder(orderId);
+  }
 }

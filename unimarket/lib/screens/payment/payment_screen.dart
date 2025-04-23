@@ -82,7 +82,7 @@ class PaymentScreen extends StatelessWidget {
                       _orderService.updateProductLabelMetrics(orderId);
                       // Actualizar el estado del producto en Firestore usando el servicio
                       await _orderService.updateOrderStatusToPaid(orderId);
-
+                    
                       // Navegar a la pantalla de revisión
                       Navigator.push(
                         context,
