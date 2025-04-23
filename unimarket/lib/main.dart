@@ -14,19 +14,27 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:firebase_in_app_messaging/firebase_in_app_messaging.dart';
 import 'package:unimarket/services/order_analysis_service.dart';
 import 'package:flutter/foundation.dart'; // for kIsWeb
-
-
+import 'package:unimarket/services/connectivity_service.dart';
+import 'package:unimarket/services/qr_offline_queue_service.dart';
+import 'package:unimarket/data/firebase_dao.dart';
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
+  
+  // Firebase & Hive initialization
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await Hive.initFlutter();
   await HiveFindStorage.initialize();
- 
+  await OfflineQueueService.init(); // Initialize Hive queue
+  
+  // Connectivity service
+  final connectivityService = ConnectivityService();
+  
+  // Start listening for connectivity changes to process queue
+  connectivityService.onRestoredConnection(() {
+    _processPendingUpdates();
+  });
 
 
   if (kIsWeb) {
@@ -82,5 +90,24 @@ class UniMarketApp extends StatelessWidget {
         Locale('es', ''),
       ],
     );
+  }
+}
+
+Future<void> _processPendingUpdates() async {
+  final updates = await OfflineQueueService.getPendingOrderUpdates();
+  final dao = FirebaseDAO();
+  
+  for (final update in updates) {
+    try {
+      await dao.updateOrderStatusDelivered(
+        update['orderId'] as String,
+        update['hashConfirm'] as String,
+      );
+      print('Processed queued updates successfully');
+      await OfflineQueueService.removeOrderUpdate(updates.indexOf(update));
+    } catch (e) {
+      print('Failed to process queued update: $e');
+      break;
+    }
   }
 }

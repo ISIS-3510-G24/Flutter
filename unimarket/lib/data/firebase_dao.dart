@@ -7,6 +7,7 @@ import 'package:unimarket/models/order_model.dart';
 import 'package:unimarket/models/user_model.dart';
 import 'package:unimarket/models/find_model.dart'; 
 import 'package:unimarket/models/offer_model.dart'; 
+import 'package:unimarket/services/qr_offline_queue_service.dart';
 
 class FirebaseDAO {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -321,36 +322,43 @@ Future<bool> sendPreferencesToFirebase ( Set<String> selectedPreferences)async {
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<UPDATE OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
   Future<void> updateOrderStatusDelivered(String orderId, String hashConfirm) async {
   try {
+    // First try direct update
     final orderRef = _firestore.collection('orders').doc(orderId);
     await orderRef.update({
       'status': 'Delivered',
     });
     print("Order $orderId status updated to 'Delivered'.");
   } catch (e) {
-    print("Error updating order status using orderId: $e");
-
-    // Debugging in case it fails
+    // If direct update fails, try by hashConfirm
     try {
       final querySnapshot = await _firestore
           .collection('orders')
-          .where(
-            'hashConfirm', 
-            isEqualTo: hashConfirm
-          )
+          .where('hashConfirm', isEqualTo: hashConfirm)
           .get();
 
       if (querySnapshot.docs.isEmpty) {
         print("No order found with hashConfirm: $hashConfirm");
-        return;
+        throw Exception('Order not found');
       }
+      
       final orderDoc = querySnapshot.docs.first;
       await orderDoc.reference.update({
         'status': 'Delivered',
       });
       print("Order with hashConfirm $hashConfirm status updated to 'Delivered'.");
     } catch (e) {
-      print("Error updating order status using hashConfirm: $e");
-      rethrow; 
+      print("Error updating order status: $e");
+      
+      // If both methods fail, queue for offline processing
+      await OfflineQueueService.addUpdate(
+        type: 'order_delivered',
+        data: {
+          'orderId': orderId,
+          'hashConfirm': hashConfirm,
+        },
+      );
+      
+      throw Exception('offline'); // Special exception for offline case
     }
   }
 }

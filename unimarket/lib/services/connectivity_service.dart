@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
-
+import 'package:unimarket/data/firebase_dao.dart';
 /// Un servicio singleton para manejar la conectividad en toda la aplicación y evitar problemas con MissingPluginException
 class ConnectivityService {
   static final ConnectivityService _instance = ConnectivityService._internal();
   factory ConnectivityService() => _instance;
+  static final _pendingOrderUpdates = <Map<String, dynamic>>[];
+  static bool _isProcessingQueue = false;
+  static FirebaseDAO? _firebaseDao;
   
   ConnectivityService._internal() {
     // Inicializar listeners en una manera segura
@@ -68,5 +71,62 @@ class ConnectivityService {
   // No olvidar cerrar el stream controller cuando se cierre la aplicación
   void dispose() {
     connectionStatusController.close();
+  }
+  static void initializeOrderSync(FirebaseDAO firebaseDao) {
+    _firebaseDao = firebaseDao;
+    _instance._connectivity.onConnectivityChanged.listen((results) {
+      if (results.any((r) => r != ConnectivityResult.none)) {
+        _processPendingOrderUpdates();
+      }
+    });
+  }
+
+  // Add this method to queue updates
+  static Future<void> queueOrderUpdate({
+    required String orderId,
+    required String hashConfirm,
+  }) async {
+    _pendingOrderUpdates.add({
+      'orderId': orderId,
+      'hashConfirm': hashConfirm,
+      'timestamp': DateTime.now(),
+    });
+    
+    if (_instance._hasConnection) {
+      await _processPendingOrderUpdates();
+    }
+  }
+
+  // Debería funcionar ojala
+  static Future<void> _processPendingOrderUpdates() async {
+  if (_isProcessingQueue || _pendingOrderUpdates.isEmpty || _firebaseDao == null) return;
+  
+  _isProcessingQueue = true;
+  try {
+    for (final update in List.of(_pendingOrderUpdates)) {
+      try {
+        await _firebaseDao!.updateOrderStatusDelivered(
+          update['orderId'] as String,
+          update['hashConfirm'] as String,
+        );
+        _pendingOrderUpdates.remove(update);
+      } catch (e) {
+        print('Failed to process queued order update: $e');
+        break;
+      }
+    }
+  } finally {
+    _isProcessingQueue = false;
+  }
+}
+
+    void onRestoredConnection(Function callback) {
+    _connectivity.onConnectivityChanged.listen((results) {
+      final isConnected = results.any((r) => r != ConnectivityResult.none);
+      if (isConnected && !_hasConnection) {
+        callback();
+      }
+      _updateConnectionStatus(results);
+    });
   }
 }
