@@ -14,7 +14,7 @@ class AudioToTextScreen extends StatefulWidget {
 class _AudioToTextScreenState extends State<AudioToTextScreen> {
   late stt.SpeechToText _speech;
   bool _isListening = false;
-  String _text = "Press the mic button and start speaking";
+  String _text = "";
 
   @override
   void initState() {
@@ -23,27 +23,39 @@ class _AudioToTextScreenState extends State<AudioToTextScreen> {
   }
 
   void _startListening() async {
+    // Detener cualquier reconocimiento anterior para evitar acumulación de texto
+    if (_isListening) {
+      await _speech.stop();
+    }
+
+    setState(() {
+      _text = ""; // Limpiar texto antes de empezar a escuchar
+      _isListening = true;
+    });
+
     bool available = await _speech.initialize(
       onStatus: (status) => print("Status: $status"),
       onError: (error) => print("Error: $error"),
     );
 
     if (available) {
-      setState(() => _isListening = true);
       _speech.listen(
         onResult: (result) {
           setState(() {
-            _text = result.recognizedWords; // Actualiza el texto reconocido
+            _text = result.recognizedWords; // Solo se guarda el nuevo texto
           });
         },
       );
     } else {
       print("Speech recognition not available");
+      setState(() {
+        _isListening = false;
+      });
     }
   }
 
-  void _stopListening() {
-    _speech.stop();
+  void _stopListening() async {
+    await _speech.stop();
     setState(() => _isListening = false);
   }
 
@@ -64,9 +76,8 @@ class _AudioToTextScreenState extends State<AudioToTextScreen> {
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center, // Centra los elementos verticalmente
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Título
             Text(
               "Speak now:",
               style: const TextStyle(
@@ -76,8 +87,6 @@ class _AudioToTextScreenState extends State<AudioToTextScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
-            // Contenedor para el texto reconocido
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -87,8 +96,8 @@ class _AudioToTextScreenState extends State<AudioToTextScreen> {
               ),
               child: Center(
                 child: Text(
-                  _text, // Muestra el texto reconocido en tiempo real
-                  textAlign: TextAlign.center, // Centra el texto horizontalmente
+                  _text,
+                  textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 18,
                     color: CupertinoColors.black,
@@ -97,13 +106,13 @@ class _AudioToTextScreenState extends State<AudioToTextScreen> {
               ),
             ),
             const SizedBox(height: 32),
-
-            // Botón de grabación
             GestureDetector(
               onTap: _isListening ? _stopListening : _startListening,
               child: CircleAvatar(
                 radius: 40,
-                backgroundColor: _isListening ? CupertinoColors.systemRed : CupertinoColors.activeBlue,
+                backgroundColor: _isListening
+                    ? CupertinoColors.systemRed
+                    : const Color.fromARGB(255, 144, 198, 255),
                 child: Icon(
                   _isListening ? CupertinoIcons.mic_off : CupertinoIcons.mic,
                   color: CupertinoColors.white,
@@ -112,8 +121,6 @@ class _AudioToTextScreenState extends State<AudioToTextScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
-            // Indicador de estado
             Text(
               _isListening ? "Listening..." : "Tap the mic to start",
               style: const TextStyle(
