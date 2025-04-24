@@ -59,7 +59,13 @@
 	<string>We need access to Bluetooth to advertise as a seller device.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>We need access to Bluetooth to advertise as a seller device.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use Face ID to authenticate</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>We need access to your location to scan for nearby devices.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>We need access to your microphone to record audio.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>We need access to your speech to convert it to text.</string>
 </dict>
 </plist>

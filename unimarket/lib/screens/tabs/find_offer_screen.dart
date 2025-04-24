@@ -6,9 +6,13 @@ import 'package:unimarket/screens/upload/confirm_product_screen.dart';
 import 'package:unimarket/screens/find_and_offer_screens/find_screen.dart';
 import 'package:unimarket/models/find_model.dart';
 import 'package:unimarket/models/offer_model.dart';
+import 'package:unimarket/models/recommendation_model.dart';
+import 'package:unimarket/services/recommendation_service.dart';
 import 'package:unimarket/services/find_service.dart';
 import 'package:unimarket/screens/upload/create_offer_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:unimarket/location_preferences/distance_calculation.dart';
+
 
 class FindAndOfferScreen extends StatefulWidget {
   const FindAndOfferScreen({Key? key}) : super(key: key);
@@ -17,12 +21,11 @@ class FindAndOfferScreen extends StatefulWidget {
   State<FindAndOfferScreen> createState() => _FindAndOfferScreenState();
 }
 
-// 1. Primero, actualiza la clase _FindAndOfferScreenState para añadir las nuevas variables:
-
 class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   String _selectedCategory = "All requests"; 
   final FindService _findService = FindService();
   List<FindModel> _finds = [];
+  List<Map<String, dynamic>> _recommendedFinds = []; // Nueva lista para finds recomendados
   List<FindModel> _majorFinds = []; // Nueva lista para finds por major
   String? _userMajor; // Para almacenar el major del usuario
   bool _isLoading = true;
@@ -34,13 +37,57 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
     {"title": "Selling Item 1", "subtitle": "Description 1"},
     {"title": "Selling Item 2", "subtitle": "Description 2"},
   ];
+  List<RecommendationModel> _recommendedProducts = []; // Nueva lista para productos recomendados
+  List<FindModel> _nearbyFinds = []; // Nueva lista para finds cercanos
 
   @override
-  void initState() {
-    super.initState();
-    _loadUserDataAndFinds(); // Nuevo método
-  }
+void initState() {
+  super.initState();
+  _loadUserDataAndFinds();
+  _loadRecommendedProducts();
+  
+  _loadRecommendedFinds(); // Cargar productos recomendados
+  _loadFinds();
+}
 
+
+Future<void> _loadRecommendedFinds() async {
+  final recommendationService = RecommendationService();
+
+  try {
+    print("Fetching recommended finds...");
+    final recommendedFinds = await recommendationService.getRecommendedFinds();
+    setState(() {
+      _recommendedFinds = recommendedFinds;
+      _isLoading = false; // Cambiar el estado a false después de cargar los datos
+    });
+    print("Loaded recommended finds: $_recommendedFinds");
+  } catch (e) {
+    print("Error loading recommended finds: $e");
+    setState(() {
+      _isLoading = false; // Cambiar el estado a false incluso si ocurre un error
+    });
+  }
+}
+
+  Future<void> _loadRecommendedProducts() async {
+  final recommendationService = RecommendationService();
+
+  try {
+    print("Fetching recommended products...");
+    final recommendedProducts = await recommendationService.getRecommendedProducts();
+    setState(() {
+      _recommendedProducts = recommendedProducts;
+      _isLoading = false; // Cambiar el estado a false después de cargar los datos
+    });
+    print("Loaded recommended products: $_recommendedProducts");
+  } catch (e) {
+    print("Error loading recommended products: $e");
+    setState(() {
+      _isLoading = false; // Cambiar el estado a false incluso si ocurre un error
+    });
+  }
+}
   // 2. Nuevo método para cargar el major del usuario y luego los finds
   Future<void> _loadUserDataAndFinds() async {
     try {
@@ -61,82 +108,209 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
     }
   }
 
-  // 3. Modifica el método _loadFinds para que también cargue los finds por major
   Future<void> _loadFinds() async {
-    setState(() {
-      _isLoading = true;
-    });
-    
-    try {
-      // Cargamos todos los finds
-      final finds = await _findService.getFind();
-      
-      // Cargamos los finds por major si el usuario tiene un major asignado
+  setState(() {
+    _isLoading = true;
+  });
+
+  try {
+    // Cargar todos los Finds
+    final finds = await _findService.getFind();
+
+    // Cargar los Finds cercanos
+    final nearbyFinds = await getFindsByLocation();
+
+    // Cargamos los finds por major si el usuario tiene un major asignado
       List<FindModel> majorFinds = [];
       if (_userMajor != null && _userMajor!.isNotEmpty) {
         majorFinds = await _findService.getFindsByMajor(_userMajor!);
         print("Loaded ${majorFinds.length} finds from user's major: $_userMajor");
       }
-      
-      setState(() {
-        _finds = finds;
-        _majorFinds = majorFinds;
-        _isLoading = false;
-      });
-      
-      print("Loaded ${finds.length} total finds successfully");
-      
-    } catch (e) {
-      print("Error fetching finds: $e");
-      
-      if (mounted) {
-        showCupertinoDialog(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
-            title: const Text("Error"),
-            content: const Text("Failed to load data. Please try again later."),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text("OK"),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-            ],
-          ),
-        );
-      }
-      
-      setState(() {
-        _isLoading = false;
-      });
+
+    setState(() {
+      _finds = finds; // Todos los Finds
+      _nearbyFinds = nearbyFinds; // Finds cercanos
+      _majorFinds = majorFinds;
+      _isLoading = false;
+    });
+
+    print("Loaded ${finds.length} total finds successfully");
+    print("Loaded ${nearbyFinds.length} nearby finds successfully");
+  } catch (e) {
+    print("Error fetching finds: $e");
+
+    if (mounted) {
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text("Error"),
+          content: const Text("Failed to load data. Please try again later."),
+          actions: [
+            CupertinoDialogAction(
+              child: const Text("OK"),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      );
     }
+
+    setState(() {
+      _isLoading = false;
+    });
+  }
+}
+
+Future<List<FindModel>> getFindsByLocation() async {
+  try {
+    // Obtener la ubicación actual usando el Singleton
+    //LocationService locationService = LocationService();
+    final locationService = LocationService();
+    final userPosition = await locationService.getCurrentLocation();
+
+    // Obtener el edificio más cercano
+    final nearestBuilding = await findNearestBuilding(userPosition);
+
+    if (nearestBuilding == null) {
+      print("No nearby buildings found.");
+      return []; // No hay edificios cercanos
+    }
+
+    print("Nearest building: ${nearestBuilding.name}, Labels: ${nearestBuilding.relatedLabels}");
+
+    // Obtener todos los elementos disponibles (finds)
+    final allFinds = await _findService.getFind();
+
+    // Filtrar los elementos cuyos labels coincidan con los del edificio más cercano
+    final filteredFinds = allFinds.where((find) {
+      return nearestBuilding.relatedLabels.any((label) => find.labels.contains(label));
+    }).toList();
+
+    print("Filtered finds: ${filteredFinds.map((f) => f.title).toList()}");
+
+    return filteredFinds;
+  } catch (e) {
+    print("Error in getFindsByLocation: $e");
+    return [];
+  }
+}
+
+ 
+
+  Widget _buildRecommendedList() {
+  if (_recommendedProducts.isEmpty) {
+    return Center(
+      child: Text(
+        "No recommendations available.",
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      ),
+    );
   }
 
-  // 4. Nuevo método para construir la sección "From your major"
-  Widget _buildFromMajorSection() {
-    if (_majorFinds.isEmpty) {
-      // Si no hay finds del major del usuario, mostramos los items por defecto
-      return _buildVerticalList(_wishlistItems, showBuyButton: false);
-    }
-    
-    // Convertimos los finds a un formato similar a los items de _wishlistItems
-    final List<Map<String, String>> majorItems = _majorFinds.map((find) {
-      return {
-        "title": find.title,
-        "subtitle": find.description,
-        "id": find.id,
-        "image": find.image,
-      };
-    }).toList();
-    
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: majorItems.length > 2 ? 2 : majorItems.length, // Mostrar máximo 2 items
-      itemBuilder: (ctx, index) {
-        final item = majorItems[index];
-        final find = _majorFinds[index]; // Obtener el find original
-        
-        return Container(
+  return ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: _recommendedProducts.length,
+    itemBuilder: (context, index) {
+      final product = _recommendedProducts[index];
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: CupertinoColors.systemGrey6,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            // Imagen del producto
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: AppColors.transparentGrey,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: product.image.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        product.image,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => const Icon(
+                          CupertinoIcons.photo,
+                          color: CupertinoColors.white,
+                        ),
+                      ),
+                    )
+                  : const Icon(
+                      CupertinoIcons.photo,
+                      color: CupertinoColors.white,
+                    ),
+            ),
+            const SizedBox(width: 10),
+            // Texto del producto
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    "\$${product.price}",
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: CupertinoColors.systemGrey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Widget _buildRecommendedFindsList() {
+  if (_recommendedFinds.isEmpty) {
+    return Center(
+      child: Text(
+        "No recommendations available.",
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      ),
+    );
+  }
+
+  return ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: _recommendedFinds.length,
+    itemBuilder: (context, index) {
+      final findMap = _recommendedFinds[index];
+      final find = FindModel.fromMap(findMap); // Convertir Map<String, dynamic> a FindModel
+
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (ctx) => FindsScreen(find: find), // Navegar a FindsScreen
+            ),
+          );
+        },
+        child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -145,7 +319,102 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
           ),
           child: Row(
             children: [
-              // Imagen o icono por defecto
+              // Imagen del find
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: AppColors.transparentGrey,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+               child: find.image.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          find.image,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => const Icon(
+                            CupertinoIcons.photo,
+                            color: CupertinoColors.white,
+                          ),
+                        ),
+                      )
+                    : const Icon(
+                        CupertinoIcons.photo,
+                        color: CupertinoColors.white,
+                      ),
+              ),
+              const SizedBox(width: 10),
+              // Texto del find
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      find.title,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      find.description,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: CupertinoColors.systemGrey,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+Widget _buildNearbyFindsList() {
+  if (_nearbyFinds.isEmpty) {
+    return Center(
+      child: Text(
+        "No nearby finds available.",
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      ),
+    );
+  }
+
+  return ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: _nearbyFinds.length,
+    itemBuilder: (context, index) {
+      final find = _nearbyFinds[index];
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (ctx) => FindsScreen(find: find),
+            ),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: CupertinoColors.systemGrey6,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+
               Container(
                 width: 50,
                 height: 50,
@@ -171,20 +440,20 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                       ),
               ),
               const SizedBox(width: 10),
-              // Texto
+              // Texto del find
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      item["title"] ?? "",
+                      find.title,
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     Text(
-                      item["subtitle"] ?? "",
+                      find.description,
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: CupertinoColors.systemGrey,
@@ -195,109 +464,221 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
                   ],
                 ),
               ),
-              // Flecha de navegación
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                      builder: (ctx) => CreateOfferScreen(findId: find.id)
-                      ),
-                  );
-                },
-                child: const Icon(
-                  CupertinoIcons.chevron_forward,
-                  color: CupertinoColors.systemGrey,
-                ),
-              ),
             ],
           ),
-        );
-      },
+        ),
+      );
+    },
+  );
+}
+
+  // 4. Nuevo método para construir la sección "From your major"
+  Widget _buildFromMajorSection() {
+  if (_majorFinds.isEmpty) {
+    return Center(
+      child: Text(
+        "No finds available for your major.",
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      ),
     );
   }
 
-  // 5. Actualiza el método build para usar _buildFromMajorSection
-  @override
-  Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(
-          "Find & Offer",
-          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+  return ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: _majorFinds.length,
+    itemBuilder: (ctx, index) {
+      final find = _majorFinds[index];
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: CupertinoColors.systemGrey6,
+          borderRadius: BorderRadius.circular(10),
         ),
-      ),
-      child: SafeArea(
-        child: Stack(
+        child: Row(
           children: [
-            // ---- CONTENIDO PRINCIPAL SCROLLEABLE ----
-            Positioned.fill(
-              child: _isLoading
-                  ? const Center(child: CupertinoActivityIndicator())
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.only(bottom: 80),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildTopRow(),
-                          // "All" section
-                          _buildSectionHeader(
-                            title: "All",
-                            onSeeMore: () => debugPrint("See more: All"),
-                          ),
-                          _buildMajorHorizontalList(),
-
-                          // "From your major" section - Actualizada
-                          _buildSectionHeader(
-                            title: "From your major",
-                            onSeeMore: () => debugPrint("See more: From your major"),
-                          ),
-                          _buildFromMajorSection(), // Usando el nuevo método
-
-                          // "Most popular" section
-                          _buildSectionHeader(
-                            title: "Most popular",
-                            onSeeMore: () => debugPrint("See more: Most popular"),
-                          ),
-                          _buildMostPopularList(),
-                        ],
+            // Imagen o icono por defecto
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: AppColors.transparentGrey,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: find.image.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        find.image,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => const Icon(
+                          CupertinoIcons.photo,
+                          color: CupertinoColors.white,
+                        ),
                       ),
+                    )
+                  : const Icon(
+                      CupertinoIcons.photo,
+                      color: CupertinoColors.white,
                     ),
             ),
-
-            // ---- BOTÓN FLOTANTE ----
-            Positioned(
-              right: 20,
-              bottom: 20,
-              child: CupertinoButton(
-                color: AppColors.primaryBlue,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                borderRadius: BorderRadius.circular(30),
-                child: Text(
-                  "New Find",
-                  style: GoogleFonts.inter(
-                    color: CupertinoColors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                      builder: (ctx) => const ConfirmProductScreen(
-                        postType: "offer",
-                      ),
+            const SizedBox(width: 10),
+            // Texto
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    find.title,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
                     ),
-                  );
-                },
+                  ),
+                  Text(
+                    find.description,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: CupertinoColors.systemGrey,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
+      );
+    },
+  );
+}
+
+  @override
+Widget build(BuildContext context) {
+  return FutureBuilder<UniversityBuilding?>(
+    future: _getNearestBuilding(), // Método para obtener el edificio más cercano
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Center(child: CupertinoActivityIndicator());
+      }
+
+      if (snapshot.hasError) {
+        return Center(
+          child: Text(
+            "Error loading location",
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              color: CupertinoColors.systemGrey,
+            ),
+          ),
+        );
+      }
+
+      final nearestBuilding = snapshot.data;
+      final nearestBuildingName = nearestBuilding?.name;
+
+      return CupertinoPageScaffold(
+        navigationBar: CupertinoNavigationBar(
+          middle: Text(
+            "Find & Offer",
+            style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+          ),
+        ),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              // ---- CONTENIDO PRINCIPAL SCROLLEABLE ----
+              Positioned.fill(
+                child: _isLoading
+                    ? const Center(child: CupertinoActivityIndicator())
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.only(bottom: 80),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildTopRow(),
+
+                            // "All" section
+                            _buildSectionHeader(
+                              title: "All",
+                              onSeeMore: () => debugPrint("See more: All"),
+                            ),
+                            _buildMajorHorizontalList(),
+
+                            // "Finds Nearby" section
+                            _buildSectionHeader(
+                              title: nearestBuildingName != null
+                                  ? "Related to your location! ($nearestBuildingName)"
+                                  : "Finds Nearby",
+                              onSeeMore: () => debugPrint("See more: Finds Nearby!"),
+                            ),
+                            _buildNearbyFindsList(),
+
+                            // "From your major" section
+                            _buildSectionHeader(
+                              title: "From your major",
+                              onSeeMore: () => debugPrint("See more: From your major"),
+                            ),
+                            _buildFromMajorSection(),
+
+                            // "Most popular" section
+                            _buildSectionHeader(
+                              title: "Most popular",
+                              onSeeMore: () => debugPrint("See more: Most popular"),
+                            ),
+                            _buildMostPopularList(),
+
+                     
+                            // "Recommended Finds" section
+                            _buildSectionHeader(
+                              title: "Finds According to Your Orders!",
+                              onSeeMore: () => debugPrint(" "),
+                            ),
+                            _buildRecommendedFindsList(),
+                          ],
+                        ),
+                      ),
+              ),
+
+              // ---- BOTÓN FLOTANTE ----
+              Positioned(
+                right: 20,
+                bottom: 20,
+                child: CupertinoButton(
+                  color: AppColors.primaryBlue,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  borderRadius: BorderRadius.circular(30),
+                  child: Text(
+                    "New Find",
+                    style: GoogleFonts.inter(
+                      color: CupertinoColors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (ctx) => const ConfirmProductScreen(
+                          postType: "offer",
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
 
 // Este widget se mostrará cuando no haya ofertas para un find
 
@@ -551,11 +932,13 @@ Widget _buildMostPopularList() {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title,
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              )),
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           CupertinoButton(
             padding: EdgeInsets.zero,
             onPressed: onSeeMore,
@@ -987,5 +1370,40 @@ Widget _buildMajorCard(FindModel find, OfferModel? offer) {
         );
       },
     );
+  }
+}
+
+Future<UniversityBuilding?> _getNearestBuilding() async {
+  try {
+    //LocationService locationService = LocationService();
+    //Se mantiene inmutable la referencia
+    final locationService = LocationService();
+
+
+    // se obtien la ubicación actual con alta precisión
+    final userPosition = await locationService.getCurrentLocation();
+
+    // Imprime la ubicación actual para depuración
+    print("Updated location: Latitude: ${userPosition.latitude}, Longitude: ${userPosition.longitude}");
+
+    // Encuentra el edificio más cercano utilizando FirebaseDAO
+    final nearestBuilding = await findNearestBuilding(userPosition);
+
+    // Imprime el edificio más cercano para depuración
+    if (nearestBuilding != null) {
+      print("Nearest building: ${nearestBuilding.name}, Distance: ${calculateDistance(
+        userPosition.latitude,
+        userPosition.longitude,
+        nearestBuilding.latitude,
+        nearestBuilding.longitude,
+      )} km");
+    } else {
+      print("No nearby buildings found.");
+    }
+
+    return nearestBuilding;
+  } catch (e) {
+    print("Error getting nearest building: $e");
+    return null;
   }
 }

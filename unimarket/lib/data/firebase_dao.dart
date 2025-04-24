@@ -1022,4 +1022,171 @@ Future<bool> markChatAsRead(String chatId, String userId) async {
   }
 }
 
+Future<List<Map<String, dynamic>>> getUserPurchaseHistory() async {
+  final userId = getCurrentUserId();
+  if (userId == null) {
+    print("No user is currently logged in.");
+    return [];
+  }
+
+  try {
+    final snapshot = await _firestore
+        .collection('orders')
+        .where('buyerID', isEqualTo: userId)
+        .where('status', isEqualTo: 'Purchased') // Solo órdenes completadas
+        .get();
+
+    final List<Map<String, dynamic>> orders = await Future.wait(snapshot.docs.map((doc) async {
+      final product = await getProductById(doc['productID']);
+      return {
+        "orderId": doc.id,
+        "productId": doc['productID'],
+        "tags": product != null ? List<String>.from(product['labels'] ?? []) : [], // Convertir a List<String>
+        "name": product != null ? product['title'] : "Product ID: ${doc['productID']}",
+        "price": doc['price'],
+      };
+    }).toList());
+
+    print("Fetched orders: $orders");
+    return orders;
+  } catch (e) {
+    print("Error fetching user purchase history: $e");
+    return [];
+  }
+}
+
+Future<List<Map<String, dynamic>>> getFindsByTags(List<String> tags) async {
+  if (tags.isEmpty) {
+    print("No tags provided for fetching finds.");
+    return []; // Retornar una lista vacía si no hay etiquetas
+  }
+
+  try {
+    print("Fetching finds for tags: $tags");
+
+    final snapshot = await _firestore
+        .collection('finds')
+        .where('labels', arrayContainsAny: tags)
+        .where('status', isEqualTo: 'active') // Solo finds activos
+        .get();
+
+    final finds = snapshot.docs.map((doc) {
+      return {
+        "findId": doc.id,
+        "title": doc['title'],
+        "description": doc['description'],
+        "labels": doc['labels'],
+        "image": doc['image'] ?? "assets/svgs/ImagePlaceHolder.svg",
+        "major": doc['major'],
+        "offerCount": doc['offerCount'],
+        "status": doc['status'],
+        "timestamp": doc['timestamp'],
+        "upvoteCount": doc['upvoteCount'],
+        "userId": doc['userId'],
+        "userName": doc['userName'],
+      };
+    }).toList();
+
+    print("Fetched finds: $finds");
+    return finds;
+  } catch (e) {
+    print("Error fetching finds by tags: $e");
+    return [];
+  }
+}
+Future<List<Map<String, dynamic>>> getPopularProductsByTags(List<String> tags) async {
+  try {
+    print("Fetching products for tags: $tags");
+
+    final snapshot = await _firestore
+        .collection('Product')
+        .where('labels', arrayContainsAny: tags)
+        .get();
+
+    final products = snapshot.docs.map((doc) {
+      // Verificar si el campo imageUrls existe y es un array
+      final imageUrls = doc.data().containsKey('imageUrls') && doc['imageUrls'] is List
+          ? doc['imageUrls'] as List
+          : [];
+
+      // Filtrar las que NO sean content://
+      final validImages = imageUrls.where((url) =>
+          url is String && !url.toString().startsWith('content://')).toList();
+
+      // Usar la primera imagen válida o el placeholder
+      final image = validImages.isNotEmpty
+          ? validImages.first
+          : "assets/svgs/ImagePlaceHolder.svg";
+
+      return {
+        "productId": doc.id,
+        "name": doc['title'],
+        "tags": doc['labels'],
+        "image": image,
+        "price": doc['price'],
+      };
+    }).toList();
+
+    print("Fetched products: $products");
+    return products;
+  } catch (e) {
+    print("Error fetching popular products by tags: $e");
+    return [];
+  }
+}
+
+Future<String?> uploadOfferImage(String filePath, String offerId) async {
+  try {
+    // Crear el archivo a partir de la ruta
+    final File file = File(filePath);
+    
+ 
+    final String fileName = path.basename(filePath);
+    
+
+    Reference ref = FirebaseStorage.instance.ref().child('offer_images/$offerId/$fileName');
+    
+
+    UploadTask uploadTask = ref.putFile(file);
+    
+
+    TaskSnapshot snapshot = await uploadTask.whenComplete(() => {});
+    
+    // Obtener la URL de descarga
+    String downloadUrl = await snapshot.ref.getDownloadURL();
+    print("Download URL: $downloadUrl");
+    
+    return downloadUrl;
+  } catch (e) {
+    print("Error uploading offer image: $e");
+    return null;
+  }
+}
+
+Future<List<Map<String, dynamic>>> getUniversityBuildings() async {
+  try {
+    // Obtén la colección de edificios desde Firestore
+    final querySnapshot = await _firestore.collection('buildings').get();
+
+    // Mapea los documentos a una lista de mapas
+    final buildings = querySnapshot.docs.map((doc) {
+      final data = doc.data();
+      return {
+        "name": data['name'] ?? '',
+        "latitude": data['latitude'] ?? 0.0,
+        "longitude": data['longitude'] ?? 0.0,
+        "relatedLabels": List<String>.from(data['relatedLabels'] ?? []),
+      };
+    }).toList();
+
+    print("Fetched ${buildings.length} university buildings.");
+    return buildings;
+  } catch (e) {
+    print("Error fetching university buildings: $e");
+    return [];
+  }
+}
+
+
+
 }

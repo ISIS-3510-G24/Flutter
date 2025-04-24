@@ -34,13 +34,19 @@ dependency_overrides:
   uuid: ^3.0.7
 
 dependencies:
+  cached_network_image: ^3.2.3
+  sqflite: ^2.0.0+3
+  speech_to_text: ^5.6.1
   cupertino_progress_bar: ^0.2.0
+  geolocator: ^10.0.1
   flutter:
     sdk: flutter
   
   shared_preferences: ^2.0.6
   algolia: ^1.1.2
   path_provider: ^2.1.1
+  flutter_secure_storage: ^9.2.4
+  local_auth: ^2.3.0
   
   
 
@@ -64,7 +70,7 @@ dependencies:
 #Qr code dependencies
   mobile_scanner: ^6.0.7
   pretty_qr_code: ^3.3.0
-  firebase_in_app_messaging: ^0.8.1+4
+  firebase_in_app_messaging: ^0.8.1-4 
   firebase_storage: ^12.4.4
   uuid: ^4.5.1
   image_picker: ^1.1.2
@@ -78,6 +84,8 @@ dependencies:
   flutter_spinkit: ^5.2.1
   camera: ^0.11.1
   arkit_plugin: ^1.1.2
+
+
   device_info_plus: ^11.3.0
   vector_math: ^2.1.4
 
@@ -89,8 +97,13 @@ dependencies:
   connectivity_plus: ^6.1.3
   intl: ^0.19.0
   hive_flutter: ^1.1.0
+  hive: ^2.2.3
   flutter_localizations:
     sdk: flutter
+  firebase_app_check: ^0.3.2+5
+
+  #Eventual Connectivicty
+  flutter_cache_manager: ^3.4.1
    
   
 

@@ -67,7 +67,7 @@ Widget build(BuildContext context) {
           SizedBox(height: 20),
           if (!_isButtonEnabled)
             Text(
-                    "Scanning for the seller's device...",
+                    "To be able to confirm a product delivery, you must be near the product seller. Looking for the seller's device...",
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.bold,
                       fontSize: 20,

@@ -1,5 +1,5 @@
 import 'dart:ui';
-
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -9,12 +9,37 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:unimarket/data/hive_chat_storage.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:unimarket/data/hive_find_storage.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:firebase_in_app_messaging/firebase_in_app_messaging.dart';
+import 'package:unimarket/services/order_analysis_service.dart';
+import 'package:flutter/foundation.dart'; // for kIsWeb
+
+
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  await Hive.initFlutter();
+  await HiveFindStorage.initialize();
+ 
+
+
+  if (kIsWeb) {
+    await FirebaseAppCheck.instance.activate(
+      webProvider: ReCaptchaV3Provider('12345678'),
+    );
+  } else {
+    await FirebaseAppCheck.instance.activate(
+      appleProvider: AppleProvider.appAttest,
+    
+    );
+  }
+
 
   await HiveChatStorage.initialize();
 
@@ -29,6 +54,7 @@ void main() async {
         FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
         return true;
     };
+
 
   runApp(const UniMarketApp());
 }
