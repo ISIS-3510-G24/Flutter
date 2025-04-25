@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/screens/ble_scan/seller_ble_advertiser.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:unimarket/theme/app_colors.dart';
 
 class QrGenerate extends StatefulWidget {
   const QrGenerate({super.key});
@@ -24,6 +26,7 @@ class _QrGenerateState extends State<QrGenerate> {
   
   Map<String, Map<String, dynamic>>? _productsWithHashes;
   bool _isLoading = true;
+  bool _isConnected = true;
 
   @override
   void initState() {
@@ -66,6 +69,7 @@ class _QrGenerateState extends State<QrGenerate> {
       setState(() {
         _productsWithHashes = productsWithHashes;
         _isLoading = false;
+        _isConnected = true;
       });
     }
 
@@ -110,36 +114,44 @@ Future<void> _storeInCache(String key, Map<String, dynamic> data) async {
 
 // Helper method to handle errors and fallback to cache
 Future<void> _handleFetchError(String cacheKey) async {
-  try {
-    debugPrint("Attempting to load from cache...");
-    final fileInfo = await cache.getFileFromCache(cacheKey);
-    
-    if (fileInfo != null ) {
-      final jsonStr = await fileInfo.file.readAsString();
-      final decoded = json.decode(jsonStr) as Map<String, dynamic>;
+    try {
+      debugPrint("Attempting to load from cache...");
+      final fileInfo = await cache.getFileFromCache(cacheKey);
+      
+      if (fileInfo != null) {
+        final jsonStr = await fileInfo.file.readAsString();
+        final decoded = json.decode(jsonStr) as Map<String, dynamic>;
 
-      if (mounted) {
-        setState(() {
-          _productsWithHashes = decoded.cast<String, Map<String, dynamic>>();
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _productsWithHashes = decoded.cast<String, Map<String, dynamic>>();
+            _isLoading = false;
+            _isConnected = false; 
+          });
+        }
+        debugPrint("Loaded products from cache");
+        return;
       }
-      debugPrint("Loaded products from cache");
-      return;
+    } catch (cacheError) {
+      debugPrint("Cache read error: $cacheError");
     }
-  } catch (cacheError) {
-    debugPrint("Cache read error: $cacheError");
+
+    if (mounted) {
+      setState(() {
+        _productsWithHashes = null;
+        _isLoading = false;
+        _isConnected = false; 
+      });
+      _showNoConnectionPopup();
+    }
   }
 
-  // If we get here, both network and cache failed
-  if (mounted) {
+   Future<void> _onRefresh() async {
     setState(() {
-      _productsWithHashes = null;
-      _isLoading = false;
+      _isLoading = true;
     });
-    _showNoConnectionPopup();
+    await _fetchProducts();
   }
-}
 
   void _showQrPopup(String hashConfirm) {
     
@@ -187,11 +199,52 @@ Future<void> _handleFetchError(String cacheKey) async {
         middle: Text("Generate QR code to validate your transaction"),
       ),
       child: SafeArea(
-        child: _isLoading
-            ? const Center(child: CupertinoActivityIndicator())
-            : _productsWithHashes == null
-                ? const Center(child: Text("Failed to load products"))
-                : CustomScrollView(
+        child: Column(
+          children: [
+            // Add the banner here
+            if (!_isConnected)
+              Container(
+                width: double.infinity,
+                color: CupertinoColors.systemYellow.withOpacity(0.3),
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                child: Row(
+                  children: [
+                    const Icon(
+                      CupertinoIcons.exclamationmark_triangle,
+                      size: 16,
+                      color: CupertinoColors.systemYellow,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "You are offline. Shown orders may be outdated.",
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: CupertinoColors.systemGrey,
+                        ),
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minSize: 0,
+                      onPressed: _onRefresh,
+                      child: Text(
+                        "Retry",
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.primaryBlue,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CupertinoActivityIndicator())
+                  : _productsWithHashes == null
+                      ? const Center(child: Text("Failed to load products"))
+                      : CustomScrollView(
                 slivers: [
                   CupertinoSliverRefreshControl(
                     onRefresh: _fetchProducts,
@@ -265,6 +318,9 @@ Future<void> _handleFetchError(String cacheKey) async {
                   ),
                 ],
               ),
+            ),
+          ]
+        ),
       ),
     );
   }
