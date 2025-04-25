@@ -82,7 +82,14 @@ Future<bool> createUser(String email, String password, String bio, String displa
       }
 
       QuerySnapshot querySnapshot = await query.get();
-      return querySnapshot.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+      return querySnapshot.docs.map((doc) {
+      // Modificación para tener el id del producto
+      final data = doc.data() as Map<String, dynamic>;
+      return {
+        ...data,
+        'id': doc.id, 
+      };
+    }).toList();
     } catch (e) {
       print("Error getting products: $e");
       return [];
