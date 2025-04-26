@@ -33,6 +33,14 @@ class HiveFindStorage {
     }
   }
 
+  static Future<Map<String, Map<String, dynamic>>> getAllFinds() async {
+  final box = _offlineFindsBox ??= await _openBoxIfNeeded(_offlineFindsBoxName);
+  return box.toMap().map((key, value) {
+    // Convertir explícitamente cada valor en un Map<String, dynamic>
+    return MapEntry(key as String, Map<String, dynamic>.from(value as Map));
+  });
+  }
+
   // Abrir la caja si no está abierta aún
   static Future<Box> _openBoxIfNeeded(String name) async {
     if (Hive.isBoxOpen(name)) {
@@ -50,11 +58,6 @@ class HiveFindStorage {
     print('HiveFindStorage: Saved find with key $key');
   }
 
-  // Obtener todos los "finds" guardados localmente
-  static Future<Map<String, Map<String, dynamic>>> getAllFinds() async {
-    final box = _offlineFindsBox ??= await _openBoxIfNeeded(_offlineFindsBoxName);
-    return Map<String, Map<String, dynamic>>.from(box.toMap());
-  }
 
   // Eliminar un "find" después de subirlo
   static Future<void> deleteFind(String key) async {
