@@ -12,6 +12,8 @@ import 'package:unimarket/services/find_service.dart';
 import 'package:unimarket/screens/upload/create_offer_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/location_preferences/distance_calculation.dart';
+import 'dart:async'; // Add this import for StreamSubscription
+import 'package:connectivity_plus/connectivity_plus.dart'; // Import for ConnectivityResult
 
 
 class FindAndOfferScreen extends StatefulWidget {
@@ -21,7 +23,12 @@ class FindAndOfferScreen extends StatefulWidget {
   State<FindAndOfferScreen> createState() => _FindAndOfferScreenState();
 }
 
+
+
 class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
+  StreamSubscription? _connectivitySubscription; // Declare the variable
+  
+
   String _selectedCategory = "All requests"; 
   final FindService _findService = FindService();
   List<FindModel> _finds = [];
@@ -29,6 +36,10 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   List<FindModel> _majorFinds = []; // Nueva lista para finds por major
   String? _userMajor; // Para almacenar el major del usuario
   bool _isLoading = true;
+  bool _isConnected = true; // Variable para verificar la conectividad
+  // Removed unused field '_isConnected'
+  final Connectivity _connectivity = Connectivity();
+  // Removed duplicate declaration of _connectivitySubscription
   final List<Map<String, String>> _wishlistItems = [
     {"title": "Wishlist Item 1", "subtitle": "Description 1"},
     {"title": "Wishlist Item 2", "subtitle": "Description 2"},
@@ -41,13 +52,48 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   List<FindModel> _nearbyFinds = []; // Nueva lista para finds cercanos
 
   @override
-void initState() {
-  super.initState();
-  _loadUserDataAndFinds();
-  _loadRecommendedProducts();
+  void initState() {
+    super.initState();
+    // Configurar el listener de conectividad
+
+  _setupConnectivityListener();
+
+ 
+    // Cargar datos del usuario y finds después de verificar la conectividad
+    _loadUserDataAndFinds().then((_) {
+      // Cargar finds recomendados y cercanos después de cargar los datos del usuario
+      _loadRecommendedProducts();
+      _loadRecommendedFinds();
+      _loadFinds(); // Esto incluye la carga de nearby finds
+    });
   
-  _loadRecommendedFinds(); // Cargar productos recomendados
-  _loadFinds();
+}
+  @override
+  void dispose() {
+    _connectivitySubscription?.cancel(); // Cancelar el listener de conectividad
+    super.dispose();
+  }
+
+  void _setupConnectivityListener() {
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      setState(() {
+        _isConnected = results.isNotEmpty && results.any((result) => result != ConnectivityResult.none);
+      });
+    });
+  
+}
+ Future<void> _checkInitialConnectivity() async {
+  try {
+    final result = await _connectivity.checkConnectivity();
+    setState(() {
+      _isConnected = result != ConnectivityResult.none;
+    });
+  } catch (e) {
+    print("Error checking initial connectivity: $e");
+    setState(() {
+      _isConnected = false; // Asume que no hay conexión si ocurre un error
+    });
+  }
 }
 
 
@@ -69,6 +115,8 @@ Future<void> _loadRecommendedFinds() async {
     });
   }
 }
+
+
 
   Future<void> _loadRecommendedProducts() async {
   final recommendationService = RecommendationService();
@@ -558,10 +606,10 @@ Widget _buildNearbyFindsList() {
   );
 }
 
-  @override
+@override
 Widget build(BuildContext context) {
   return FutureBuilder<UniversityBuilding?>(
-    future: _getNearestBuilding(), // Método para obtener el edificio más cercano
+    future: _getNearestBuilding(),
     builder: (context, snapshot) {
       if (snapshot.connectionState == ConnectionState.waiting) {
         return const Center(child: CupertinoActivityIndicator());
@@ -589,91 +637,121 @@ Widget build(BuildContext context) {
             style: GoogleFonts.inter(fontWeight: FontWeight.bold),
           ),
         ),
-        child: SafeArea(
-          child: Stack(
-            children: [
-              // ---- CONTENIDO PRINCIPAL SCROLLEABLE ----
-              Positioned.fill(
-                child: _isLoading
-                    ? const Center(child: CupertinoActivityIndicator())
-                    : SingleChildScrollView(
-                        padding: const EdgeInsets.only(bottom: 80),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildTopRow(),
-
-                            // "All" section
-                            _buildSectionHeader(
-                              title: "All",
-                              onSeeMore: () => debugPrint("See more: All"),
+        child: Stack(
+          children: [
+            SafeArea(
+              child: Column(
+                children: [
+                  // Banner de "Sin conexión a Internet"
+                  if (!_isConnected)
+                    Container(
+                      width: double.infinity,
+                      color: CupertinoColors.systemYellow.withOpacity(0.3),
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            CupertinoIcons.exclamationmark_triangle,
+                            size: 16,
+                            color: CupertinoColors.systemYellow,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              "You are offline. Check your internet connection.",
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: CupertinoColors.systemGrey,
+                              ),
                             ),
-                            _buildMajorHorizontalList(),
-
-                            // "Finds Nearby" section
-                            _buildSectionHeader(
-                              title: nearestBuildingName != null
-                                  ? "Related to your location! ($nearestBuildingName)"
-                                  : "Finds Nearby",
-                              onSeeMore: () => debugPrint("See more: Finds Nearby!"),
-                            ),
-                            _buildNearbyFindsList(),
-
-                            // "From your major" section
-                            _buildSectionHeader(
-                              title: "From your major",
-                              onSeeMore: () => debugPrint("See more: From your major"),
-                            ),
-                            _buildFromMajorSection(),
-
-                            // "Most popular" section
-                            _buildSectionHeader(
-                              title: "Most popular",
-                              onSeeMore: () => debugPrint("See more: Most popular"),
-                            ),
-                            _buildMostPopularList(),
-
-                     
-                            // "Recommended Finds" section
-                            _buildSectionHeader(
-                              title: "Finds According to Your Orders!",
-                              onSeeMore: () => debugPrint(" "),
-                            ),
-                            _buildRecommendedFindsList(),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-              ),
+                    ),
+                  const SizedBox(height: 10),
 
-              // ---- BOTÓN FLOTANTE ----
-              Positioned(
-                right: 20,
-                bottom: 20,
-                child: CupertinoButton(
-                  color: AppColors.primaryBlue,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  borderRadius: BorderRadius.circular(30),
-                  child: Text(
-                    "New Find",
-                    style: GoogleFonts.inter(
-                      color: CupertinoColors.white,
-                      fontWeight: FontWeight.bold,
+                  // Contenido principal
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: _isLoading
+                              ? const Center(child: CupertinoActivityIndicator())
+                              : SingleChildScrollView(
+                                  padding: const EdgeInsets.only(bottom: 80),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildTopRow(),
+
+                                      _buildSectionHeader(
+                                        title: "All",
+                                        onSeeMore: () => debugPrint("See more: All"),
+                                      ),
+                                      _buildMajorHorizontalList(),
+
+                                      _buildSectionHeader(
+                                        title: nearestBuildingName != null
+                                            ? "Related to your location! ($nearestBuildingName)"
+                                            : "Finds Nearby",
+                                        onSeeMore: () => debugPrint("See more: Finds Nearby!"),
+                                      ),
+                                      _buildNearbyFindsList(),
+
+                                      _buildSectionHeader(
+                                        title: "From your major",
+                                        onSeeMore: () => debugPrint("See more: From your major"),
+                                      ),
+                                      _buildFromMajorSection(),
+
+                                      _buildSectionHeader(
+                                        title: "Most popular",
+                                        onSeeMore: () => debugPrint("See more: Most popular"),
+                                      ),
+                                      _buildMostPopularList(),
+
+                                      _buildSectionHeader(
+                                        title: "Finds According to Your Orders!",
+                                        onSeeMore: () => debugPrint(" "),
+                                      ),
+                                      _buildRecommendedFindsList(),
+                                    ],
+                                  ),
+                                ),
+                        ),
+                        Positioned(
+                          right: 20,
+                          bottom: 20,
+                          child: CupertinoButton(
+                            color: AppColors.primaryBlue,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            borderRadius: BorderRadius.circular(30),
+                            child: Text(
+                              "New Find",
+                              style: GoogleFonts.inter(
+                                color: CupertinoColors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                CupertinoPageRoute(
+                                  builder: (ctx) => const ConfirmProductScreen(
+                                    postType: "offer",
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      CupertinoPageRoute(
-                        builder: (ctx) => const ConfirmProductScreen(
-                          postType: "offer",
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     },
@@ -1112,33 +1190,53 @@ Widget _buildMajorCard(FindModel find, OfferModel? offer) {
                 ),
               ),
               const SizedBox(width: 4), // Slightly wider gap
-              Expanded(
-                child: SizedBox(
-                  height: 30, // Increased height for button
-                  child: CupertinoButton(
-                    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0), // Minimal padding
-                    color: AppColors.primaryBlue,
-                    borderRadius: BorderRadius.circular(20),
-                    minSize: 20, // Smaller minimum size
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        CupertinoPageRoute(
-                          builder: (ctx) => CreateOfferScreen(findId: find.id)
-                        ),
-                      );
-                    },
-                    child: Text(
-                      "Offer",
-                      style: GoogleFonts.inter(
-                        fontSize: 12, // Increased font size (was 8)
-                        fontWeight: FontWeight.w600, // Added bold
-                        color: CupertinoColors.white,
-                      ),
-                    ),
-                  ),
-                ),
+             Expanded(
+  child: SizedBox(
+    height: 30, // Altura del botón
+    child: CupertinoButton(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0), // Espaciado mínimo
+      color: AppColors.primaryBlue,
+      borderRadius: BorderRadius.circular(20),
+      minSize: 20, // Tamaño mínimo
+      onPressed: () {
+        if (!_isConnected) {
+          // Mostrar pop-up si no hay conexión
+          showCupertinoDialog(
+            context: context,
+            builder: (ctx) => CupertinoAlertDialog(
+              title: const Text("No Internet Connection"),
+              content: const Text(
+                "You need an internet connection to create an offer. However, you can create a Find offline!",
               ),
+              actions: [
+                CupertinoDialogAction(
+                  child: const Text("OK"),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+          );
+        } else {
+          // Navegar a la pantalla de crear oferta si hay conexión
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (ctx) => CreateOfferScreen(findId: find.id),
+            ),
+          );
+        }
+      },
+      child: Text(
+        "Offer",
+        style: GoogleFonts.inter(
+          fontSize: 12, // Tamaño de fuente
+          fontWeight: FontWeight.w600, // Negrita
+          color: CupertinoColors.white,
+        ),
+      ),
+    ),
+  ),
+),
             ],
           ),
         ),
