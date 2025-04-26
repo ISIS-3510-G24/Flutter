@@ -59,9 +59,9 @@ Widget build(BuildContext context) {
               try {
                 _showOfflineSuccessDialog();
                 // Try online update first
-                await _firebaseDAO.updateOrderStatusDelivered(orderId, hashConfirm);
+                //await _firebaseDAO.updateOrderStatusDelivered(orderId, hashConfirm);
                 
-                _showSuccessDialog();
+                //_showSuccessDialog();
               } catch (e) {
                 // If offline, save to Hive queue
                 await OfflineQueueService.addOrderUpdate(
