@@ -432,15 +432,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
               CupertinoButton(
                 padding: EdgeInsets.zero,
                 onPressed: () {
-                  Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                      builder: (context) => PaymentScreen(
-                        productId: product["productId"],
-                        orderId: product["orderId"],
+                  if (!_isConnected) {
+                    // Mostrar pop-up si no hay conexión
+                    showCupertinoDialog(
+                      context: context,
+                      builder: (ctx) => CupertinoAlertDialog(
+                        title: Text("Uh! Oh!"),
+                        content: Text("You can't make payments offline."),
+                        actions: [
+                          CupertinoDialogAction(
+                            child: Text("OK"),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
                       ),
-                    ),
-                  );
+                    );
+                  } else {
+                    // Navegar a la pantalla de pagos si hay conexión
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (context) => PaymentScreen(
+                          productId: product["productId"],
+                          orderId: product["orderId"],
+                        ),
+                      ),
+                    );
+                  }
                 },
                 child: Text(
                   "Complete",
