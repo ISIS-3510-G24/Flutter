@@ -57,8 +57,10 @@ Widget build(BuildContext context) {
             
             if (orderId != null) {
               try {
+                _showOfflineSuccessDialog();
                 // Try online update first
                 await _firebaseDAO.updateOrderStatusDelivered(orderId, hashConfirm);
+                
                 _showSuccessDialog();
               } catch (e) {
                 // If offline, save to Hive queue
@@ -66,7 +68,7 @@ Widget build(BuildContext context) {
                   orderId: orderId,
                   hashConfirm: hashConfirm,
                 );
-                _showOfflineSuccessDialog();
+                
               }
             }
           } else {
