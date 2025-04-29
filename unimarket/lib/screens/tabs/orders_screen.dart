@@ -4,8 +4,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:unimarket/screens/payment/payment_screen.dart'; // Importa PaymentScreen
-import 'package:unimarket/services/product_service.dart'; // Importa ProductService
+import 'package:unimarket/screens/payment/payment_screen.dart';
+import 'package:unimarket/services/product_service.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:async';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -21,22 +23,39 @@ class _OrdersScreenState extends State<OrdersScreen> {
   List<Map<String, dynamic>> sellingProducts = [];
   final ProductService _productService = ProductService(); // Instancia de ProductService
 
+  bool _isConnected = true; // Estado de conectividad
+  final Connectivity _connectivity = Connectivity();
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+
   @override
   void initState() {
     super.initState();
+    _setupConnectivityListener();
     _fetchBuyingOrders();
     _fetchHistoryOrders();
     _fetchSellingOrders();
     _checkAndShowPeakHourNotification(); // Llama al método para mostrar la notificación
   }
 
+  @override
+  void dispose() {
+    _connectivitySubscription?.cancel(); // Cancelar el listener de conectividad
+    super.dispose();
+  }
+
+  void _setupConnectivityListener() {
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      setState(() {
+        _isConnected = results.isNotEmpty && results.any((result) => result != ConnectivityResult.none);
+      });
+    });
+  }
+
   Future<void> _checkAndShowPeakHourNotification() async {
     try {
-      // Obtener todas las órdenes desde Firestore
       final snapshot = await FirebaseFirestore.instance.collection('orders').get();
       final orders = snapshot.docs;
 
-      // Analizar las órdenes para determinar las horas pico
       final Map<int, int> ordersByHour = {};
       for (var order in orders) {
         final orderDate = (order['orderDate'] as Timestamp).toDate();
@@ -49,19 +68,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
         }
       }
 
-      // Ordenar las horas por cantidad de órdenes
       final sortedHours = ordersByHour.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
 
-      // Tomar la hora con mayor actividad
       if (sortedHours.isNotEmpty) {
-        final currentHour = DateTime.now().hour; // Hora actual
-        final peakHour = sortedHours.first.key; // Hora pico calculada
+        final currentHour = DateTime.now().hour;
+        final peakHour = sortedHours.first.key;
 
-        //final currentHour = DateTime.now().hour; // Hora actual
-        //final peakHour = currentHour; // Forzar que la hora pico sea la hora actual
-
-        // Verificar si la hora actual coincide con la hora pico
         if (currentHour == peakHour) {
           _showPeakHourNotification();
         }
@@ -245,26 +258,55 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ),
         trailing: const Icon(CupertinoIcons.search, color: AppColors.primaryBlue),
       ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
-            _buildTabSelector(),
-            const SizedBox(height: 10),
-            Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: _getCurrentProducts().length,
-                separatorBuilder: (context, index) =>
-                    Container(height: 1, color: AppColors.lightGreyBackground),
-                itemBuilder: (context, index) {
-                  final product = _getCurrentProducts()[index];
-                  return _buildProductItem(product);
-                },
-              ),
+      child: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                if (!_isConnected)
+                  Container(
+                    width: double.infinity,
+                    color: CupertinoColors.systemYellow.withOpacity(0.3),
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          CupertinoIcons.exclamationmark_triangle,
+                          size: 16,
+                          color: CupertinoColors.systemYellow,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            "You are offline. Some features may not work.",
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: CupertinoColors.systemGrey,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                _buildTabSelector(),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    itemCount: _getCurrentProducts().length,
+                    separatorBuilder: (context, index) =>
+                        Container(height: 1, color: AppColors.lightGreyBackground),
+                    itemBuilder: (context, index) {
+                      final product = _getCurrentProducts()[index];
+                      return _buildProductItem(product);
+                    },
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -274,10 +316,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 30),
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.transparentGrey, // Fondo más claro
-          borderRadius: BorderRadius.circular(30), // Bordes súper redondeados
+          color: AppColors.transparentGrey,
+          borderRadius: BorderRadius.circular(30),
         ),
-        padding: const EdgeInsets.all(8), // Espaciado interno para suavizar bordes
+        padding: const EdgeInsets.all(8),
         child: CupertinoSegmentedControl<int>(
           groupValue: _selectedTab,
           onValueChanged: (int newIndex) {
@@ -290,9 +332,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
             1: _buildTabItem("Buying", 1),
             2: _buildTabItem("Selling", 2),
           },
-          selectedColor: AppColors.primaryBlue, // Azul oficial
-          borderColor: CupertinoColors.transparent, // Sin bordes visibles
-          unselectedColor: CupertinoColors.transparent, // Sin color de fondo,
+          selectedColor: AppColors.primaryBlue,
+          borderColor: CupertinoColors.transparent,
+          unselectedColor: CupertinoColors.transparent,
           pressedColor: CupertinoColors.systemGrey4.withOpacity(0.2),
           padding: EdgeInsets.zero,
         ),
@@ -390,15 +432,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
               CupertinoButton(
                 padding: EdgeInsets.zero,
                 onPressed: () {
-                  Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                      builder: (context) => PaymentScreen(
-                        productId: product["productId"],
-                        orderId: product["orderId"],
+                  if (!_isConnected) {
+                    // Mostrar pop-up si no hay conexión
+                    showCupertinoDialog(
+                      context: context,
+                      builder: (ctx) => CupertinoAlertDialog(
+                        title: Text("Uh! Oh!"),
+                        content: Text("You can't make payments offline."),
+                        actions: [
+                          CupertinoDialogAction(
+                            child: Text("OK"),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
                       ),
-                    ),
-                  );
+                    );
+                  } else {
+                    // Navegar a la pantalla de pagos si hay conexión
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (context) => PaymentScreen(
+                          productId: product["productId"],
+                          orderId: product["orderId"],
+                        ),
+                      ),
+                    );
+                  }
                 },
                 child: Text(
                   "Complete",

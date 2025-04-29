@@ -115,7 +115,7 @@ void dispose() {
     
     try {
       // Cargar productos personalizados desde caché
-      final cachedProducts = await _cacheService.loadFilteredProductsFromCache();
+      final cachedProducts = await _cacheService.loadFilteredProducts();
       
       if (mounted) {
         setState(() {
@@ -151,7 +151,7 @@ void dispose() {
       final filteredProducts = await _productService.fetchProductsByMajor();
       
       // Guardar en caché y precargar imágenes
-      await _cacheService.saveFilteredProductsToCache(filteredProducts);
+      await _cacheService.saveFilteredProducts(filteredProducts);
       
       if (mounted) {
         setState(() {
