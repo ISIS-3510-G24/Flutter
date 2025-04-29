@@ -24,6 +24,7 @@ class _UserRegisterState extends State<UserRegister> {
   final TextEditingController _displayNameController = TextEditingController();
   final TextEditingController _confirmpasswordController = TextEditingController();
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
+  bool _isConnected = true;
 
   
 void _showErrorAlert(String message) {
@@ -42,7 +43,12 @@ void _showErrorAlert(String message) {
     );
   }
 
-  
+  @override
+  void initState() {
+    super.initState();
+    _checkInternetConnection(); 
+  }
+
   @override
   void dispose(){
     _emailController.dispose();
@@ -119,32 +125,46 @@ Future<bool> _signUp() async {
 }
 
 Future<bool> _checkInternetConnection() async {
-  //Re duro
   try {
     final result = await InternetAddress.lookup('google.com');
-    return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    final isConnected = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    if (mounted) {
+      setState(() {
+        _isConnected = isConnected;
+      });
+    }
+    return isConnected;
   } on SocketException catch (_) {
+    if (mounted) {
+      setState(() {
+        _isConnected = false;
+      });
+    }
     return false;
   }
 }
 
-void _showNoInternetPopup() {
-  if (!mounted) return;
-  
-  showCupertinoDialog(
-    context: context,
-    builder: (_) => CupertinoAlertDialog(
-      title: const Text("No Internet Connection"),
-      content: const Text("Please check your internet connection and try again."),
-      actions: [
-        CupertinoDialogAction(
-          child: const Text("OK"),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ],
-    ),
-  );
-}
+  void _showNoInternetPopup() {
+    if (!mounted) return;
+    
+    setState(() {
+      _isConnected = false;
+    });
+    
+    showCupertinoDialog(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: const Text("No Internet Connection"),
+        content: const Text("Please check your internet connection and try again."),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text("OK"),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
 
 void _handleFirebaseAuthError(FirebaseAuthException e) {
   String errorMessage;
@@ -184,7 +204,50 @@ void _handleFirebaseAuthError(FirebaseAuthException e) {
     return CupertinoPageScaffold(
         backgroundColor: Color(0xFFf1f1f1),
         child: SafeArea(
-          child: SingleChildScrollView(
+          child: Column(
+    children: [
+      // Add this offline banner
+      if (!_isConnected)
+        Container(
+          width: double.infinity,
+          color: CupertinoColors.systemYellow.withOpacity(0.3),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+          child: Row(
+            children: [
+              const Icon(
+                CupertinoIcons.exclamationmark_triangle,
+                size: 16,
+                color: CupertinoColors.systemYellow,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "You are offline. Please connect to the internet to register correctly.",
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: CupertinoColors.systemGrey,
+                  ),
+                ),
+              ),
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                minSize: 0,
+                child: Text(
+                  "Retry",
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: Colors.blue,
+                  ),
+                ),
+                onPressed: () async {
+                  await _checkInternetConnection();
+                },
+              ),
+            ],
+          ),
+        ),
+      Expanded(
+        child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -505,15 +568,18 @@ void _handleFirebaseAuthError(FirebaseAuthException e) {
                         style: GoogleFonts.poppins(
                           fontWeight: FontWeight.bold,
                           color: Colors.blue,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
-          ),
+          ]
         ),
-      );
+      ),
+    );
   }
 }

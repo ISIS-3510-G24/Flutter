@@ -1,5 +1,6 @@
 // lib/screens/product/product_detail_screen.dart
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/models/product_model.dart';
@@ -8,6 +9,7 @@ import 'package:unimarket/screens/profile/user_profile_screen.dart';
 import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/widgets/buttons/contact_seller_button.dart';
+import 'package:unimarket/data/firebase_dao.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final ProductModel product;
@@ -21,6 +23,8 @@ class ProductDetailScreen extends StatefulWidget {
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   final UserService _userService = UserService();
   UserModel? _seller;
+  bool _isInWishlist = false;
+  final FirebaseDAO _firebaseDAO = FirebaseDAO();
   bool _isLoading = true;
   int _currentImageIndex = 0;
 
@@ -28,6 +32,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void initState() {
     super.initState();
     _loadSellerInfo();
+    _loadWishlistStatus();
   }
 
   Future<void> _loadSellerInfo() async {
@@ -48,6 +53,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       });
     }
   }
+  Future<void> _loadWishlistStatus() async {
+    final isInWishlist = await _firebaseDAO.isProductInWishlist(widget.product.id!);
+    setState(() {
+      _isInWishlist = isInWishlist;
+    });
+  }
+
+  Future<void> _toggleWishlist() async {
+    await _firebaseDAO.toggleWishlist(widget.product.id!, _isInWishlist);
+    setState(() {
+      _isInWishlist = !_isInWishlist;
+    });
+  }
+    
 
   String _formatPrice(double price) {
     // Convert to integer to remove decimal part
@@ -141,6 +160,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       sellerId: widget.product.sellerID,
                       productTitle: widget.product.title,
                     ),
+                    // New: Wishlist Heart Icon
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: _toggleWishlist,
+                      child: Icon(
+                        _isInWishlist ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+                        color: _isInWishlist ? Colors.red : CupertinoColors.systemGrey,
+                        size: 28,
+                      ),
+                    )
                   ],
                 ),
               ),

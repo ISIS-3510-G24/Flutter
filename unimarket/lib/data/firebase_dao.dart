@@ -82,7 +82,14 @@ Future<bool> createUser(String email, String password, String bio, String displa
       }
 
       QuerySnapshot querySnapshot = await query.get();
-      return querySnapshot.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+      return querySnapshot.docs.map((doc) {
+      // Modificación para tener el id del producto
+      final data = doc.data() as Map<String, dynamic>;
+      return {
+        ...data,
+        'id': doc.id, 
+      };
+    }).toList();
     } catch (e) {
       print("Error getting products: $e");
       return [];
@@ -673,6 +680,26 @@ Future<bool> isProductInWishlist(String productId) async {
   final wishlist = await getUserWishlist();
   return wishlist.contains(productId);
 }
+//Change wishlist status to ! of what's currently on
+Future<void> toggleWishlist(String productId, bool currentlyInWishlist) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
+
+    final wishlistRef = _firestore
+        .collection('User')
+        .doc(userId)
+        .collection('wishlist')
+        .doc(productId);
+
+    if (currentlyInWishlist) {
+      await wishlistRef.delete();
+    } else {
+      await wishlistRef.set({
+        'productID': productId,
+        'addedAt': DateTime.now(),
+      });
+    }
+  }
 
 Future<List<Map<String, dynamic>>> getWishlistProducts() async {
   try {
@@ -1186,6 +1213,59 @@ Future<List<Map<String, dynamic>>> getUniversityBuildings() async {
     return [];
   }
 }
+
+  Future<void> checkWishlistforOrder(String orderId) async {
+  try {
+    final userId = getCurrentUserId();
+    
+    // 1. Get the order document
+    final orderSnapshot = await _firestore
+        .collection('orders')
+        .where(FieldPath.documentId, isEqualTo: orderId)
+        .get();
+
+    if (orderSnapshot.docs.isEmpty) {
+      print('Order not found');
+      return;
+    }
+
+    final orderData = orderSnapshot.docs.first.data();
+    final productId = orderData['productID'] as String;
+    final buyerId = orderData['buyerID'] as String;
+
+    // 2. Check if the product exists in user's wishlist
+    final wishlistSnapshot = await _firestore
+        .collection('User')
+        .doc(buyerId)
+        .collection('wishlist')
+        .where('productID', isEqualTo: productId)
+        .get();
+
+    // 3. Update wishlist metrics based on whether product was in wishlist
+    final metricDocRef = _firestore
+        .collection('wishlist_metrics')
+        .doc('order_purchase_metrics');
+
+    if (wishlistSnapshot.docs.isNotEmpty) {
+      // Product was in wishlist - increment purchase_wishlisted
+      await metricDocRef.update({
+        'purchase_wishlisted': FieldValue.increment(1),
+      });
+      print('Incremented purchase_wishlisted');
+    } else {
+      // Product was not in wishlist - increment purchase_unwishlisted
+      await metricDocRef.update({
+        'purchase_unwishlisted': FieldValue.increment(1),
+      });
+      print('Incremented purchase_unwishlisted');
+    }
+  } catch (e) {
+    print('Error in checkWishlistforOrder: $e');
+    // Consider rethrowing or handling the error as needed
+  }
+}
+
+
 
 
 
