@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:unimarket/screens/product/product_upload.dart';
 import 'package:unimarket/widgets/buttons/floating_action_button_factory.dart';
 import 'package:unimarket/services/product_service.dart';
@@ -31,6 +32,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   bool _isDisposed = false;
   bool _hasInternetAccess = true;
   bool _isCheckingConnectivity = false;
+  bool _usedCachedAll = false; // Track if we're showing cached all products
   
   StreamSubscription? _connectivitySubscription;
   StreamSubscription? _checkingSubscription;
@@ -39,21 +41,21 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   void initState() {
     super.initState();
     
-    // Registrar el observer
+    // Register observer
     WidgetsBinding.instance.addObserver(this);
     
-    // Obtener estados iniciales
+    // Get initial states
     _hasInternetAccess = _connectivityService.hasInternetAccess;
     _isCheckingConnectivity = _connectivityService.isChecking;
     
-    // Suscribirse a cambios de conectividad
+    // Subscribe to connectivity changes
     _connectivitySubscription = _connectivityService.connectivityStream.listen((hasInternet) {
       if (mounted) {
         setState(() {
           _hasInternetAccess = hasInternet;
         });
         
-        // Si la conectividad regresa, cargar datos
+        // If connectivity returns, load data
         if (hasInternet) {
           _refreshFilteredProducts();
           _loadAllProducts();
@@ -61,11 +63,11 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
       }
     });
     
-    // Suscribirse a cambios en el estado de verificación
+    // Subscribe to checking state changes
     _checkingSubscription = _connectivityService.checkingStream.listen((isChecking) {
       if (mounted) {
-        // Solo actualizar el estado de verificación si no hay internet
-        // Esto evita que aparezca el banner de verificación brevemente cuando hay buena conexión
+        // Only update checking state if there's no internet
+        // This prevents the checking banner from briefly appearing when there's good connection
         if (!_hasInternetAccess || isChecking == false) {
           setState(() {
             _isCheckingConnectivity = isChecking;
@@ -74,27 +76,29 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
       }
     });
     
-    // Cargar datos de caché inmediatamente
+    // Load data from cache immediately
     _loadFilteredProductsFromCache();
+    _loadAllProductsFromCache();
     
-    // Verificar conectividad y cargar datos
+    // Check connectivity and load data
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Cargar productos de todas formas para mostrar algo
-      _loadAllProducts();
-      
-      // Solo verificar conectividad si no tenemos internet
+      // Only check connectivity if we don't have internet
       if (!_hasInternetAccess) {
         _connectivityService.checkConnectivity();
+      } else {
+        // Load products from network if we have internet
+        _loadAllProducts();
+        _refreshFilteredProducts();
       }
     });
   }
   
   @override
   void dispose() {
-    // Quitar el observer
+    // Remove observer
     WidgetsBinding.instance.removeObserver(this);
     
-    // Cancelar suscripciones
+    // Cancel subscriptions
     _connectivitySubscription?.cancel();
     _checkingSubscription?.cancel();
     _isDisposed = true;
@@ -102,16 +106,16 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   }
   
   void _handleRetryPressed() async {
-    // Forzar una verificación de conectividad
+    // Force a connectivity check
     bool hasInternet = await _connectivityService.checkConnectivity();
     
-    // Si hay internet, refrescar datos
+    // If there's internet, refresh data
     if (hasInternet) {
       _onRefresh();
     }
   }
 
-  // Cargar productos personalizados desde caché (rápido)
+  // Load filtered products from cache (fast)
   Future<void> _loadFilteredProductsFromCache() async {
     if (_isLoadingFiltered) return;
     
@@ -120,7 +124,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
     });
     
     try {
-      // Cargar productos personalizados desde caché
+      // Load filtered products from cache
       final cachedProducts = await _cacheService.loadFilteredProducts();
       
       if (mounted) {
@@ -130,7 +134,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
         });
       }
       
-      // Si no hay productos en caché o están vacíos, intentar cargar desde la red
+      // If there are no products in cache or they're empty, try to load from network
       if (cachedProducts.isEmpty && _hasInternetAccess) {
         _refreshFilteredProducts();
       }
@@ -144,7 +148,43 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
     }
   }
   
-  // Actualizar productos personalizados desde la red
+  // NEW: Load all products from LRU cache
+  Future<void> _loadAllProductsFromCache() async {
+    if (_isDisposed) return;
+    
+    setState(() {
+      _isLoadingAll = true;
+    });
+    
+    try {
+      final cachedProducts = await _cacheService.loadAllProductsFromCache();
+      
+      if (mounted) {
+        setState(() {
+          if (cachedProducts.isNotEmpty) {
+            _allProducts = cachedProducts;
+            _usedCachedAll = true;
+          }
+          _isLoadingAll = false;
+        });
+      }
+      
+      // If there's internet, we'll still fetch fresh data to update the cache
+      if (_hasInternetAccess) {
+        // We'll leave _isLoadingAll = false since we're showing cached data
+        // The refresh will happen in the background
+      }
+    } catch (e) {
+      print("Error loading all products from cache: $e");
+      if (mounted) {
+        setState(() {
+          _isLoadingAll = false;
+        });
+      }
+    }
+  }
+  
+  // Update filtered products from network
   Future<void> _refreshFilteredProducts() async {
     if (_isLoadingFiltered || !_hasInternetAccess) return;
     
@@ -153,10 +193,10 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
     });
     
     try {
-      // Cargar productos personalizados desde la red
+      // Load filtered products from network
       final filteredProducts = await _productService.fetchProductsByMajor();
       
-      // Guardar en caché y precargar imágenes
+      // Save to cache and precache images
       await _cacheService.saveFilteredProducts(filteredProducts);
       
       if (mounted) {
@@ -175,35 +215,40 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
     }
   }
   
-  // Método mejorado para cargar todos los productos
+  // Improved method to load all products
   Future<void> _loadAllProducts() async {
-    if (_isDisposed) return;
+    if (_isDisposed || !_hasInternetAccess) return;
     
-    print("_loadAllProducts(): Iniciando carga de todos los productos");
+    print("_loadAllProducts(): Starting to load all products");
     
-    if (!mounted || _isDisposed) return;
-
-    setState(() {
-      _isLoadingAll = true;
-    });
+    // If we're already showing cached data, don't show loading indicator again
+    if (!_usedCachedAll && mounted) {
+      setState(() {
+        _isLoadingAll = true;
+      });
+    }
     
     try {
-      // Usar un Future.delayed para asegurar que no hay problemas de concurrencia
+      // Use a Future.delayed to ensure there are no concurrency issues
       await Future.delayed(Duration.zero);
       
-      // Cargar todos los productos desde la red
+      // Load all products from network
       final allProducts = await _productService.fetchAllProducts();
       
-      print("_loadAllProducts(): Cargados ${allProducts.length} productos exitosamente");
+      print("_loadAllProducts(): Successfully loaded ${allProducts.length} products");
+      
+      // Save to LRU cache
+      await _cacheService.saveAllProducts(allProducts);
       
       if (mounted) {
         setState(() {
           _allProducts = allProducts;
           _isLoadingAll = false;
+          _usedCachedAll = false; // We now have fresh data
         });
       }
     } catch (e) {
-      print("_loadAllProducts(): Error cargando productos: $e");
+      print("_loadAllProducts(): Error loading products: $e");
       if (mounted) {
         setState(() {
           _isLoadingAll = false;
@@ -213,19 +258,19 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   }
 
   Future<void> _onRefresh() async {
-    print("_onRefresh(): Refrescando datos");
+    print("_onRefresh(): Refreshing data");
     
     try {
-      // Refrescar productos personalizados
+      // Refresh filtered products
       _refreshFilteredProducts();
       
-      // Refrescar todos los productos
+      // Refresh all products
       _loadAllProducts();
       
-      // Esperar un poco para mostrar el indicador de refresh
+      // Wait a bit to show the refresh indicator
       await Future.delayed(Duration(milliseconds: 800));
     } catch (e) {
-      print("_onRefresh(): Error al refrescar: $e");
+      print("_onRefresh(): Error refreshing: $e");
     }
   }
 
@@ -279,6 +324,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
     );
   }
   
+  // UPDATED: Build product image with CachedNetworkImage
   Widget _buildProductImage(ProductModel product) {
     return Container(
       width: double.infinity,
@@ -290,24 +336,22 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: product.imageUrls.isNotEmpty
-            ? Image.network(
-                product.imageUrls.first,
+            ? CachedNetworkImage(
+                imageUrl: product.imageUrls.first,
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: double.infinity,
-                errorBuilder: (context, error, stackTrace) {
+                cacheManager: ProductCacheService.productImageCacheManager,
+                placeholder: (context, url) => Center(
+                  child: CupertinoActivityIndicator(),
+                ),
+                errorWidget: (context, url, error) {
                   print("Error loading image: $error");
                   return SvgPicture.asset(
                     "assets/svgs/ImagePlaceHolder.svg",
                     fit: BoxFit.cover,
                     width: double.infinity,
                     height: double.infinity,
-                  );
-                },
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Center(
-                    child: CupertinoActivityIndicator(),
                   );
                 },
               )
@@ -370,15 +414,16 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Solo verificar conectividad cuando la app vuelve a primer plano
     if (state == AppLifecycleState.resumed) {
+      // Check connectivity and clear old cache when the app is resumed
       _connectivityService.checkConnectivity();
+      _cacheService.clearOldCache(); // New: clear old cached items periodically
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Obtener estado de conectividad actual
+    // Get current connectivity state
     bool isOffline = !_hasInternetAccess;
     
     return CupertinoPageScaffold(
@@ -390,7 +435,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Network status indicator - solo mostrar si estamos offline
+            // Network status indicator - only show if we're offline
             if (isOffline && !_isCheckingConnectivity)
               Padding(
                 padding: const EdgeInsets.only(right: 8.0),
@@ -417,7 +462,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
           SafeArea(
             child: Column(
               children: [
-                // Banner de conexión con lógica mejorada
+                // Connection banner with improved logic
                 if (isOffline || _isCheckingConnectivity)
                   Container(
                     width: double.infinity,
@@ -425,7 +470,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
                     padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                     child: Row(
                       children: [
-                        // Mostrar indicador de actividad solo si estamos verificando
+                        // Only show activity indicator if we're checking
                         _isCheckingConnectivity 
                             ? CupertinoActivityIndicator(radius: 8)
                             : const Icon(
@@ -445,7 +490,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
                             ),
                           ),
                         ),
-                        // Mostrar Retry solo si NO estamos verificando
+                        // Only show Retry if we're NOT checking
                         if (!_isCheckingConnectivity)
                           CupertinoButton(
                             padding: EdgeInsets.zero,
@@ -476,7 +521,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const SizedBox(height: 20),
-                            // Sección de productos personalizados
+                            // Filtered products section
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 20),
                               child: Text(
@@ -523,18 +568,30 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
                                         ),
                             ),
                             const SizedBox(height: 20),
-                            // Sección de todos los productos
+                            // All products section
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 20),
-                              child: Text(
-                                "All",
-                                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    "All",
+                                    style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
+                                  ),
+                                  if (_usedCachedAll && !isOffline)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 8.0),
+                                      child: Text(
+                                        "(Cached)",
+                                        style: GoogleFonts.inter(fontSize: 12, color: CupertinoColors.systemGrey),
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                             const SizedBox(height: 10),
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 20),
-                              child: _isLoadingAll
+                              child: _isLoadingAll && !_usedCachedAll
                                   ? Container(
                                       height: 200,
                                       alignment: Alignment.center,
