@@ -49,10 +49,10 @@ void initState() {
   // Registrar el observer
   WidgetsBinding.instance.addObserver(this);
   
-  // Iniciar asumiendo que no hay conexión hasta confirmar lo contrario
+  // No mostrar el banner inicialmente
   setState(() {
-    _hasInternetAccess = false;
-    _isCheckingConnectivity = true;
+    _isCheckingConnectivity = true;  // Estamos verificando, pero no mostramos banner
+    _hasInternetAccess = true;       // Asumimos que hay internet hasta demostrar lo contrario
   });
   
   // Cargar datos de caché inmediatamente mientras verificamos la conectividad
@@ -60,12 +60,12 @@ void initState() {
   
   // Verificar conectividad y cargar datos si hay internet
   WidgetsBinding.instance.addPostFrameCallback((_) async {
-    await _performSingleConnectivityCheck();
+    await _performConnectivityCheckWithIsolate();
     
     // Configurar listener para cambios de conectividad
     _setupConnectivityListener();
     
-    // Solo cargar todos los productos si hay internet confirmado
+    // Cargar productos si hay internet o asumimos que hay
     if (_hasInternetAccess) {
       _loadAllProducts();
     }
@@ -151,10 +151,13 @@ Future<void> _performSingleConnectivityCheck() async {
 }
   
 void _handleRetryPressed() async {
-  // Realizar verificación completa
-  await _performSingleConnectivityCheck();
+  // Mostrar un indicador de actividad mientras verificamos
+  setState(() {
+    _isCheckingConnectivity = true;
+  });
   
-  // Si hay internet, refrescar datos
+  await _performConnectivityCheckWithIsolate();
+  
   if (_hasInternetAccess) {
     _onRefresh();
   }
@@ -165,7 +168,7 @@ void _setupConnectivityListener() {
     _connectivitySubscription = _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> results) {
       // Solo realizar verificación completa cuando detectamos un cambio
       if (!_isCheckingConnectivity) {
-        _performSingleConnectivityCheck();
+        _performConnectivityCheckWithIsolate();
       }
     });
   } catch (e) {
@@ -173,9 +176,8 @@ void _setupConnectivityListener() {
   }
 }
 
-
-static void _connectivityCheckIsolate(List<dynamic> args) async {
-  final SendPort sendPort = args[0];
+// Función estática que se ejecutará en el isolate
+static void _connectivityCheckIsolate(SendPort sendPort) async {
   bool hasAccess = false;
   
   try {
@@ -191,58 +193,25 @@ static void _connectivityCheckIsolate(List<dynamic> args) async {
   // Envía el resultado al hilo principal
   sendPort.send(hasAccess);
 }
-// Iniciar el sistema de verificación con isolate
-Future<void> _startInternetCheckWithIsolate() async {
-  if (_isDisposed) return;
-  
-  // Primera verificación inmediata
-  await _checkInternetAccessWithIsolate();
-  
-  // Cancelar cualquier timer existente
-  _connectivityCheckTimer?.cancel();
-  
-  // Configurar verificación periódica pero solo si no hay banner mostrándose
-  _connectivityCheckTimer = Timer.periodic(Duration(seconds: 15), (timer) async {
-    // Solo verificar periódicamente si está en primer plano y montado
-    if (!_isDisposed && mounted) {
-      // Si hay conexión, verificamos periódicamente de forma discreta
-      // Si no hay conexión, verificamos solo cuando el usuario lo solicite explícitamente
-      if (_hasInternetAccess) {
-        await _checkInternetAccessWithIsolate();
-      }
-    }
-  });
-}
 
-// Método para verificar conectividad real con isolate
-// Método para verificar conectividad real con isolate
-Future<void> _checkInternetAccessWithIsolate() async {
+// Método para verificar conectividad usando un isolate
+Future<void> _performConnectivityCheckWithIsolate() async {
   if (_isDisposed) return;
   
-  // Solo marcar como verificando si no estamos ya verificando
-  if (mounted && !_isCheckingConnectivity) {
-    setState(() {
-      _isCheckingConnectivity = true;
-    });
-  }
-  
-  _terminateConnectivityIsolate();
-  _receivePort = ReceivePort();
-  bool previousStatus = _hasInternetAccess;
+  // No cambiamos el estado de _isCheckingConnectivity para evitar mostrar el banner innecesariamente
   
   try {
-    // Verificar primero la conexión a nivel de interfaz
+    // Primero verificar nivel de interfaz
     final results = await _connectivity.checkConnectivity();
-    ConnectivityResult result = results.isNotEmpty ? results.first : ConnectivityResult.none;
-    bool interfaceConnected = result != ConnectivityResult.none;
+    bool hasInterface = results.isNotEmpty && results.first != ConnectivityResult.none;
     
-    // Si no hay interfaz conectada, no hay necesidad de verificar internet
-    if (!interfaceConnected) {
+    // Si no hay interfaz, definitivamente no hay internet
+    if (!hasInterface) {
       if (mounted) {
         setState(() {
           _isConnected = false;
           _hasInternetAccess = false;
-          _isCheckingConnectivity = false;
+          _isCheckingConnectivity = false; // Ya no estamos verificando
         });
       }
       return;
@@ -251,102 +220,52 @@ Future<void> _checkInternetAccessWithIsolate() async {
     // Actualizar estado de la interfaz
     if (mounted) {
       setState(() {
-        _isConnected = interfaceConnected;
+        _isConnected = true;
       });
     }
     
-    // Solo verificar internet real si hay interfaz conectada
-    if (interfaceConnected) {
-      _connectivityIsolate = await Isolate.spawn(
-        _connectivityCheckIsolate,
-        [_receivePort!.sendPort],
-      );
+    // Crear un receive port para comunicación con el isolate
+    final receivePort = ReceivePort();
+    
+    // Lanzar el isolate para verificar conectividad real
+    Isolate isolate = await Isolate.spawn(
+      _connectivityCheckIsolate, 
+      receivePort.sendPort
+    );
+    
+    // Esperar la respuesta con timeout
+    bool hasInternet = await receivePort.first.timeout(
+      Duration(seconds: 5),
+      onTimeout: () => false,
+    );
+    
+    // Limpiar el isolate
+    isolate.kill(priority: Isolate.immediate);
+    receivePort.close();
+    
+    if (mounted) {
+      setState(() {
+        _hasInternetAccess = hasInternet;
+        _isCheckingConnectivity = false;
+      });
       
-      final result = await _receivePort!.first.timeout(
-        Duration(seconds: 5),
-        onTimeout: () => false,
-      );
-      
-      bool newStatus = result is bool ? result : false;
-      
-      // Importante: Siempre actualizar el estado cuando terminamos de verificar
-      if (mounted) {
-        setState(() {
-          _hasInternetAccess = newStatus;
-          _isCheckingConnectivity = false;
-        });
-        
-        print("Resultado verificación internet: $newStatus (cambiado: ${newStatus != previousStatus})");
-        
-        // Solo refrescar si la conectividad regresó
-        if (newStatus && !previousStatus && !_isLoadingFiltered) {
-          _refreshFilteredProducts();
-          _loadAllProducts(); // También actualizar todos los productos
-        }
+      // Si hay internet, cargar productos
+      if (hasInternet && !_isLoadingFiltered) {
+        _refreshFilteredProducts();
       }
     }
   } catch (e) {
-    print("Error en verificación: $e");
+    print("Error en verificación de conectividad: $e");
     if (mounted) {
       setState(() {
-        _hasInternetAccess = false;
+        // Solo actualizar si estamos seguros que no hay internet
+        // Si hay duda, mantener el estado anterior
         _isCheckingConnectivity = false;
       });
     }
-  } finally {
-    _terminateConnectivityIsolate();
   }
 }
 
-// Método para limpiar el isolate
-void _terminateConnectivityIsolate() {
-  _connectivityIsolate?.kill(priority: Isolate.immediate);
-  _connectivityIsolate = null;
-  _receivePort?.close();
-  _receivePort = null;
-}
-
-  // Método seguro para verificar conectividad
-  Future<void> _checkConnectivity() async {
-    try {
-      final results = await _connectivity.checkConnectivity();
-      // Usa el primer resultado de la lista, o NONE si la lista está vacía
-      ConnectivityResult result = results.isNotEmpty ? results.first : ConnectivityResult.none;
-      _handleConnectivityChange(result);
-    } catch (e) {
-      print("Error checking connectivity: $e");
-      // Asumir conectado por defecto para intentar cargar datos
-      if (mounted) {
-        setState(() {
-          _isConnected = true;
-        });
-      }
-    }
-  }
-
-// Handle connectivity changes
-void _handleConnectivityChange(ConnectivityResult result) {
-  bool isConnected = result != ConnectivityResult.none;
-  
-  if (mounted) {
-    setState(() {
-      _isConnected = isConnected;
-    });
-  
-    // Si la conexión se perdió a nivel de interfaz, actualizar inmediatamente
-    if (!isConnected && mounted) {
-      setState(() {
-        _hasInternetAccess = false;
-        _isCheckingConnectivity = false;
-      });
-    }
-    // Si la conexión se restaura a nivel de interfaz, verificar internet real
-    // Pero solo si no estamos ya verificando
-    else if (isConnected && !_isCheckingConnectivity) {
-      _checkInternetAccessWithIsolate();
-    }
-  }
-}
 
   // Cargar productos personalizados desde caché (rápido)
   Future<void> _loadFilteredProductsFromCache() async {
@@ -656,7 +575,7 @@ Widget _buildNetworkImage(ProductModel product) {
 void didChangeAppLifecycleState(AppLifecycleState state) {
   // Solo realizar verificación cuando la app vuelve a primer plano
   if (state == AppLifecycleState.resumed) {
-    _performSingleConnectivityCheck();
+    _performConnectivityCheckWithIsolate();
   }
 }
 
@@ -664,11 +583,13 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
 void didChangeDependencies() {
   super.didChangeDependencies();
   
-  // Solo realizar una verificación completa si no estamos ya verificando
-  if (!_isCheckingConnectivity) {
-    _performSingleConnectivityCheck();
+  // No verificar automáticamente para evitar flashes del banner
+  // Solo verificar si sabemos que no hay internet
+  if (!_hasInternetAccess && !_isCheckingConnectivity) {
+    _performConnectivityCheckWithIsolate();
   }
 }
+
 
 @override
 Widget build(BuildContext context) {
