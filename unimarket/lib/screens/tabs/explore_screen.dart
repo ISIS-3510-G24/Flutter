@@ -1,9 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'dart:io';
+import 'dart:isolate';
 import 'package:unimarket/screens/product/product_upload.dart';
 import 'package:unimarket/widgets/buttons/floating_action_button_factory.dart';
 import 'package:unimarket/services/product_service.dart';
@@ -20,7 +21,7 @@ class ExploreScreen extends StatefulWidget {
   ExploreScreenState createState() => ExploreScreenState();
 }
 
-class ExploreScreenState extends State<ExploreScreen> {
+class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserver {
   final ProductService _productService = ProductService();
   final ProductCacheService _cacheService = ProductCacheService();
   List<ProductModel> _allProducts = [];
@@ -31,45 +32,279 @@ class ExploreScreenState extends State<ExploreScreen> {
   final Connectivity _connectivity = Connectivity();
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isDisposed = false;
+  Isolate? _connectivityIsolate;
+  ReceivePort? _receivePort;
+  Timer? _connectivityCheckTimer;
+  bool _hasInternetAccess = true;
+  bool _isCheckingConnectivity = false;
 
 
-  @override
+
+
+
+@override
 void initState() {
   super.initState();
   
-  // Para evitar MissingPluginException, inicializar después del primer frame
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    _checkConnectivity();
-    _setupConnectivityListener();
-    
-    // Forzar la carga de All Products después de un breve delay
-    // para dar tiempo a la UI de renderizarse primero
-    Future.delayed(Duration(milliseconds: 500), () {
-      _loadAllProducts();
-    });
+  // Registrar el observer
+  WidgetsBinding.instance.addObserver(this);
+  
+  // Iniciar asumiendo que no hay conexión hasta confirmar lo contrario
+  setState(() {
+    _hasInternetAccess = false;
+    _isCheckingConnectivity = true;
   });
   
-  // Primero cargar productos personalizados desde caché (alta prioridad)
+  // Cargar datos de caché inmediatamente mientras verificamos la conectividad
   _loadFilteredProductsFromCache();
+  
+  // Verificar conectividad y cargar datos si hay internet
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    await _performSingleConnectivityCheck();
+    
+    // Configurar listener para cambios de conectividad
+    _setupConnectivityListener();
+    
+    // Solo cargar todos los productos si hay internet confirmado
+    if (_hasInternetAccess) {
+      _loadAllProducts();
+    }
+  });
 }
+
 @override
 void dispose() {
+  // Quitar el observer
+  WidgetsBinding.instance.removeObserver(this);
+  
+  // Limpieza simple
+  _connectivityCheckTimer?.cancel();
+  _connectivitySubscription?.cancel();
   _isDisposed = true;
   super.dispose();
 }
+  // Método simplificado para verificar conectividad real (una sola vez)
+Future<void> _performSingleConnectivityCheck() async {
+  if (_isDisposed) return;
   
-  // Método seguro para configurar el listener de conectividad
-  void _setupConnectivityListener() {
-    try {
-      _connectivitySubscription = _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> results) {
-        // Usa el primer resultado de la lista, o NONE si la lista está vacía
-        ConnectivityResult result = results.isNotEmpty ? results.first : ConnectivityResult.none;
-        _handleConnectivityChange(result);
+  setState(() {
+    _isCheckingConnectivity = true;
+  });
+  
+  try {
+    // Primero verificar nivel de interfaz
+    final results = await _connectivity.checkConnectivity();
+    bool isConnected = results.isNotEmpty && results.first != ConnectivityResult.none;
+    
+    // Si ni siquiera hay interfaz conectada, definitivamente no hay internet
+    if (!isConnected) {
+      if (mounted) {
+        setState(() {
+          _isConnected = false;
+          _hasInternetAccess = false;
+          _isCheckingConnectivity = false;
+        });
+      }
+      return;
+    }
+    
+    // Si hay interfaz, actualizar ese estado
+    if (mounted) {
+      setState(() {
+        _isConnected = true;
       });
+    }
+    
+    // Verificar internet real con un socket seguro
+    bool hasRealInternet = false;
+    try {
+      final socket = await Socket.connect('8.8.8.8', 53)
+          .timeout(Duration(seconds: 3));
+      socket.destroy();
+      hasRealInternet = true;
     } catch (e) {
-      print("Error setting up connectivity listener: $e");
+      print("No se pudo conectar al socket: $e");
+      hasRealInternet = false;
+    }
+    
+    if (mounted) {
+      print("Conectividad real: $hasRealInternet");
+      setState(() {
+        _hasInternetAccess = hasRealInternet;
+        _isCheckingConnectivity = false;
+      });
+      
+      // Si hay internet real, cargar/actualizar datos
+      if (hasRealInternet && !_isLoadingFiltered) {
+        _refreshFilteredProducts();
+      }
+    }
+  } catch (e) {
+    print("Error al verificar conectividad: $e");
+    if (mounted) {
+      setState(() {
+        _hasInternetAccess = false;
+        _isCheckingConnectivity = false;
+      });
     }
   }
+}
+  
+void _handleRetryPressed() async {
+  // Realizar verificación completa
+  await _performSingleConnectivityCheck();
+  
+  // Si hay internet, refrescar datos
+  if (_hasInternetAccess) {
+    _onRefresh();
+  }
+}
+
+void _setupConnectivityListener() {
+  try {
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      // Solo realizar verificación completa cuando detectamos un cambio
+      if (!_isCheckingConnectivity) {
+        _performSingleConnectivityCheck();
+      }
+    });
+  } catch (e) {
+    print("Error configurando listener de conectividad: $e");
+  }
+}
+
+
+static void _connectivityCheckIsolate(List<dynamic> args) async {
+  final SendPort sendPort = args[0];
+  bool hasAccess = false;
+  
+  try {
+    // Intenta conectarse a un servicio confiable (DNS de Google)
+    final socket = await Socket.connect('8.8.8.8', 53)
+        .timeout(Duration(seconds: 3));
+    socket.destroy();
+    hasAccess = true;
+  } catch (e) {
+    hasAccess = false;
+  }
+  
+  // Envía el resultado al hilo principal
+  sendPort.send(hasAccess);
+}
+// Iniciar el sistema de verificación con isolate
+Future<void> _startInternetCheckWithIsolate() async {
+  if (_isDisposed) return;
+  
+  // Primera verificación inmediata
+  await _checkInternetAccessWithIsolate();
+  
+  // Cancelar cualquier timer existente
+  _connectivityCheckTimer?.cancel();
+  
+  // Configurar verificación periódica pero solo si no hay banner mostrándose
+  _connectivityCheckTimer = Timer.periodic(Duration(seconds: 15), (timer) async {
+    // Solo verificar periódicamente si está en primer plano y montado
+    if (!_isDisposed && mounted) {
+      // Si hay conexión, verificamos periódicamente de forma discreta
+      // Si no hay conexión, verificamos solo cuando el usuario lo solicite explícitamente
+      if (_hasInternetAccess) {
+        await _checkInternetAccessWithIsolate();
+      }
+    }
+  });
+}
+
+// Método para verificar conectividad real con isolate
+// Método para verificar conectividad real con isolate
+Future<void> _checkInternetAccessWithIsolate() async {
+  if (_isDisposed) return;
+  
+  // Solo marcar como verificando si no estamos ya verificando
+  if (mounted && !_isCheckingConnectivity) {
+    setState(() {
+      _isCheckingConnectivity = true;
+    });
+  }
+  
+  _terminateConnectivityIsolate();
+  _receivePort = ReceivePort();
+  bool previousStatus = _hasInternetAccess;
+  
+  try {
+    // Verificar primero la conexión a nivel de interfaz
+    final results = await _connectivity.checkConnectivity();
+    ConnectivityResult result = results.isNotEmpty ? results.first : ConnectivityResult.none;
+    bool interfaceConnected = result != ConnectivityResult.none;
+    
+    // Si no hay interfaz conectada, no hay necesidad de verificar internet
+    if (!interfaceConnected) {
+      if (mounted) {
+        setState(() {
+          _isConnected = false;
+          _hasInternetAccess = false;
+          _isCheckingConnectivity = false;
+        });
+      }
+      return;
+    }
+    
+    // Actualizar estado de la interfaz
+    if (mounted) {
+      setState(() {
+        _isConnected = interfaceConnected;
+      });
+    }
+    
+    // Solo verificar internet real si hay interfaz conectada
+    if (interfaceConnected) {
+      _connectivityIsolate = await Isolate.spawn(
+        _connectivityCheckIsolate,
+        [_receivePort!.sendPort],
+      );
+      
+      final result = await _receivePort!.first.timeout(
+        Duration(seconds: 5),
+        onTimeout: () => false,
+      );
+      
+      bool newStatus = result is bool ? result : false;
+      
+      // Importante: Siempre actualizar el estado cuando terminamos de verificar
+      if (mounted) {
+        setState(() {
+          _hasInternetAccess = newStatus;
+          _isCheckingConnectivity = false;
+        });
+        
+        print("Resultado verificación internet: $newStatus (cambiado: ${newStatus != previousStatus})");
+        
+        // Solo refrescar si la conectividad regresó
+        if (newStatus && !previousStatus && !_isLoadingFiltered) {
+          _refreshFilteredProducts();
+          _loadAllProducts(); // También actualizar todos los productos
+        }
+      }
+    }
+  } catch (e) {
+    print("Error en verificación: $e");
+    if (mounted) {
+      setState(() {
+        _hasInternetAccess = false;
+        _isCheckingConnectivity = false;
+      });
+    }
+  } finally {
+    _terminateConnectivityIsolate();
+  }
+}
+
+// Método para limpiar el isolate
+void _terminateConnectivityIsolate() {
+  _connectivityIsolate?.kill(priority: Isolate.immediate);
+  _connectivityIsolate = null;
+  _receivePort?.close();
+  _receivePort = null;
+}
 
   // Método seguro para verificar conectividad
   Future<void> _checkConnectivity() async {
@@ -89,21 +324,29 @@ void dispose() {
     }
   }
 
-  // Handle connectivity changes
-  void _handleConnectivityChange(ConnectivityResult result) {
-    bool isConnected = result != ConnectivityResult.none;
-    
-    if (mounted) {
+// Handle connectivity changes
+void _handleConnectivityChange(ConnectivityResult result) {
+  bool isConnected = result != ConnectivityResult.none;
+  
+  if (mounted) {
+    setState(() {
+      _isConnected = isConnected;
+    });
+  
+    // Si la conexión se perdió a nivel de interfaz, actualizar inmediatamente
+    if (!isConnected && mounted) {
       setState(() {
-        _isConnected = isConnected;
+        _hasInternetAccess = false;
+        _isCheckingConnectivity = false;
       });
-    
-      // Si la conexión se restaura, intentar actualizar productos personalizados primero
-      if (isConnected && !_isLoadingFiltered) {
-        _refreshFilteredProducts();
-      }
+    }
+    // Si la conexión se restaura a nivel de interfaz, verificar internet real
+    // Pero solo si no estamos ya verificando
+    else if (isConnected && !_isCheckingConnectivity) {
+      _checkInternetAccessWithIsolate();
     }
   }
+}
 
   // Cargar productos personalizados desde caché (rápido)
   Future<void> _loadFilteredProductsFromCache() async {
@@ -409,67 +652,96 @@ Widget _buildNetworkImage(ProductModel product) {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(
-          "Explore",
-          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Network status indicator
-            if (!_isConnected)
-              Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: Icon(
-                  CupertinoIcons.wifi_slash,
-                  size: 18,
-                  color: CupertinoColors.systemRed,
-                ),
-              ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _navigateToSearch,
-              child: const Icon(
-                CupertinoIcons.search,
-                size: 26,
-                color: AppColors.primaryBlue,
+@override
+void didChangeAppLifecycleState(AppLifecycleState state) {
+  // Solo realizar verificación cuando la app vuelve a primer plano
+  if (state == AppLifecycleState.resumed) {
+    _performSingleConnectivityCheck();
+  }
+}
+
+@override
+void didChangeDependencies() {
+  super.didChangeDependencies();
+  
+  // Solo realizar una verificación completa si no estamos ya verificando
+  if (!_isCheckingConnectivity) {
+    _performSingleConnectivityCheck();
+  }
+}
+
+@override
+Widget build(BuildContext context) {
+  // Definir correctamente cuándo estamos offline
+  bool isOffline = !_hasInternetAccess;
+  
+  return CupertinoPageScaffold(
+    navigationBar: CupertinoNavigationBar(
+      middle: Text(
+        "Explore",
+        style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Network status indicator - solo mostrar si estamos offline
+          if (isOffline && !_isCheckingConnectivity)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Icon(
+                CupertinoIcons.wifi_slash,
+                size: 18,
+                color: CupertinoColors.systemRed,
               ),
             ),
-          ],
-        ),
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: _navigateToSearch,
+            child: const Icon(
+              CupertinoIcons.search,
+              size: 26,
+              color: AppColors.primaryBlue,
+            ),
+          ),
+        ],
       ),
-      child: Stack(
-        children: [
-          SafeArea(
-            child: Column(
-              children: [
-                // Offline banner
-                if (!_isConnected)
-                  Container(
-                    width: double.infinity,
-                    color: CupertinoColors.systemYellow.withOpacity(0.3),
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          CupertinoIcons.exclamationmark_triangle,
-                          size: 16,
-                          color: CupertinoColors.systemYellow,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            "You are offline. Viewing cached products.",
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: CupertinoColors.systemGrey,
+    ),
+    child: Stack(
+      children: [
+        SafeArea(
+          child: Column(
+            children: [
+              // Banner de conexión - mostrar si estamos offline o verificando
+              if (isOffline || _isCheckingConnectivity)
+                Container(
+                  // resto del código del banner...
+                  width: double.infinity,
+                  color: CupertinoColors.systemYellow.withOpacity(0.3),
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                  child: Row(
+                    children: [
+                      _isCheckingConnectivity 
+                          ? CupertinoActivityIndicator(radius: 8)
+                          : const Icon(
+                              CupertinoIcons.exclamationmark_triangle,
+                              size: 16,
+                              color: CupertinoColors.systemYellow,
                             ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _isCheckingConnectivity
+                              ? "Checking internet connection..."
+                              : !_isConnected 
+                                ? "No network connection. Showing recent products."
+                                : "No internet connection. Showing recent products.",
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: CupertinoColors.systemGrey,
                           ),
                         ),
+                      ),
+                      if (!_isCheckingConnectivity)
                         CupertinoButton(
                           padding: EdgeInsets.zero,
                           minSize: 0,
@@ -480,11 +752,11 @@ Widget _buildNetworkImage(ProductModel product) {
                               color: AppColors.primaryBlue,
                             ),
                           ),
-                          onPressed: _onRefresh,
+                          onPressed: _handleRetryPressed,
                         ),
-                      ],
-                    ),
+                    ],
                   ),
+                ),
                 Expanded(
                   child: CustomScrollView(
                     physics: const BouncingScrollPhysics(
