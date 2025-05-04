@@ -8,6 +8,9 @@ import 'package:unimarket/core/routes.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:unimarket/data/hive_chat_storage.dart';
+import 'package:unimarket/data/sqlite_user_dao.dart';
+import 'package:unimarket/services/connectivity_service.dart';
+import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/data/hive_find_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -26,7 +29,21 @@ void main() async {
 
   await Hive.initFlutter();
   await HiveFindStorage.initialize();
+
+  // Initialize SQLite for users
+  final sqliteUserDAO = SQLiteUserDAO();
+  await sqliteUserDAO.initialize();
+  
+  // Initialize UserService to sync current user
+  final userService = UserService();
+  await userService.initialize();
  
+ // Try to sync the current user data immediately
+  var connectivityService = ConnectivityService();
+  
+  if (await connectivityService.checkConnectivity()) {
+    await userService.syncCurrentUser();
+  }
 
 
   if (kIsWeb) {

@@ -1,23 +1,37 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/data/hive_chat_storage.dart';
 import 'package:unimarket/models/chat_model.dart';
 import 'package:unimarket/models/message_model.dart';
 import 'package:unimarket/models/user_model.dart';
 import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/services/user_service.dart';
+import 'package:unimarket/services/user_db_service.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseDAO _firebaseDAO = FirebaseDAO();
   final UserService _userService = UserService();
   final HiveChatStorage _storage = HiveChatStorage();
+  final UserDBService _userDBService = UserDBService();
   final ConnectivityService _connectivityService = ConnectivityService();
   
   // Constructor asegurando la inicialización de Hive
+  // Constructor modifying the initialization
   ChatService() {
-    _ensureHiveInitialized();
+    _initializeServices();
+  }
+
+   Future<void> _initializeServices() async {
+    try {
+      await _ensureHiveInitialized();
+      await _userDBService.initialize();
+    } catch (e) {
+      print('ChatService: Error initializing services: $e');
+    }
   }
   
   Future<void> _ensureHiveInitialized() async {
@@ -137,8 +151,7 @@ class ChatService {
     }
   }
   
-  // Get all chats for current user
-  Stream<List<ChatModel>> getUserChats() {
+ Stream<List<ChatModel>> getUserChats() {
     if (currentUserId == null) {
       print('ChatService: getUserChats - No current user ID');
       return Stream.value([]);
@@ -154,6 +167,9 @@ class ChatService {
         if (cachedChats.isNotEmpty) {
           print('ChatService: Emitting ${cachedChats.length} cached chats');
           controller.add(cachedChats);
+          
+          // Also ensure we have users stored for each chat
+          _ensureChatParticipantsStored(cachedChats);
         }
         
         // Check connectivity before fetching from Firestore
@@ -169,6 +185,9 @@ class ChatService {
                   try {
                     print('ChatService: Got ${snapshot.docs.length} chats from server');
                     final List<ChatModel> chats = await _processChatsSnapshot(snapshot);
+                    
+                    // Ensure we save users to local database
+                    _ensureChatParticipantsStored(chats);
                     
                     // Add processed chats to stream
                     if (!controller.isClosed) {
@@ -217,7 +236,41 @@ class ChatService {
       return Stream.value([]);
     }
   }
+
+ Future<void> _ensureChatParticipantsStored(List<ChatModel> chats) async {
+  if (currentUserId == null) return;
   
+  try {
+    print('ChatService: Ensuring participants are stored for ${chats.length} chats');
+    
+    // First make sure current user is stored
+    final currentUserFirebase = await _firebaseDAO.getCurrentUserDetails();
+    if (currentUserFirebase != null) {
+      await _userDBService.saveUser(currentUserFirebase, isCurrentUser: true);
+      print('ChatService: Stored current user in local database');
+    }
+    
+    // Collect all participant IDs for preloading
+    final List<String> allParticipantIds = [];
+    
+    // Extract other participants
+    for (final chat in chats) {
+      final otherParticipants = chat.participants
+          .where((id) => id != currentUserId)
+          .toList();
+      
+      allParticipantIds.addAll(otherParticipants);
+    }
+    
+    // Preload all participants in bulk
+    await _userDBService.preloadChatParticipants(allParticipantIds);
+    
+  } catch (e) {
+    print('ChatService: Error ensuring participants stored: $e');
+  }
+}
+
+
   // Load chats from cache
   Future<List<ChatModel>> _loadCachedChats() async {
     try {
@@ -550,74 +603,85 @@ class ChatService {
   }
 
   // Get user details for a chat participant
-  Future<UserModel?> getChatParticipant(String chatId) async {
-    try {
-      print('ChatService: Getting participant for chat $chatId');
-      
-      if (currentUserId == null) {
-        print('ChatService: No current user ID');
-        return null;
-      }
-      
-      // Get the chat document
-      final chatDoc = await _chatsCollection.doc(chatId).get();
-      if (!chatDoc.exists) {
-        print('ChatService: Chat $chatId does not exist');
-        return null;
-      }
-      
-      final chatData = chatDoc.data() as Map<String, dynamic>;
-      
-      // Extract participants
-      List<String> participants = [];
-      try {
-        if (chatData.containsKey('participants') && chatData['participants'] is List) {
-          participants = List<String>.from(
-            (chatData['participants'] as List).map((item) => item.toString())
-          );
-          print('ChatService: Found participants: $participants');
-        } else {
-          print('ChatService: No participants found or invalid format');
-          return null;
-        }
-      } catch (e) {
-        print('ChatService: Error extracting participants: $e');
-        return null;
-      }
-      
-      // Check for empty participants
-      if (participants.isEmpty) {
-        print('ChatService: Empty participants list');
-        return null;
-      }
-      
-      // Filter out current user
-      final otherParticipants = participants.where((id) => id != currentUserId).toList();
-      
-      if (otherParticipants.isEmpty) {
-        print('ChatService: No other participants found');
-        return null;
-      }
-      
-      // Get the first other participant
-      final otherUserId = otherParticipants.first;
-      print('ChatService: Other user ID: $otherUserId');
-      
-      // Get user info
-      final userModel = await _userService.getUserById(otherUserId);
-      
-      if (userModel == null) {
-        print('ChatService: Could not fetch user info for $otherUserId');
-      } else {
-        print('ChatService: User retrieved: ${userModel.displayName}');
-      }
-      
-      return userModel;
-    } catch (e) {
-      print('ChatService: Error in getChatParticipant: $e');
+ Future<UserModel?> getChatParticipant(String chatId) async {
+  try {
+    print('ChatService: Getting participant for chat $chatId');
+    
+    if (currentUserId == null) {
+      print('ChatService: No current user ID');
       return null;
     }
+    
+    // Get the chat document
+    final chatDoc = await _chatsCollection.doc(chatId).get();
+    if (!chatDoc.exists) {
+      print('ChatService: Chat $chatId does not exist');
+      return null;
+    }
+    
+    final chatData = chatDoc.data() as Map<String, dynamic>;
+    
+    // Extract participants
+    List<String> participants = [];
+    try {
+      if (chatData.containsKey('participants') && chatData['participants'] is List) {
+        participants = List<String>.from(
+          (chatData['participants'] as List).map((item) => item.toString())
+        );
+        print('ChatService: Found participants: $participants');
+      } else {
+        print('ChatService: No participants found or invalid format');
+        return null;
+      }
+    } catch (e) {
+      print('ChatService: Error extracting participants: $e');
+      return null;
+    }
+    
+    // Check for empty participants
+    if (participants.isEmpty) {
+      print('ChatService: Empty participants list');
+      return null;
+    }
+    
+    // Filter out current user
+    final otherParticipants = participants.where((id) => id != currentUserId).toList();
+    
+    if (otherParticipants.isEmpty) {
+      print('ChatService: No other participants found');
+      return null;
+    }
+    
+    // Get the first other participant
+    final otherUserId = otherParticipants.first;
+    print('ChatService: Other user ID: $otherUserId');
+    
+    // Use a timeout to prevent hanging
+    UserModel? user;
+    try {
+      user = await _userDBService.getUserById(otherUserId);
+    } catch (e) {
+      print('ChatService: Error fetching user: $e');
+    }
+    
+    if (user == null) {
+      print('ChatService: Could not fetch user info for $otherUserId');
+      // Return a fallback user to avoid UI errors
+      return UserModel(
+        id: otherUserId,
+        displayName: 'User ${otherUserId.substring(0, otherUserId.length > 4 ? 4 : otherUserId.length)}',
+        email: '',
+      );
+    } else {
+      print('ChatService: User retrieved: ${user.displayName}');
+    }
+    
+    return user;
+  } catch (e) {
+    print('ChatService: Error in getChatParticipant: $e');
+    return null;
   }
+}
 
   // Send message
   Future<bool> sendMessage(String chatId, String text) async {

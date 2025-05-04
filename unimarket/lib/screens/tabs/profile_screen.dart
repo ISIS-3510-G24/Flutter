@@ -55,17 +55,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // Cargar perfil del usuario desde Firestore
-  Future<void> _loadUserProfile() async {
-    setState(() {
-      _isLoading = true;
-    });
-    
+ Future<void> _loadUserProfile() async {
+  setState(() {
+    _isLoading = true;
+  });
+  
+  try {
+    // First try to get the user from the service
     final profile = await _userService.getCurrentUserProfile();
+    
+    // If we failed to get a profile and we're offline, create a placeholder
+    if (profile == null) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        // Create a basic profile from FirebaseAuth user
+        setState(() {
+          _userProfile = UserModel(
+            id: user.uid,
+            displayName: user.displayName ?? "User",
+            email: user.email ?? "user@example.com",
+            photoURL: user.photoURL,
+            // Other fields remain null
+          );
+          _isLoading = false;
+        });
+        return;
+      }
+    }
+    
+    // Set the profile from the service
     setState(() {
       _userProfile = profile;
       _isLoading = false;
     });
+  } catch (e) {
+    print("Error loading user profile: $e");
+    setState(() {
+      _isLoading = false;
+    });
   }
+}
 
   // Método para seleccionar una imagen de la galería
   Future<void> _pickProfileImage() async {
