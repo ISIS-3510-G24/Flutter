@@ -58,9 +58,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       // Check for current user
-      final currentUserId = _chatService.currentUserId;
-      final cachedCurrentid = await BiometricAuthService.getSavedUserID();
-      if (currentUserId == null && cachedCurrentid == null) {
+      // Try to get current user from chat service
+      String? currentUserId = _chatService.currentUserId;
+      // If null, fall back to cached biometric ID
+      currentUserId ??= await BiometricAuthService.getSavedUserID();
+
+      // If still null, show error
+      if (currentUserId == null) {
         print('ChatScreen: No current user (currentUserId is null)');
         setState(() {
           _isLoading = false;
