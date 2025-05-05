@@ -150,4 +150,8 @@ class AlgoliaService {
       print('Error clearing search history: $e');
     }
   }
+
+  Future<void> addSearchToHistory(String query) async {
+  return _addToSearchHistory(query);
+}
 }
