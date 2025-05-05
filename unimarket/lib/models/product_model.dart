@@ -4,6 +4,7 @@ class ProductModel {
   final String? id; // Document ID (null for new products)
   final String classId;
   final DateTime createdAt;
+  final List<String>? pendingImagePaths; // New field for local paths
   final String description;
   final List<String> imageUrls;
   final List<String> labels;
@@ -22,12 +23,15 @@ class ProductModel {
     required this.imageUrls,
     required this.labels,
     required this.majorID,
+    this.pendingImagePaths, // Optional field for offline mode
     required this.price,
     required this.sellerID,
     required this.status,
     required this.title,
     required this.updatedAt,
   });
+
+  
 
   // Factory constructor to create a ProductModel from a Firestore document
   factory ProductModel.fromMap(Map<String, dynamic> map, {String? docId}) {
@@ -73,6 +77,36 @@ class ProductModel {
     );
   }
 
+// Create a copy with some fields replaced
+  ProductModel copyWith({
+    String? id,
+    String? title,
+    double? price,
+    String? description,
+    List<String>? imageUrls,
+    List<String>? pendingImagePaths,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? sellerId,
+    String? category,
+    String? condition,
+    bool? isAvailable,
+  }) {
+    return ProductModel(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      price: price ?? this.price,
+      description: description ?? this.description,
+      imageUrls: imageUrls ?? this.imageUrls,
+      pendingImagePaths: pendingImagePaths ?? this.pendingImagePaths,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      sellerID: sellerId ?? this.sellerID,
+      classId: category ?? this.classId,
+      status: condition ?? this.status,
+      labels: isAvailable != null && isAvailable ? ['Available'] : this.labels, majorID: '',
+    );
+  }
   // Convert ProductModel to a Map for Firestore
   Map<String, dynamic> toMap() {
     return {

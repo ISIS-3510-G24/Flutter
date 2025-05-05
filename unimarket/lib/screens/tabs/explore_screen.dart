@@ -3,7 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:unimarket/screens/product/product_upload.dart';
+import 'package:unimarket/screens/product/product_upload_screen.dart';
 import 'package:unimarket/widgets/buttons/floating_action_button_factory.dart';
 import 'package:unimarket/services/product_service.dart';
 import 'package:unimarket/models/product_model.dart';
@@ -12,6 +12,8 @@ import 'package:unimarket/screens/product/product_detail_screen.dart';
 import 'package:unimarket/screens/search/search_screen.dart';
 import 'package:unimarket/services/product_cache_service.dart';
 import 'package:unimarket/services/connectivity_service.dart';
+import 'package:unimarket/screens/product/queued_product_indicator.dart';
+
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -24,6 +26,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   final ProductService _productService = ProductService();
   final ProductCacheService _cacheService = ProductCacheService();
   final ConnectivityService _connectivityService = ConnectivityService();
+  
   
   List<ProductModel> _allProducts = [];
   List<ProductModel> _filteredProducts = [];

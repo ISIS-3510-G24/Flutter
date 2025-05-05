@@ -1,96 +1,222 @@
+// File: lib/services/product_service.dart
+
+import 'dart:async';
+import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/models/product_model.dart';
+import 'package:unimarket/services/connectivity_service.dart';
+import 'package:unimarket/services/offline_queue_service.dart';
+import 'package:path/path.dart' as path;
 
+/// Service to handle product operations, both online and offline.
 class ProductService {
+  // Singleton implementation
+  static final ProductService _instance = ProductService._internal();
+  factory ProductService() => _instance;
+  ProductService._internal() {
+    // Sync internal cache whenever queue changes
+    _queueService.queueStream.listen((list) {
+      _latestQueue = list;
+      debugPrint('📋 Queue updated: ${list.length} items');
+    });
+  }
+
+  // Dependencies
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
+  final ConnectivityService _connectivityService = ConnectivityService();
+  final OfflineQueueService _queueService = OfflineQueueService();
 
-  // Fetch all products
-  Future<List<ProductModel>> fetchAllProducts() async {
+  // Internal cache for synchronous access
+  List<QueuedProductModel> _latestQueue = [];
+
+  // --- Legacy compatibility ---
+
+  /// No-op setter for older code expecting this method
+  void setProductService(ProductService svc) {
+    debugPrint('setProductService called (no-op)');
+  }
+
+  /// Synchronous access to all queued items
+  List<QueuedProductModel> getQueuedProducts() => List.unmodifiable(_latestQueue);
+
+  /// Legacy alias for synchronous access
+  List<QueuedProductModel> getAllQueuedProducts() => getQueuedProducts();
+
+  /// Stream of queued products
+  Stream<List<QueuedProductModel>> get queuedProductsStream => _queueService.queueStream;
+
+  /// Add a product to the offline queue
+  Future<String> addToQueue(ProductModel product) {
+    debugPrint('Adding product to queue: ${product.title}');
+    return _queueService.addToQueue(product);
+  }
+
+  /// Retry a specific queued upload
+  Future<void> retryQueuedUpload(String queueId) {
+    debugPrint('Retrying upload for queueId: $queueId');
+    return _queueService.retryQueuedUpload(queueId);
+  }
+
+  /// Legacy alias for retry
+  Future<void> retryUpload(String queueId) => retryQueuedUpload(queueId);
+
+  /// Remove a product from the queue
+  Future<void> removeFromQueue(String queueId) {
+    debugPrint('Removing from queue: $queueId');
+    return _queueService.removeFromQueue(queueId);
+  }
+
+  /// Check if there are pending uploads queued
+  bool hasPendingUploads() {
+    final has = _latestQueue.isNotEmpty;
+    debugPrint('hasPendingUploads: $has');
+    return has;
+  }
+
+  /// Manually trigger queue processing
+  Future<void> processQueue() {
+    debugPrint('Processing offline queue');
+    return _queueService.processQueue();
+  }
+
+  // --- Firestore CRUD operations ---
+
+  /// Fetch all products, optional filtering by major
+  Future<List<ProductModel>> fetchAllProducts({String? filter}) async {
     try {
-      // Get raw product data from FirebaseDAO without any filter
-      final List<Map<String, dynamic>> rawProducts = await _firebaseDAO.getAllProducts();
-      
-      // Convert raw data to ProductModel objects
-      final List<ProductModel> products = rawProducts.map((productData) {
-        return ProductModel.fromMap(productData, docId: productData['id']);
-      }).toList();
-      
-      return products;
+      final raw = await _firebaseDAO.getAllProducts(filter: filter);
+      debugPrint('Fetched all products (${raw.length})');
+      return raw
+        .map((m) => ProductModel.fromMap(m, docId: m['id'] as String))
+        .toList();
     } catch (e) {
-      print('Error fetching all products in ProductService: $e');
-      // Return empty list on error
+      debugPrint('Error fetching products: $e');
       return [];
     }
   }
 
-  // Fetch products based on user's major
+  /// Fetch products by current user's major
   Future<List<ProductModel>> fetchProductsByMajor() async {
-    try {
-      // Get the user's major
-      final String? userMajor = await _firebaseDAO.getUserMajor();
-      if (userMajor == null) {
-        print('User major not found');
-        return [];
-      }
-
-      // Get raw product data from FirebaseDAO with the user's major as filter
-      final List<Map<String, dynamic>> rawProducts = await _firebaseDAO.getAllProducts(filter: userMajor);
-      
-      // Convert raw data to ProductModel objects
-      final List<ProductModel> products = rawProducts.map((productData) {
-        return ProductModel.fromMap(productData, docId: productData['id']);
-      }).toList();
-      
-      return products;
-    } catch (e) {
-      print('Error fetching products by major in ProductService: $e');
-      // Return empty list on error
+    final major = await _firebaseDAO.getUserMajor();
+    if (major == null) {
+      debugPrint('No user major found');
       return [];
     }
+    debugPrint('Fetching products for major: $major');
+    return fetchAllProducts(filter: major);
   }
-  
-  // Create a new product
-  Future<String?> createProduct(ProductModel product) async {
+
+  /// Get a single product by ID
+  Future<ProductModel?> getProductById(String id) async {
     try {
-      // Convert ProductModel to Map
-      final productData = product.toMap();
-      
-      // Create product in Firestore
-      final productId = await _firebaseDAO.createProduct(productData);
-      return productId;
-    } catch (e) {
-      print('Error creating product in ProductService: $e');
-      return null;
-    }
-  }
-  
-  // Upload product image
-  Future<String?> uploadProductImage(String filePath) async {
-    return await _firebaseDAO.uploadProductImage(filePath);
-  }
-  
-  // Get product by ID
-  Future<ProductModel?> getProductById(String productId) async {
-    try {
-      final productData = await _firebaseDAO.getProductById(productId);
-      if (productData != null) {
-        return ProductModel.fromMap(productData, docId: productId);
+      final map = await _firebaseDAO.getProductById(id);
+      if (map == null) {
+        debugPrint('Product not found: $id');
+        return null;
       }
-      return null;
+      return ProductModel.fromMap(map, docId: id);
     } catch (e) {
-      print('Error getting product by ID in ProductService: $e');
+      debugPrint('Error getProductById: $e');
       return null;
     }
   }
-  
-  // Update product
-  Future<bool> updateProduct(String productId, ProductModel product) async {
+
+  /// Update existing product, falls back to offline queue if no connection
+  Future<bool> updateProduct(String id, ProductModel product) async {
+    final online = await _connectivityService.checkConnectivity();
+    if (!online) {
+      debugPrint('Offline: queueing update for $id');
+      await addToQueue(product.copyWith(id: id, updatedAt: DateTime.now()));
+      return true;
+    }
     try {
-      final productData = product.toMap();
-      return await _firebaseDAO.updateProduct(productId, productData);
+      final ok = await _firebaseDAO.updateProduct(id, product.toMap());
+      debugPrint('Product updated online: $ok');
+      return ok;
     } catch (e) {
-      print('Error updating product in ProductService: $e');
+      debugPrint('Error updating product: $e');
       return false;
+    }
+  }
+
+  /// Create new product, with offline fallback
+  Future<String?> createProduct(ProductModel product) async {
+    final online = await _connectivityService.checkConnectivity();
+    if (!online) {
+      debugPrint('Offline: queueing creation for ${product.title}');
+      return addToQueue(product);
+    }
+    try {
+      final urls = await _uploadPendingImages(
+        product.pendingImagePaths, product.imageUrls
+      );
+      final data = product.copyWith(
+        imageUrls: urls,
+        pendingImagePaths: [],
+        updatedAt: DateTime.now()
+      ).toMap();
+      final id = await _firebaseDAO.createProduct(data);
+      debugPrint('Product created online with ID: $id');
+      return id;
+    } catch (e) {
+      debugPrint('Online create failed, queueing: $e');
+      return addToQueue(product);
+    }
+  }
+
+  // --- Image handling helpers ---
+
+  /// Upload any pending local images, returning full list of URLs
+  Future<List<String>> _uploadPendingImages(
+      List<String>? pending, List<String> existing) async {
+    final out = List<String>.from(existing);
+    if (pending == null) return out;
+    for (var pth in pending) {
+      final url = await _uploadImage(pth);
+      if (url != null) out.add(url);
+    }
+    return out;
+  }
+
+  /// Upload a single image file to Firebase Storage
+  Future<String?> _uploadImage(String imagePath) async {
+    debugPrint('🔄 _uploadImage start: $imagePath');
+    try {
+      final f = File(imagePath);
+      if (!await f.exists()) throw 'Missing file: $imagePath';
+      final name = path.basename(imagePath);
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final ref = FirebaseStorage.instance
+        .ref('products/${_firebaseDAO.getCurrentUserId()}/$ts-$name');
+      final task = ref.putFile(f);
+      final snap = await task.timeout(const Duration(seconds: 30));
+      final url = await snap.ref.getDownloadURL();
+      debugPrint('✅ _uploadImage success: $url');
+      return url;
+    } catch (e) {
+      debugPrint('🚨 Upload error: $e');
+      return null;
+    }
+  }
+
+  /// Timeout-wrapped wrapper around DAO image upload
+  Future<String?> uploadProductImage(String filePath) async {
+    debugPrint('uploadProductImage called: $filePath');
+    try {
+      final url = await _firebaseDAO
+        .uploadProductImage(filePath)
+        .timeout(const Duration(seconds: 30));
+      debugPrint('uploadProductImage result: $url');
+      return url;
+    } on TimeoutException {
+      debugPrint('⏱️ uploadProductImage timeout');
+      return null;
+    } catch (e) {
+      debugPrint('🚨 uploadProductImage error: $e');
+      return null;
     }
   }
 }

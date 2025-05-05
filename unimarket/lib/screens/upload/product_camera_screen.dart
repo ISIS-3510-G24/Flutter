@@ -162,6 +162,8 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
     }
   }
 
+  
+
   void _startInitialization() {
     _initializationTimer?.cancel();
     _initializationTimer = Timer(Duration(seconds: 8), () {
