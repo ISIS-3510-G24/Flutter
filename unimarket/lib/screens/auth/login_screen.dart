@@ -5,9 +5,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/data/firebase_dao.dart';
-import 'package:local_auth/local_auth.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:unimarket/services/auth_storage_service.dart';
+import 'package:unimarket/services/connectivity_service.dart';
+
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback showRegisterPage;
@@ -20,16 +20,33 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final ConnectivityService _connectivityService = ConnectivityService();
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
+  bool _isCheckingConnectivity = false;
+  bool _isOffline = false;
+  bool _hasInternetAccess = true;
   Future<bool> _savedCredentialsFuture = Future.value(false);
+   StreamSubscription? _connectivitySubscription;
   bool _biometricsAvailable = false;
 
  @override
 void initState() {
   super.initState();
   _checkBiometrics();
+  _checkConnectivity();
   _loadSavedEmail();
+  _hasInternetAccess = _connectivityService.hasInternetAccess;
+  _isCheckingConnectivity = _connectivityService.isChecking;
   _savedCredentialsFuture = BiometricAuthService.hasSavedCredentials();
+
+  _connectivitySubscription = _connectivityService.connectivityStream.listen((hasInternet) {
+      if (mounted) {
+        setState(() {
+          _hasInternetAccess = hasInternet;
+        });
+        
+      }
+    });
 }
 
   Future<void> _checkBiometrics() async {
@@ -91,6 +108,30 @@ void initState() {
     _showLoginError('Login failed. Please try again.');
   }
 }
+
+  Future<void> _checkConnectivity() async {
+    
+    // Check connectivity
+    final bool hasInternet = await _connectivityService.checkConnectivity();
+    
+    if (mounted) {
+      setState(() {
+        _isOffline = !hasInternet;
+      });
+      
+    }
+  }
+   
+  void _handleRetryPressed() async {
+    // Force a connectivity check
+    bool hasInternet = await _connectivityService.checkConnectivity();
+    
+    // If there's internet, refresh data
+    
+  }
+  
+
+
 
 Future<void> _checkOfflineCredentials(String email, String password) async {
   try {
@@ -158,40 +199,87 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        backgroundColor: Color(0xFFf1f1f1),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // UniMarket image
-                ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(10),
-                    bottomRight: Radius.circular(10),
-                  ),
-                  child: Image.asset(
-                    'assets/images/PlainLogoWithBackground.png',
-                    width: double.infinity,
-                    height: 300,
-                    fit: BoxFit.cover,
+  // Get current connectivity state - make sure you have these variables defined in your state
+    bool isOffline = !_hasInternetAccess;
+  
+  return MaterialApp(
+    home: Scaffold(
+      backgroundColor: Color(0xFFf1f1f1),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Add the connection status banner at the top
+              if (isOffline || _isCheckingConnectivity)
+                Container(
+                  width: double.infinity,
+                  color: CupertinoColors.systemYellow.withOpacity(0.3),
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                  child: Row(
+                    children: [
+                      _isCheckingConnectivity 
+                          ? CupertinoActivityIndicator(radius: 8)
+                          : const Icon(
+                              CupertinoIcons.exclamationmark_triangle,
+                              size: 16,
+                              color: CupertinoColors.systemYellow,
+                            ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _isCheckingConnectivity
+                              ? "Checking internet connection..."
+                              : "No internet connection. Some features may not work.",
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: CupertinoColors.systemGrey,
+                          ),
+                        ),
+                      ),
+                      if (!_isCheckingConnectivity)
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          minSize: 0,
+                          child: Text(
+                            "Retry",
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: Colors.blue, // Changed to Material's blue
+                            ),
+                          ),
+                          onPressed: _handleRetryPressed,
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 20),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 25),
-                  child: Text(
-                    "Welcome!",
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 40,
-                      color: Colors.black,
-                    ),
+
+              // Rest of your existing content
+              ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(10),
+                  bottomRight: Radius.circular(10),
+                ),
+                child: Image.asset(
+                  'assets/images/PlainLogoWithBackground.png',
+                  width: double.infinity,
+                  height: 300,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 25),
+                child: Text(
+                  "Welcome!",
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 40,
+                    color: Colors.black,
                   ),
                 ),
-                const SizedBox(height: 40),
+              ),
+              const SizedBox(height: 40),
             
                 // Username textbox
                 Padding(
