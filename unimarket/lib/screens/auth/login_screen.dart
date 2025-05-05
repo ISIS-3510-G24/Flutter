@@ -154,22 +154,24 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
     _showLoginError('Could not verify credentials offline');
   }
 }
-
-  void _showOfflineWarning() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Offline Mode'),
-        content: const Text('You are using the app in offline mode. Some features may be limited.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
+void _showOfflineWarning() {
+  showCupertinoDialog(
+    context: context,
+    builder: (context) => CupertinoAlertDialog(
+      title: const Text('Offline Mode'),
+      content: const Text(
+        'You are using the app in offline mode. Some features may be limited.',
       ),
-    );
-  }
+      actions: [
+        CupertinoDialogAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.pop(context),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+}
 
   void _showLoginError(String errorMessage) {
     if (!mounted) return;
