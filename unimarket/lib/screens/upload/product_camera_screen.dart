@@ -365,12 +365,29 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
       }
     }
   }
-
-  Future<void> _startLightMode() async {
-    _initializingMode = "light";
-    if (_isDisposed) return;
-    _initializingMode = "";
+Future<void> _startLightMode() async {
+  _initializingMode = "light";
+  if (_isDisposed) return;
+  
+  // Esta es la línea que falta - iniciar el stream de imágenes para analizar luz
+  if (_cameraController != null && _cameraController!.value.isInitialized) {
+    try {
+      await _cameraController!.startImageStream((CameraImage image) {
+        _processCameraImage(image);
+      });
+      if (mounted) setState(() {
+        _feedback = "Light sensor active";
+      });
+    } catch (e) {
+      print("Error starting image stream: $e");
+      if (mounted) setState(() {
+        _feedback = "Error activating light sensor";
+      });
+    }
   }
+  
+  _initializingMode = "";
+}
 
   Future<void> _startMeasurementMode() async {
     if (_isDisposed) return;
