@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/models/product_model.dart';
+import 'package:unimarket/models/queued_product_model.dart';
 import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/services/offline_queue_service.dart';
 import 'package:path/path.dart' as path;
@@ -14,20 +15,37 @@ import 'package:path/path.dart' as path;
 /// Service to handle product operations, both online and offline.
 class ProductService {
   // Singleton implementation
+  
   static final ProductService _instance = ProductService._internal();
   factory ProductService() => _instance;
+
+  
+   // dependencias
+  final OfflineQueueService _queueService = OfflineQueueService();
+
   ProductService._internal() {
-    // Sync internal cache whenever queue changes
+    // 🔑 >>> inicializa carga de la cola desde disco
+    _queueService.initialize();                 // <--  NUEVA LÍNEA
+
+    // mantén sincronizada la caché interna
     _queueService.queueStream.listen((list) {
       _latestQueue = list;
       debugPrint('📋 Queue updated: ${list.length} items');
     });
   }
 
+
+  // Stream para el UI
+  Stream<List<QueuedProductModel>> get queuedProductsStream =>
+      _queueService.queueStream;
+
+  // Snapshot sincrónico (lo usamos como `initialData`)
+  List<QueuedProductModel> get queuedProductsSnapshot =>
+      _queueService.queuedProducts;
+
   // Dependencies
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
   final ConnectivityService _connectivityService = ConnectivityService();
-  final OfflineQueueService _queueService = OfflineQueueService();
 
   // Internal cache for synchronous access
   List<QueuedProductModel> _latestQueue = [];
@@ -45,8 +63,6 @@ class ProductService {
   /// Legacy alias for synchronous access
   List<QueuedProductModel> getAllQueuedProducts() => getQueuedProducts();
 
-  /// Stream of queued products
-  Stream<List<QueuedProductModel>> get queuedProductsStream => _queueService.queueStream;
 
   /// Add a product to the offline queue
   Future<String> addToQueue(ProductModel product) {
@@ -54,20 +70,34 @@ class ProductService {
     return _queueService.addToQueue(product);
   }
 
-  /// Retry a specific queued upload
-  Future<void> retryQueuedUpload(String queueId) {
-    debugPrint('Retrying upload for queueId: $queueId');
-    return _queueService.retryQueuedUpload(queueId);
+ Future<void> retryQueuedUpload(String id) async {
+  debugPrint('🔄 Reintentando subida: $id');
+  try {
+    await _queueService.retryQueuedUpload(id);
+    // Si estamos online, procesar la cola inmediatamente
+    if (_connectivityService.hasInternetAccess) {
+      debugPrint('🌐 Online, procesando cola después de reintento');
+      processQueue();
+    }
+    debugPrint('✅ Reintento programado: $id');
+  } catch (e) {
+    debugPrint('❌ Error al reintentar subida $id: $e');
   }
+}
 
   /// Legacy alias for retry
   Future<void> retryUpload(String queueId) => retryQueuedUpload(queueId);
 
-  /// Remove a product from the queue
-  Future<void> removeFromQueue(String queueId) {
-    debugPrint('Removing from queue: $queueId');
-    return _queueService.removeFromQueue(queueId);
+ Future<void> removeFromQueue(String id) async {
+  debugPrint('🗑️ Removiendo producto de la cola: $id');
+  try {
+    await _queueService.removeFromQueue(id);
+    // Notificar a los listeners si es necesario
+    debugPrint('✅ Producto removido de la cola: $id');
+  } catch (e) {
+    debugPrint('❌ Error al remover producto $id: $e');
   }
+}
 
   /// Check if there are pending uploads queued
   bool hasPendingUploads() {
@@ -76,11 +106,15 @@ class ProductService {
     return has;
   }
 
-  /// Manually trigger queue processing
-  Future<void> processQueue() {
-    debugPrint('Processing offline queue');
-    return _queueService.processQueue();
+ Future<void> processQueue() async {
+  debugPrint('🔄 ProductService.processQueue() llamado');
+  try {
+    await _queueService.processQueue();
+    debugPrint('✅ Cola procesada desde ProductService');
+  } catch (e) {
+    debugPrint('❌ Error al procesar cola desde ProductService: $e');
   }
+}
 
   // --- Firestore CRUD operations ---
 

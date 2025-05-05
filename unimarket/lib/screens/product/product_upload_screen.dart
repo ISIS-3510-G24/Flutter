@@ -454,8 +454,7 @@ Future<void> _fetchAvailableMajors() async {
     }
     return null;
   }
-
-  Future<void> _submitForm() async {
+Future<void> _submitForm() async {
   // Validaciones
   if (_titleController.text.trim().isEmpty) {
     _showErrorAlert('Please enter a title');
@@ -481,11 +480,11 @@ Future<void> _fetchAvailableMajors() async {
   });
 
   try {
-    // Rechecamos conectividad
+    // Chequeo de conectividad
     final hasInternet = await _connectivityService.checkConnectivity();
     if (mounted) setState(() => _isOffline = !hasInternet);
 
-    // Construimos el modelo de producto
+    // Construcción del modelo
     final now = DateTime.now();
     final productModel = ProductModel(
       id: null,
@@ -506,21 +505,22 @@ Future<void> _fetchAvailableMajors() async {
     );
 
     if (_isOffline) {
-      // Offline: encolar
+      // OFFLINE: encolar
       final queueId = await _productService.createProduct(productModel);
       _showSuccessDialogOffline(
         'Producto en cola',
         'Se guardó con ID $queueId y se subirá cuando estés online.',
       );
       await _clearDraft();
+      return;
     } else {
-      // Online: delegar al service
+      // ONLINE: intentar subir
       final resultId = await _productService.createProduct(productModel);
       if (resultId != null) {
         _showSuccessAlert('¡Producto subido exitosamente!');
         await _clearDraft();
       } else {
-        // Si retorna null, encolamos igual
+        // Si retorna null, encolamos
         final queueId = await _productService.createProduct(productModel);
         _showSuccessDialogOffline(
           'Guardado en cola',
@@ -825,6 +825,23 @@ Future<String?> _uploadImageWithRetries(String filePath) async {
   }
 }
 
+void _navigateToQueueScreen() {
+  Navigator.of(context).push(
+    CupertinoPageRoute(builder: (_) => const QueuedProductsScreen()),
+  );
+}
+
+Widget _buildViewQueueButton() {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(8),
+    child: CupertinoButton(
+      color: AppColors.primaryBlue,
+      onPressed: _navigateToQueueScreen,
+      child: const Text('Ver Cola'),
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -1308,20 +1325,39 @@ Future<String?> _uploadImageWithRetries(String filePath) async {
                           ),
                           const SizedBox(height: 32),
 
-                          Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(8),
-    child: CupertinoButton(
-      color: CupertinoColors.systemGrey,
-      child: Text("DEBUG: Toggle Offline Mode"),
-      onPressed: () {
-        setState(() => _isOffline = !_isOffline);
-        debugPrint('🔧 DEBUG: Offline mode ${_isOffline ? "enabled" : "disabled"}');
-      },
+    // Submit button
+    SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: CupertinoButton(
+      padding: EdgeInsets.zero,
+      color: CupertinoColors.white,
+      borderRadius: BorderRadius.circular(8),
+      onPressed: _navigateToQueueScreen,
+      child: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+        border: Border.all(
+          color: AppColors.primaryBlue,
+          width: 2,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        ),
+        alignment: Alignment.center,
+        child: const Text(
+        'Recent Uploads',
+        style: TextStyle(
+          color: AppColors.primaryBlue,
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+        ),
+        ),
+      ),
+      ),
     ),
-                          ),
-                          
-                          // Submit button
+                          const SizedBox(height: 16),
+
                           SizedBox(
                             width: double.infinity,
                             height: 50,

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:unimarket/models/queued_product_model.dart';
 import 'package:unimarket/services/product_service.dart';
 import 'package:unimarket/services/offline_queue_service.dart';
 import 'package:unimarket/theme/app_colors.dart';

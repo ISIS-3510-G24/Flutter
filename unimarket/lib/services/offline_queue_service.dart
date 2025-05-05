@@ -2,337 +2,377 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:unimarket/models/queued_product_model.dart';
 import 'package:uuid/uuid.dart';
-import 'package:unimarket/models/product_model.dart';
+
 import 'package:unimarket/services/connectivity_service.dart';
+import 'package:unimarket/data/firebase_dao.dart';
+import 'package:unimarket/models/product_model.dart';
 
-// Define a QueuedProductModel to store product queue information
-class QueuedProductModel {
-  final String queueId;
-  final ProductModel product;
-  final String status; // 'queued', 'uploading', 'completed', 'failed'
-  final DateTime queuedTime;
-  final String? errorMessage;
-  final int retryCount;
-
-  QueuedProductModel({
-    required this.queueId,
-    required this.product,
-    required this.status,
-    required this.queuedTime,
-    this.errorMessage,
-    this.retryCount = 0,
-  });
-
-  // Convert to map for storage
-  Map<String, dynamic> toJson() {
-    return {
-      'queueId': queueId,
-      'product': product.toJson(),
-      'status': status,
-      'queuedTime': queuedTime.toIso8601String(),
-      'errorMessage': errorMessage,
-      'retryCount': retryCount,
-    };
-  }
-
-  // Create from map for retrieval
-  factory QueuedProductModel.fromJson(Map<String, dynamic> json) {
-    return QueuedProductModel(
-      queueId: json['queueId'],
-      product: ProductModel.fromJson(json['product']),
-      status: json['status'],
-      queuedTime: DateTime.parse(json['queuedTime']),
-      errorMessage: json['errorMessage'],
-      retryCount: json['retryCount'] ?? 0,
-    );
-  }
-
-  // Create a copy with updated fields
-  QueuedProductModel copyWith({
-    String? queueId,
-    ProductModel? product,
-    String? status,
-    DateTime? queuedTime,
-    String? errorMessage,
-    int? retryCount,
-  }) {
-    return QueuedProductModel(
-      queueId: queueId ?? this.queueId,
-      product: product ?? this.product,
-      status: status ?? this.status,
-      queuedTime: queuedTime ?? this.queuedTime,
-      errorMessage: errorMessage ?? this.errorMessage,
-      retryCount: retryCount ?? this.retryCount,
-    );
-  }
-}
-
+/// ***Servicio Singleton que gestiona la cola***
 class OfflineQueueService {
-  // Singleton implementation
+  // ---- Singleton ----
   static final OfflineQueueService _instance = OfflineQueueService._internal();
   factory OfflineQueueService() => _instance;
   OfflineQueueService._internal();
 
-  // Dependencies
+  // ---- Dependencias ----
   final ConnectivityService _connectivityService = ConnectivityService();
-  
-  // Stream controller for queue updates
-  final _queueStreamController = StreamController<List<QueuedProductModel>>.broadcast();
-  
-  // Internal queue state
+  final FirebaseDAO _firebaseDAO = FirebaseDAO();
+
+  // ---- Estado interno ----
   List<QueuedProductModel> _queuedProducts = [];
   bool _isProcessing = false;
   Timer? _processingTimer;
-  
-  // Constants
-  static const String _queueStorageKey = 'offline_product_queue';
-  static const int _maxRetryCount = 3;
+  // Añadimos la variable de suscripción para manejar los listeners
+  StreamSubscription? _connectivitySubscription;
+
+  // ---- Constantes ----
+  static const String _storageKey = 'offline_product_queue';
+  static const int _maxRetries = 3;
   static const Duration _retryDelay = Duration(minutes: 5);
-  
-  // Getters
-  Stream<List<QueuedProductModel>> get queueStream => _queueStreamController.stream;
-  List<QueuedProductModel> get queuedProducts => List.unmodifiable(_queuedProducts);
-  
-  // Initialize service
+
+  // ---- **** Stream **** ----
+  // 1) Este controller solo emite *cambios* posteriores
+  final _internalController =
+      StreamController<List<QueuedProductModel>>.broadcast();
+
+  // 2) Este getter emite el snapshot actual **y** luego sigue
+  Stream<List<QueuedProductModel>> get queueStream =>
+      Stream.multi((controller) {
+        // snapshot inmediato — soluciona el "no se ve nada" estando offline
+        controller.add(List.unmodifiable(_queuedProducts));
+
+        // subsiguientes cambios
+        final sub = _internalController.stream.listen(controller.add);
+        controller.onCancel = () => sub.cancel();
+      });
+
+  // 3) Getter síncrono para usar como `initialData`
+  List<QueuedProductModel> get queuedProducts =>
+      List.unmodifiable(_queuedProducts);
+
+  // ---------------------------------------------------------------------------
+  // Inicialización
+  // ---------------------------------------------------------------------------
   Future<void> initialize() async {
-    // Load existing queued products
-    await _loadQueuedProducts();
-    
-    // Set up listener for connectivity changes
-    _connectivityService.connectivityStream.listen(_handleConnectivityChange);
-    
-    // Start periodic check for retrying uploads
-    _setupPeriodicCheck();
+    debugPrint('🔧 Inicializando OfflineQueueService');
+    try {
+      await _loadQueuedProducts(); // carga lo que había en disco
+      debugPrint('📦 Cargados ${_queuedProducts.length} productos en la cola');
+      
+      // Cancelar suscripciones anteriores para evitar duplicados
+      _connectivitySubscription?.cancel();
+      
+      // Suscribirse a cambios de conectividad
+      _connectivitySubscription = _connectivityService.connectivityStream.listen(_onConnectivityChange);
+      debugPrint('🔌 Listener de conectividad configurado');
+      
+      // Configurar verificación periódica
+      _setupPeriodicCheck();
+      debugPrint('⏰ Verificación periódica configurada');
+      
+      // Verificar inmediatamente si hay conexión y procesar
+      _processIfOnline();
+      
+      debugPrint('✅ OfflineQueueService inicializado correctamente');
+    } catch (e, st) {
+      debugPrint('🚨 Error al inicializar OfflineQueueService: $e\n$st');
+      // Asegurar que incluso con error, la cola se inicialice vacía
+      _queuedProducts = [];
+      _notify();
+    }
   }
 
-  // Setup periodic check for retrying uploads
   void _setupPeriodicCheck() {
     _processingTimer?.cancel();
-    _processingTimer = Timer.periodic(const Duration(minutes: 15), (_) {
-      _processQueueIfOnline();
-    });
+    _processingTimer =
+        Timer.periodic(const Duration(minutes: 15), (_) => _processIfOnline());
+    debugPrint('⏱️ Temporizador de verificación configurado (cada 15 min)');
   }
 
-  // Handle connectivity change
-  void _handleConnectivityChange(bool hasInternet) {
+  void _onConnectivityChange(bool hasInternet) {
+    debugPrint('🔌 Cambio de conectividad detectado: $hasInternet');
+    
     if (hasInternet) {
-      _processQueueIfOnline();
+      // Agregar un pequeño retraso para asegurar que la conexión sea estable
+      Future.delayed(const Duration(seconds: 2), () async {
+        // Verificar nuevamente la conectividad para confirmar
+        if (await _connectivityService.checkConnectivity()) {
+          debugPrint('🔌 Conexión confirmada, procesando cola...');
+          processQueue();
+        }
+      });
     }
   }
 
-  // Process queue if device is online
-  Future<void> _processQueueIfOnline() async {
-    final hasInternet = await _connectivityService.checkConnectivity();
-    if (hasInternet && !_isProcessing) {
+  Future<void> _processIfOnline() async {
+    debugPrint('🔍 Verificando conectividad para procesar cola...');
+    if (await _connectivityService.checkConnectivity()) {
+      debugPrint('✅ Conexión disponible, procesando cola');
       processQueue();
+    } else {
+      debugPrint('❌ Sin conexión, no se procesará la cola ahora');
     }
   }
 
-  // Load queued products from storage
+  // ---------------------------------------------------------------------------
+  //  Carga / Guarda en SharedPreferences
+  // ---------------------------------------------------------------------------
   Future<void> _loadQueuedProducts() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final queuedProductsJson = prefs.getStringList(_queueStorageKey) ?? [];
-      
-      _queuedProducts = queuedProductsJson.map((json) {
-        try {
-          return QueuedProductModel.fromJson(jsonDecode(json));
-        } catch (e) {
-          debugPrint('Error parsing queued product: $e');
-          return null;
-        }
-      }).whereType<QueuedProductModel>().toList();
-      
-      // Notify listeners
-      _notifyQueueUpdated();
-      
-    } catch (e) {
-      debugPrint('Error loading queued products: $e');
+      final raw = prefs.getStringList(_storageKey) ?? [];
+
+      debugPrint('📂 Cargando cola desde SharedPreferences (${raw.length} elementos)');
+      _queuedProducts = raw
+          .map((s) => QueuedProductModel.fromJson(jsonDecode(s)))
+          .toList();
+
+      _notify(); // primer disparo para quien ya está escuchando
+      debugPrint('✅ Cola cargada exitosamente');
+    } catch (e, st) {
+      debugPrint('🚨 Error al cargar la cola: $e\n$st');
       _queuedProducts = [];
+      _notify();
     }
   }
 
-  // Save queued products to storage
   Future<void> _saveQueuedProducts() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final queuedProductsJson = _queuedProducts.map((product) => 
-        jsonEncode(product.toJson())).toList();
-      
-      await prefs.setStringList(_queueStorageKey, queuedProductsJson);
+      final raw = _queuedProducts.map((p) => jsonEncode(p.toJson())).toList();
+      await prefs.setStringList(_storageKey, raw);
+      debugPrint('💾 Cola guardada en SharedPreferences (${raw.length} elementos)');
     } catch (e) {
-      debugPrint('Error saving queued products: $e');
+      debugPrint('🚨 Error al guardar la cola: $e');
     }
   }
 
-  // Add a product to the queue
+  // ---------------------------------------------------------------------------
+  //  API pública
+  // ---------------------------------------------------------------------------
   Future<String> addToQueue(ProductModel product) async {
-    // Generate a unique ID for this queued item
-    final queueId = const Uuid().v4();
-    
-    // Create the queued product
-    final queuedProduct = QueuedProductModel(
-      queueId: queueId,
-      product: product,
-      status: 'queued',
-      queuedTime: DateTime.now(),
+    final id = const Uuid().v4();
+    debugPrint('➕ Añadiendo producto a la cola: ${product.title} (ID: $id)');
+
+    _queuedProducts.add(
+      QueuedProductModel(
+        queueId: id,
+        product: product,
+        status: 'queued',
+        queuedTime: DateTime.now(),
+      ),
     );
-    
-    // Add to queue
-    _queuedProducts.add(queuedProduct);
-    
-    // Save and notify
+
     await _saveQueuedProducts();
-    _notifyQueueUpdated();
-    
-    // If online, start processing
-    _processQueueIfOnline();
-    
-    return queueId;
+    _notify();
+    _processIfOnline();
+    debugPrint('✅ Producto añadido a la cola con ID: $id');
+
+    return id;
   }
 
-  // Update status of a queued product
-  Future<void> updateQueuedProductStatus(String queueId, String status, {String? errorMessage}) async {
-    final index = _queuedProducts.indexWhere((product) => product.queueId == queueId);
-    
-    if (index != -1) {
-      // Update the status
-      _queuedProducts[index] = _queuedProducts[index].copyWith(
-        status: status,
-        errorMessage: errorMessage,
-      );
-      
-      // If failed, increment retry count
-      if (status == 'failed') {
-        _queuedProducts[index] = _queuedProducts[index].copyWith(
-          retryCount: _queuedProducts[index].retryCount + 1,
-        );
-      }
-      
-      // Save and notify
-      await _saveQueuedProducts();
-      _notifyQueueUpdated();
+  Future<void> removeFromQueue(String id) async {
+    debugPrint('🗑️ Eliminando producto de la cola: $id');
+    _queuedProducts.removeWhere((p) => p.queueId == id);
+    await _saveQueuedProducts();
+    _notify();
+    debugPrint('✅ Producto eliminado de la cola: $id');
+  }
+
+  Future<void> retryQueuedUpload(String id) async {
+    debugPrint('🔄 Reintentando subida del producto: $id');
+    final idx = _queuedProducts.indexWhere((p) => p.queueId == id);
+    if (idx == -1) {
+      debugPrint('⚠️ Producto no encontrado en la cola: $id');
+      return;
     }
-  }
 
-  // Remove a product from the queue
-  Future<void> removeFromQueue(String queueId) async {
-    _queuedProducts.removeWhere((product) => product.queueId == queueId);
-    
-    // Save and notify
+    _queuedProducts[idx] = _queuedProducts[idx].copyWith(
+      status: 'queued',
+      errorMessage: null,
+    );
+
     await _saveQueuedProducts();
-    _notifyQueueUpdated();
+    _notify();
+    debugPrint('✅ Producto marcado para reintento: $id');
+    _processIfOnline();
   }
 
-  // Process the queue (upload pending products)
+  /// Procesa toda la cola (si no se está procesando ya).
   Future<void> processQueue() async {
-    if (_isProcessing) return;
+    if (_isProcessing) {
+      debugPrint('⚠️ Ya hay un procesamiento en curso, abortando');
+      return;
+    }
     
+    debugPrint('🔄 Iniciando procesamiento de cola');
+    _isProcessing = true;
+
     try {
-      _isProcessing = true;
-      
-      // Check for internet connection
-      final hasInternet = await _connectivityService.checkConnectivity();
-      if (!hasInternet) {
-        debugPrint('No internet connection, skipping queue processing');
+      // Verificar conectividad primero
+      if (!await _connectivityService.checkConnectivity()) {
+        debugPrint('📵 Sin conexión, abortando procesamiento');
+        _isProcessing = false;
         return;
       }
+
+      // Obtener productos para subir
+      final toUpload = _queuedProducts.where((qp) =>
+              qp.status == 'queued' ||
+              (qp.status == 'failed' && qp.retryCount < _maxRetries))
+          .toList();
+
+      debugPrint('📋 Productos para procesar: ${toUpload.length}');
       
-      // Get products that need to be uploaded
-      final productsToUpload = _queuedProducts.where((product) => 
-        product.status == 'queued' || 
-        (product.status == 'failed' && product.retryCount < _maxRetryCount)).toList();
-      
-      if (productsToUpload.isEmpty) {
-        debugPrint('No products to upload in queue');
+      if (toUpload.isEmpty) {
+        debugPrint('✅ No hay productos para procesar');
+        _isProcessing = false;
         return;
       }
-      
-      // Process each product
-      for (final product in productsToUpload) {
+
+      // Procesar cada producto
+      for (final qp in toUpload) {
+        debugPrint('⬆️ Procesando producto: ${qp.queueId} (${qp.product.title})');
+        await _updateStatus(qp.queueId, 'uploading');
+
         try {
-          // Mark as uploading
-          await updateQueuedProductStatus(product.queueId, 'uploading');
+          // ------------------- 1. subir imágenes -------------------
+          final uploaded = <String>[];
+          final pendingPaths = qp.product.pendingImagePaths ?? [];
           
-          // [THIS IS WHERE YOU WOULD INSERT ACTUAL UPLOAD LOGIC]
-          // For example:
-          // final success = await _firebaseDAO.uploadQueuedProduct(product.product);
+          debugPrint('🖼️ Subiendo ${pendingPaths.length} imágenes');
           
-          // For testing/placeholder, we'll simulate a success or failure
-          final success = true; // Replace with real implementation
-          
-          // Update status based on result
-          if (success) {
-            await updateQueuedProductStatus(product.queueId, 'completed');
+          for (final local in pendingPaths) {
+            // Verificar si el archivo existe
+            final file = File(local);
+            if (!await file.exists()) {
+              debugPrint('⚠️ Archivo no encontrado: $local');
+              throw 'Archivo no encontrado: $local';
+            }
             
-            // Schedule to remove completed items after some time
-            Timer(const Duration(hours: 24), () {
-              removeCompletedItems();
-            });
-          } else {
-            await updateQueuedProductStatus(
-              product.queueId, 
-              'failed', 
-              errorMessage: 'Upload failed'
-            );
+            // Subir imagen con timeout
+            String? url;
+            try {
+              url = await _firebaseDAO.uploadProductImage(local)
+                  .timeout(const Duration(seconds: 30));
+            } catch (e) {
+              debugPrint('⚠️ Error subiendo imagen: $e');
+              throw 'Error subiendo imagen: $e';
+            }
+            
+            if (url != null) {
+              uploaded.add(url);
+              debugPrint('✅ Imagen subida: $url');
+            } else {
+              debugPrint('⚠️ URL nula al subir $local');
+              throw 'Error subiendo $local: URL nula';
+            }
           }
+
+          // ------------------- 2. crear documento -------------------
+          debugPrint('📄 Creando documento del producto');
+          final updatedProduct = qp.product.copyWith(
+            imageUrls: [...qp.product.imageUrls, ...uploaded],
+            pendingImagePaths: [],
+            updatedAt: DateTime.now(),
+          );
+          
+          String? newId;
+          try {
+            newId = await _firebaseDAO.createProduct(updatedProduct.toMap())
+                .timeout(const Duration(seconds: 20));
+          } catch (e) {
+            debugPrint('⚠️ Error creando producto: $e');
+            throw 'Error creando producto: $e';
+          }
+          
+          if (newId == null) {
+            debugPrint('⚠️ ID nulo al crear producto');
+            throw 'createProduct devolvió null';
+          }
+
+          debugPrint('✅ Producto creado con ID: $newId');
+          await _updateStatus(qp.queueId, 'completed');
+          
+          // Limpieza diferida
+          Timer(const Duration(hours: 24), () {
+            removeCompletedItems();
+          });
         } catch (e) {
-          debugPrint('Error uploading queued product: $e');
-          await updateQueuedProductStatus(
-            product.queueId, 
-            'failed', 
-            errorMessage: 'Error: $e'
+          debugPrint('❌ Error procesando producto ${qp.queueId}: $e');
+          await _updateStatus(
+            qp.queueId,
+            'failed',
+            error: e.toString(),
           );
         }
       }
+      
+      debugPrint('✅ Procesamiento de cola completado');
+    } catch (e, st) {
+      debugPrint('🚨 Error general en processQueue: $e\n$st');
     } finally {
       _isProcessing = false;
     }
   }
 
-  // Manually retry uploading a specific product
-  Future<void> retryQueuedUpload(String queueId) async {
-    final index = _queuedProducts.indexWhere((product) => product.queueId == queueId);
+  Future<void> removeCompletedItems() async {
+    debugPrint('🧹 Limpiando productos completados antiguos');
+    final initialCount = _queuedProducts.length;
+    _queuedProducts.removeWhere((p) =>
+        p.status == 'completed' &&
+        DateTime.now().difference(p.queuedTime).inHours > 24);
     
-    if (index != -1) {
-      // Reset status to queued
-      _queuedProducts[index] = _queuedProducts[index].copyWith(
-        status: 'queued',
-        errorMessage: null,
-      );
-      
-      // Save and notify
+    final removedCount = initialCount - _queuedProducts.length;
+    if (removedCount > 0) {
+      debugPrint('🗑️ Se eliminaron $removedCount productos completados antiguos');
       await _saveQueuedProducts();
-      _notifyQueueUpdated();
-      
-      // Process queue if online
-      _processQueueIfOnline();
+      _notify();
+    } else {
+      debugPrint('ℹ️ No se encontraron productos completados antiguos para eliminar');
     }
   }
 
-  // Remove completed items that are more than 24 hours old
-  Future<void> removeCompletedItems() async {
-    final now = DateTime.now();
-    _queuedProducts.removeWhere((product) => 
-      product.status == 'completed' && 
-      now.difference(product.queuedTime).inHours > 24);
+  // ---------------------------------------------------------------------------
+  //  Auxiliares privados
+  // ---------------------------------------------------------------------------
+  Future<void> _updateStatus(String id, String status, {String? error}) async {
+    final idx = _queuedProducts.indexWhere((p) => p.queueId == id);
+    if (idx == -1) {
+      debugPrint('⚠️ No se encontró el producto $id para actualizar estado');
+      return;
+    }
+
+    debugPrint('🔄 Actualizando estado de $id a "$status"${error != null ? " (error: $error)" : ""}');
     
-    // Save and notify
+    var qp = _queuedProducts[idx].copyWith(status: status);
+    if (status == 'failed') {
+      qp = qp.copyWith(
+        retryCount: qp.retryCount + 1,
+        errorMessage: error,
+      );
+    }
+
+    _queuedProducts[idx] = qp;
     await _saveQueuedProducts();
-    _notifyQueueUpdated();
+    _notify();
+    debugPrint('✅ Estado actualizado para $id: $status');
   }
 
-  // Notify listeners of queue updates
-  void _notifyQueueUpdated() {
-    _queueStreamController.add(_queuedProducts);
-  }
+  void _notify() => _internalController.add(List.unmodifiable(_queuedProducts));
 
-  // Clean up resources
+  // ---------------------------------------------------------------------------
+  //  Limpieza
+  // ---------------------------------------------------------------------------
   void dispose() {
+    debugPrint('🧹 Limpiando recursos de OfflineQueueService');
     _processingTimer?.cancel();
-    _queueStreamController.close();
+    _connectivitySubscription?.cancel();
+    _internalController.close();
+    debugPrint('✅ OfflineQueueService limpiado correctamente');
   }
 }

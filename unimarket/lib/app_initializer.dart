@@ -100,8 +100,6 @@ class AppInitializer {
     // Comprobar conectividad y sincronizar usuario actual
     try {
 
-      await OfflineQueueService().initialize();
-
       print('AppInitializer: Checking connectivity...');
       final connectivityService = ConnectivityService();
       final isOnline = await _withTimeout(
