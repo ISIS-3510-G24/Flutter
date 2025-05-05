@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
+import 'package:unimarket/services/auth_storage_service.dart';
 import 'package:unimarket/services/image_cache_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -58,7 +59,8 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       // Check for current user
       final currentUserId = _chatService.currentUserId;
-      if (currentUserId == null) {
+      final cachedCurrentid = await BiometricAuthService.getSavedUserID();
+      if (currentUserId == null && cachedCurrentid == null) {
         print('ChatScreen: No current user (currentUserId is null)');
         setState(() {
           _isLoading = false;

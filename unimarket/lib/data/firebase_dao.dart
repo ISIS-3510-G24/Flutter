@@ -27,7 +27,7 @@ Future<bool> signIn(String email, String password) async {
     }
   }
 
-Future<bool> createUser(String email, String password, String bio, String displayName, String major )async {
+Future<String> createUser(String email, String password, String bio, String displayName, String major )async {
     try {
       
        UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
@@ -55,10 +55,10 @@ Future<bool> createUser(String email, String password, String bio, String displa
       "message": "Placeholder review",
     });
       print("User creation successful");
-      return true; 
+      return uid; 
     } catch (e) {
       print("User creation failed: $e");
-      return false;
+      return "fail";
     }
   }
 
@@ -71,6 +71,9 @@ Future<bool> createUser(String email, String password, String bio, String displa
   }
   String? getCurrentUserId() {
     return _auth.currentUser?.uid;
+  }
+  Future<String> getCurrentUserIdreal() async {
+    return _auth.currentUser!.uid;
   }
 
   Future<List<Map<String, dynamic>>> getAllProducts({String? filter}) async {

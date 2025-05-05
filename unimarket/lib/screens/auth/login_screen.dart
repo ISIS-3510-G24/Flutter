@@ -88,10 +88,10 @@ void initState() {
     // Try online login first with timeout
     final success = await _firebaseDAO.signIn(email, password)
       .timeout(const Duration(seconds: 10));
-    
+    String userID = await _firebaseDAO.getCurrentUserIdreal();
     if (success && mounted) {
       debugPrint('Online login successful');
-      await BiometricAuthService.saveCredentials(email, password);
+      await BiometricAuthService.saveCredentials(email, password, userID);
       Navigator.pushReplacementNamed(context, '/home');
       return;
     }
@@ -245,7 +245,7 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
                             "Retry",
                             style: GoogleFonts.inter(
                               fontSize: 12,
-                              color: Colors.blue, // Changed to Material's blue
+                              color: Colors.blue, 
                             ),
                           ),
                           onPressed: _handleRetryPressed,
