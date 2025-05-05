@@ -6,8 +6,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:unimarket/screens/payment/payment_screen.dart';
 import 'package:unimarket/services/product_service.dart';
+import 'package:unimarket/models/order_model.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:async';
+import 'package:unimarket/services/cache_orders_service.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -17,94 +19,88 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
-  int _selectedTab = 1; // Inicia en "Buying"
+  int _selectedTab = 1; // Default tab is "Buying"
   List<Map<String, dynamic>> buyingProducts = [];
   List<Map<String, dynamic>> historyProducts = [];
   List<Map<String, dynamic>> sellingProducts = [];
-  final ProductService _productService = ProductService(); // Instancia de ProductService
-
-  bool _isConnected = true; // Estado de conectividad
+  final ProductService _productService = ProductService();
+  final CacheOrdersService<String, List<Map<String, dynamic>>> _ordersCache =
+      CacheOrdersService(10, "30 minutes"); // Cache for 10 keys with a 30-minute expiration
+  bool _isConnected = true; // Connectivity state
   final Connectivity _connectivity = Connectivity();
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
-  @override
-  void initState() {
-    super.initState();
-    _setupConnectivityListener();
-    _fetchBuyingOrders();
-    _fetchHistoryOrders();
-    _fetchSellingOrders();
-    _checkAndShowPeakHourNotification(); // Llama al método para mostrar la notificación
+  void _checkAndShowPeakHourNotification() {
+    // Placeholder implementation for the method
+    print("Checking and showing peak hour notification...");
   }
 
   @override
+void initState() {
+  super.initState();
+  _initializeCache().then((_) {
+    _setupConnectivityListener();
+    _loadOrdersWithCache("buying", _fetchBuyingOrders);
+    _loadOrdersWithCache("history", _fetchHistoryOrders);
+    _loadOrdersWithCache("selling", _fetchSellingOrders);
+    _checkAndShowPeakHourNotification();
+  });
+}
+
+ Future<void> _initializeCache() async {
+  await _ordersCache.loadFromStorage(); // Carga los datos desde SharedPreferences
+  print("Cache loaded from storage: ${_ordersCache.get("buying")?.length ?? 0} buying items");
+  print("Cache loaded from storage: ${_ordersCache.get("history")?.length ?? 0} history items");
+  print("Cache loaded from storage: ${_ordersCache.get("selling")?.length ?? 0} selling items");
+}
+
+  @override
   void dispose() {
-    _connectivitySubscription?.cancel(); // Cancelar el listener de conectividad
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
   void _setupConnectivityListener() {
-    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> results) {
-      setState(() {
-        _isConnected = results.isNotEmpty && results.any((result) => result != ConnectivityResult.none);
-      });
+  _connectivitySubscription = _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> results) {
+    setState(() {
+      // Verifica si hay al menos un tipo de conexión disponible
+      _isConnected = results.isNotEmpty && results.any((result) => result != ConnectivityResult.none);
     });
+  });
+}
+
+  Future<void> _loadOrdersWithCache(
+    String cacheKey, Future<List<Map<String, dynamic>>> Function() fetchFunction) async {
+  // Verifica si los datos están en el caché
+  final cachedOrders = _ordersCache.get(cacheKey);
+  if (cachedOrders != null) {
+    print("Loaded $cacheKey orders from cache: ${cachedOrders.length} items");
+    setState(() {
+      if (cacheKey == "buying") buyingProducts = cachedOrders;
+      if (cacheKey == "history") historyProducts = cachedOrders;
+      if (cacheKey == "selling") sellingProducts = cachedOrders;
+    });
+    return;
   }
 
-  Future<void> _checkAndShowPeakHourNotification() async {
-    try {
-      final snapshot = await FirebaseFirestore.instance.collection('orders').get();
-      final orders = snapshot.docs;
+  // Si no están en el caché, se obtienen los datos del servidor
+  print("Fetching $cacheKey orders from server (first time)...");
+  final orders = await fetchFunction(); 
+await _ordersCache.put(cacheKey, orders);
+print("Orders type: ${orders.runtimeType}");
+print("Stored $cacheKey orders in cache: ${orders.length} items");
+  setState(() {
+    if (cacheKey == "buying") buyingProducts = orders;
+    if (cacheKey == "history") historyProducts = orders;
+    if (cacheKey == "selling") sellingProducts = orders;
+  });
+}
 
-      final Map<int, int> ordersByHour = {};
-      for (var order in orders) {
-        final orderDate = (order['orderDate'] as Timestamp).toDate();
-        final hour = orderDate.hour;
-
-        if (ordersByHour.containsKey(hour)) {
-          ordersByHour[hour] = ordersByHour[hour]! + 1;
-        } else {
-          ordersByHour[hour] = 1;
-        }
-      }
-
-      final sortedHours = ordersByHour.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-
-      if (sortedHours.isNotEmpty) {
-        final currentHour = DateTime.now().hour;
-        final peakHour = sortedHours.first.key;
-
-        if (currentHour == peakHour) {
-          _showPeakHourNotification();
-        }
-      }
-    } catch (e) {
-      print("Error analyzing orders: $e");
-    }
-  }
-
-  void _showPeakHourNotification() {
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text("Last Chance!"),
-        content: Text("Lots of users are buying now. Hurry up and place your order before your items sell out!"),
-        actions: [
-          CupertinoDialogAction(
-            child: Text("OK"),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _fetchBuyingOrders() async {
+  Future<List<Map<String, dynamic>>> _fetchBuyingOrders() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       print("User is not authenticated");
-      return;
+      return [];
     }
 
     try {
@@ -114,7 +110,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           .where('status', whereIn: ['Delivered', 'Purchased', 'Unpaid'])
           .get();
 
-      final List<Map<String, dynamic>> orders = await Future.wait(snapshot.docs.map((doc) async {
+      return await Future.wait(snapshot.docs.map((doc) async {
         final product = await _productService.getProductById(doc['productID']);
         return {
           "orderId": doc.id,
@@ -123,24 +119,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
           "details": "Order Date: ${doc['orderDate'].toDate()}",
           "status": doc['status'],
           "action": doc['status'] == "Delivered" ? "Help" : doc['status'] == "Unpaid" ? "Complete" : "",
-          "image": product != null && product.imageUrls.isNotEmpty ? product.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
+          "image": product != null && product.imageUrls.isNotEmpty
+              ? product.imageUrls[0]
+              : "assets/svgs/ImagePlaceHolder.svg",
           "price": _formatPrice(doc['price']),
         };
       }).toList());
-
-      setState(() {
-        buyingProducts = orders;
-      });
     } catch (e) {
-      print("Error fetching orders: $e");
+      print("Error fetching buying orders: $e");
+      return [];
     }
   }
 
-  Future<void> _fetchHistoryOrders() async {
+  Future<List<Map<String, dynamic>>> _fetchHistoryOrders() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       print("User is not authenticated");
-      return;
+      return [];
     }
 
     try {
@@ -150,7 +145,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           .where('status', isEqualTo: 'Completed')
           .get();
 
-      final List<Map<String, dynamic>> orders = await Future.wait(snapshot.docs.map((doc) async {
+      return await Future.wait(snapshot.docs.map((doc) async {
         final product = await _productService.getProductById(doc['productID']);
         return {
           "orderId": doc.id,
@@ -159,24 +154,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
           "details": "Order Date: ${doc['orderDate'].toDate()}",
           "status": doc['status'],
           "action": "Help",
-          "image": product != null && product.imageUrls.isNotEmpty ? product.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
+          "image": product != null && product.imageUrls.isNotEmpty
+              ? product.imageUrls[0]
+              : "assets/svgs/ImagePlaceHolder.svg",
           "price": _formatPrice(doc['price']),
         };
       }).toList());
-
-      setState(() {
-        historyProducts = orders;
-      });
     } catch (e) {
       print("Error fetching history orders: $e");
+      return [];
     }
   }
 
-  Future<void> _fetchSellingOrders() async {
+  Future<List<Map<String, dynamic>>> _fetchSellingOrders() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       print("User is not authenticated");
-      return;
+      return [];
     }
 
     try {
@@ -185,7 +179,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           .where('sellerID', isEqualTo: user.uid)
           .get();
 
-      final List<Map<String, dynamic>> orders = await Future.wait(snapshot.docs.map((doc) async {
+      return await Future.wait(snapshot.docs.map((doc) async {
         final product = await _productService.getProductById(doc['productID']);
         return {
           "orderId": doc.id,
@@ -194,16 +188,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
           "details": "Order Date: ${doc['orderDate'].toDate()}",
           "status": doc['status'],
           "action": "Modify",
-          "image": product != null && product.imageUrls.isNotEmpty ? product.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
+          "image": product != null && product.imageUrls.isNotEmpty
+              ? product.imageUrls[0]
+              : "assets/svgs/ImagePlaceHolder.svg",
           "price": _formatPrice(doc['price']),
         };
       }).toList());
-
-      setState(() {
-        sellingProducts = orders;
-      });
     } catch (e) {
       print("Error fetching selling orders: $e");
+      return [];
     }
   }
 
@@ -212,23 +205,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
     String priceString = wholePart.toString();
     String result = '';
 
-    if (priceString.length > 6) {
-      result = priceString[0] + "'";
-      String remainingDigits = priceString.substring(1);
-      for (int i = 0; i < remainingDigits.length; i++) {
-        result += remainingDigits[i];
-        int positionFromRight = remainingDigits.length - 1 - i;
-        if (positionFromRight % 3 == 0 && i < remainingDigits.length - 1) {
-          result += '.';
-        }
-      }
-    } else {
-      for (int i = 0; i < priceString.length; i++) {
-        result += priceString[i];
-        int positionFromRight = priceString.length - 1 - i;
-        if (positionFromRight % 3 == 0 && i < priceString.length - 1) {
-          result += '.';
-        }
+    for (int i = 0; i < priceString.length; i++) {
+      result += priceString[i];
+      int positionFromRight = priceString.length - 1 - i;
+      if (positionFromRight % 3 == 0 && i < priceString.length - 1) {
+        result += '.';
       }
     }
 
@@ -248,18 +229,32 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
+  void _clearCache() async {
+  await _ordersCache.clear(); // Borra el caché en memoria y en SharedPreferences
+  print("Cache cleared");
+  setState(() {
+    buyingProducts = [];
+    historyProducts = [];
+    sellingProducts = [];
+  });
+}
+
   @override
-  Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(
-          "Orders",
-          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-        ),
-        trailing: const Icon(CupertinoIcons.search, color: AppColors.primaryBlue),
+Widget build(BuildContext context) {
+  return CupertinoPageScaffold(
+    navigationBar: CupertinoNavigationBar(
+      middle: Text(
+        "Orders",
+        style: GoogleFonts.inter(fontWeight: FontWeight.bold),
       ),
-      child: Stack(
-        children: [
+      trailing: CupertinoButton(
+        padding: EdgeInsets.zero,
+        child: const Icon(CupertinoIcons.trash, color: AppColors.primaryBlue),
+        onPressed: _clearCache, // Llama al método para borrar el caché
+      ),
+    ),
+    child: Stack(
+      children: [
           SafeArea(
             child: Column(
               children: [
@@ -433,7 +428,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 padding: EdgeInsets.zero,
                 onPressed: () {
                   if (!_isConnected) {
-                    // Mostrar pop-up si no hay conexión
+                    // Show offline pop-up
                     showCupertinoDialog(
                       context: context,
                       builder: (ctx) => CupertinoAlertDialog(
@@ -448,7 +443,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       ),
                     );
                   } else {
-                    // Navegar a la pantalla de pagos si hay conexión
+                    // Navigate to payment screen
                     Navigator.push(
                       context,
                       CupertinoPageRoute(
