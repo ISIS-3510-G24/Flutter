@@ -8,6 +8,7 @@ import 'package:unimarket/models/measurement_model.dart';
 import 'package:unimarket/models/product_model.dart';
 import 'package:unimarket/screens/product/queued_products_screen.dart';
 import 'package:unimarket/services/connectivity_service.dart';
+import 'package:unimarket/services/product_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/screens/upload/product_camera_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -31,6 +32,7 @@ class UploadProductScreenState extends State<UploadProductScreen> {
   String? _imageUrl;
   final ConnectivityService _connectivityService = ConnectivityService();
   bool _isOffline = false;
+  final ProductService _productService = ProductService();
   MeasurementData? _measurementData;
   List<String> _measurementTexts = [];
 
@@ -199,20 +201,15 @@ class UploadProductScreenState extends State<UploadProductScreen> {
 
   // Clear all draft data after successful upload
   Future<void> _clearDraft() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('draft_title');
-      await prefs.remove('draft_desc');
-      await prefs.remove('draft_price');
-      await prefs.remove('draft_major');
-      await prefs.remove('draft_class');
-      await prefs.remove('draft_labels');
-      await prefs.remove('draft_image_path');
-    } catch (e) {
-      print("Error clearing draft: $e");
-      // Continue even if clearing fails
-    }
-  }
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove('draft_title');
+  await prefs.remove('draft_desc');
+  await prefs.remove('draft_price');
+  await prefs.remove('draft_major');
+  await prefs.remove('draft_class');
+  await prefs.remove('draft_labels');
+  await prefs.remove('draft_image_path');
+}
 
   // Save image to the device's photo library (iOS camera roll)
   Future<void> _saveImageToGallery(File imageFile) async {
@@ -457,75 +454,91 @@ Future<void> _fetchAvailableMajors() async {
     }
     return null;
   }
-Future<void> _submitForm() async {
 
-    debugPrint('🔍 Starting _submitForm()');
-  debugPrint('📱 State: isOffline=${_isOffline}, isLoading=${_isLoading}, isUploading=${_isUploading}');
-  
-  // Basic validations remain the same
+  Future<void> _submitForm() async {
+  // Validaciones
   if (_titleController.text.trim().isEmpty) {
     _showErrorAlert('Please enter a title');
     return;
   }
-  
   if (_descriptionController.text.trim().isEmpty) {
     _showErrorAlert('Please enter a description');
     return;
   }
-  
-  if (_priceController.text.trim().isEmpty ||
-      int.tryParse(_priceController.text.trim()) == null) {
+  final price = double.tryParse(_priceController.text.trim());
+  if (price == null) {
     _showErrorAlert('Please enter a valid price');
     return;
   }
-  
   if (_productImage == null) {
     _showErrorAlert('Please add at least one product image');
     return;
   }
 
-  // Mark as uploading to prevent multiple submissions
   setState(() {
     _isLoading = true;
     _isUploading = true;
   });
 
   try {
-    // Force connectivity check
-    final bool hasConnection = await _connectivityService.checkConnectivity();
-    
-    setState(() {
-      _isOffline = !hasConnection;
-    });
-    
-    debugPrint("Connection status: ${hasConnection ? 'ONLINE' : 'OFFLINE'}");
+    // Rechecamos conectividad
+    final hasInternet = await _connectivityService.checkConnectivity();
+    if (mounted) setState(() => _isOffline = !hasInternet);
 
-    // Handle offline mode
+    // Construimos el modelo de producto
+    final now = DateTime.now();
+    final productModel = ProductModel(
+      id: null,
+      title: _titleController.text.trim(),
+      price: price,
+      description: _descriptionController.text.trim(),
+      classId: _selectedClass != "No class"
+          ? _getClassIdFromName(_selectedClass) ?? ''
+          : '',
+      createdAt: now,
+      imageUrls: [],
+      pendingImagePaths: [_productImage!.path],
+      labels: _labels,
+      majorID: _selectedMajor != "No major" ? _selectedMajor : '',
+      sellerID: _firebaseDAO.getCurrentUserId() ?? '',
+      status: 'Available',
+      updatedAt: now,
+    );
+
     if (_isOffline) {
-      await _saveProductOffline();
+      // Offline: encolar
+      final queueId = await _productService.createProduct(productModel);
       _showSuccessDialogOffline(
-        "Product saved in queue",
-        "Your product has been saved locally and will be uploaded when you are back online."
+        'Producto en cola',
+        'Se guardó con ID $queueId y se subirá cuando estés online.',
       );
       await _clearDraft();
-      return;
+    } else {
+      // Online: delegar al service
+      final resultId = await _productService.createProduct(productModel);
+      if (resultId != null) {
+        _showSuccessAlert('¡Producto subido exitosamente!');
+        await _clearDraft();
+      } else {
+        // Si retorna null, encolamos igual
+        final queueId = await _productService.createProduct(productModel);
+        _showSuccessDialogOffline(
+          'Guardado en cola',
+          'No se subió inmediatamente; se encoló con ID $queueId.',
+        );
+        await _clearDraft();
+      }
     }
-    
-    // We're online - call the complete upload method
-    await _uploadProductOnline();
-    
   } catch (e) {
-    debugPrint("Error in submit process: $e");
-    _showErrorAlert('An error occurred: $e');
+    _showErrorAlert('Error al procesar: $e');
   } finally {
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _isUploading = false;
-      });
-    }
+    if (mounted) setState(() {
+      _isLoading = false;
+      _isUploading = false;
+    });
   }
 }
+
   // Handle offline product saving
   Future<void> _saveProductOffline() async {
     final now = DateTime.now();

@@ -7,6 +7,7 @@ import 'package:unimarket/data/hive_find_storage.dart';
 import 'package:unimarket/data/sqlite_user_dao.dart';
 import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/services/image_cache_service.dart';
+import 'package:unimarket/services/offline_queue_service.dart';
 import 'package:unimarket/services/user_service.dart';
 
 class AppInitializer {
@@ -98,6 +99,9 @@ class AppInitializer {
     
     // Comprobar conectividad y sincronizar usuario actual
     try {
+
+      await OfflineQueueService().initialize();
+
       print('AppInitializer: Checking connectivity...');
       final connectivityService = ConnectivityService();
       final isOnline = await _withTimeout(
