@@ -140,7 +140,7 @@ class ProductService {
       return [];
     }
     debugPrint('Fetching products for major: $major');
-    return fetchAllProducts(filter: major);
+  return (await fetchAllProducts(filter: major)).take(10).toList();
   }
 
   /// Get a single product by ID
