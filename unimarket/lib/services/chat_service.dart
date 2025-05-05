@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:unimarket/models/chat_model.dart';
@@ -449,102 +450,292 @@ Future<ChatModel?> _findExistingChat(String otherUserId) async {
     return null;
   }
 }
-
-  // Send a message with offline queueing
-  Future<bool> sendMessage(String chatId, String text) async {
-    try {
-      // Ensure message text is not empty
-      if (text.trim().isEmpty) {
-        print('ChatService: Cannot send empty message');
-        return false;
-      }
-      
-      // Get current user ID
-      final userId = currentUserId;
-      if (userId == null) {
-        print('ChatService: Cannot send message - no current user');
-        return false;
-      }
-      
-      // Create message object
-      final now = DateTime.now();
-      final messageId = 'local_${now.millisecondsSinceEpoch}_$userId';
-      
-      final message = MessageModel(
-        id: messageId,
-        chatId: chatId,
-        senderId: userId,
-        text: text,
-        timestamp: now,
+Future<bool> sendMessage(String chatId, String text) async {
+  try {
+    // Ensure message text is not empty
+    if (text.trim().isEmpty) {
+      print('ChatService: Cannot send empty message');
+      return false;
+    }
+    
+    // Get current user ID
+    final userId = currentUserId;
+    if (userId == null) {
+      print('ChatService: Cannot send message - no current user');
+      return false;
+    }
+    
+    // Check connectivity
+    final isOnline = await _connectivityService.checkConnectivity();
+    
+    // Create message object with appropriate initial status
+    final now = DateTime.now();
+    final messageId = 'local_${now.millisecondsSinceEpoch}_$userId';
+    
+    final message = MessageModel(
+      id: messageId,
+      chatId: chatId,
+      senderId: userId,
+      text: text,
+      timestamp: now,
+      status: isOnline ? MessageStatus.sending : MessageStatus.pending,
+    );
+    
+    // Save message locally first
+    await _localStorage.saveMessage(message);
+    
+    // Update chat with last message info
+    final chat = await _localStorage.getChat(chatId);
+    if (chat != null) {
+      final updatedChat = ChatModel(
+        id: chat.id,
+        participants: chat.participants,
+        lastMessage: text,
+        lastMessageTime: now,
+        lastMessageSenderId: userId,
+        hasUnreadMessages: true,
+        additionalData: chat.additionalData,
       );
       
-      // Save message locally first
-      await _localStorage.saveMessage(message);
+      await _localStorage.saveChat(updatedChat);
+    }
+    
+    // If offline, queue the message for later sending
+    if (!isOnline) {
+      print('ChatService: Device is offline, message queued for later sending');
+      await _addPendingMessage(chatId, messageId);
+      return true; // Locally successful
+    }
+    
+    // Send to Firestore
+    try {
+      // Create a new message document
+      final messageRef = _firestore
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .doc();
       
-      // Update chat with last message info
-      final chat = await _localStorage.getChat(chatId);
-      if (chat != null) {
-        final updatedChat = ChatModel(
-          id: chat.id,
-          participants: chat.participants,
-          lastMessage: text,
-          lastMessageTime: now,
-          lastMessageSenderId: userId,
-          hasUnreadMessages: true,
-          additionalData: chat.additionalData,
-        );
-        
-        await _localStorage.saveChat(updatedChat);
-      }
+      // Use server timestamp for better consistency
+      await messageRef.set({
+        'senderId': userId,
+        'text': text,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
       
-      // Check connectivity
-      final isOnline = await _connectivityService.checkConnectivity();
-      if (!isOnline) {
-        print('ChatService: Device is offline, message queued for later sending');
-        
-        // In a production app, you would set up a background sync task here
-        // to send queued messages when connectivity is restored
-        
-        return true; // Locally successful
-      }
+      // Update chat document with last message info
+      await _firestore.collection('chats').doc(chatId).update({
+        'lastMessage': text,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': userId,
+      });
       
-      // Send to Firestore
+      // Update message status to sent
+      final updatedMessage = message.copyWith(status: MessageStatus.sent);
+      await _localStorage.saveMessage(updatedMessage);
+      
+      print('ChatService: Message sent to Firestore');
+      return true;
+    } catch (firestoreError) {
+      print('ChatService: Error sending message to Firestore: $firestoreError');
+      
+      // Mark as failed in local storage
+      final failedMessage = message.copyWith(status: MessageStatus.failed);
+      await _localStorage.saveMessage(failedMessage);
+      
+      return true; // Still return true since the message was saved locally
+    }
+  } catch (e) {
+    print('ChatService: Error sending message: $e');
+    return false;
+  }
+}
+// Fix the method to properly access the Hive box
+Future<void> _addPendingMessage(String chatId, String messageId) async {
+  try {
+    // Correctly access the Hive box through the proper method
+    final box = await _localStorage.getMessageBox(); // Use a getter method instead of direct access
+    String pendingKey = 'pending_messages';
+    List<String> pendingMessages = [];
+    
+    // Get existing pending messages
+    final pendingData = box.get(pendingKey);
+    if (pendingData != null && pendingData is String) {
       try {
-        // Create a new message document
+        // Import dart:convert at the top of your file
+        final decoded = jsonDecode(pendingData); // Use jsonDecode from dart:convert
+        if (decoded is List) {
+          pendingMessages = List<String>.from(decoded);
+        }
+      } catch (e) {
+        print('ChatService: Error decoding pending messages: $e');
+      }
+    }
+    
+    // Add new message if not already in queue
+    final messageKey = '${chatId}_${messageId}';
+    if (!pendingMessages.contains(messageKey)) {
+      pendingMessages.add(messageKey);
+      await box.put(pendingKey, jsonEncode(pendingMessages)); // Use jsonEncode from dart:convert
+    }
+    
+    // Setup connectivity listener if not already active
+    _setupConnectivityListener();
+  } catch (e) {
+    print('ChatService: Error adding pending message: $e');
+  }
+}
+
+// Set up connectivity listener
+bool _isListeningForConnectivity = false;
+StreamSubscription? _connectivitySubscription;
+
+void _setupConnectivityListener() {
+  if (_isListeningForConnectivity) return;
+  
+  _isListeningForConnectivity = true;
+  _connectivitySubscription = _connectivityService.connectivityStream.listen((isConnected) {
+    if (isConnected) {
+      print('ChatService: Connection restored, sending pending messages');
+      _sendPendingMessages();
+    }
+  });
+}
+Future<void> _sendPendingMessages() async {
+  try {
+    // Get the pending message queue using proper accessor method
+    final box = await _localStorage.getMessageBox();
+    String pendingKey = 'pending_messages';
+    final pendingData = box.get(pendingKey);
+    
+    if (pendingData == null) return;
+    
+    List<String> pendingMessages = [];
+    try {
+      final decoded = jsonDecode(pendingData.toString());
+      if (decoded is List) {
+        pendingMessages = List<String>.from(decoded);
+      }
+    } catch (e) {
+      print('ChatService: Error decoding pending messages: $e');
+      return;
+    }
+    
+    if (pendingMessages.isEmpty) return;
+    
+    List<String> successfulSends = [];
+    
+    for (final messageKey in pendingMessages) {
+      // Parse chat ID and message ID
+      final parts = messageKey.split('_');
+      if (parts.length < 2) continue;
+      
+      final chatId = parts[0];
+      final messageId = messageKey.substring(chatId.length + 1);
+      
+      // Get message from storage
+      final String? messageData = box.get(messageKey);
+      if (messageData == null) continue;
+      
+      try {
+        final Map<String, dynamic> messageMap = jsonDecode(messageData);
+        
+        // Fix timestamp if needed
+        if (messageMap.containsKey('timestamp') && messageMap['timestamp'] is String) {
+          messageMap['timestamp'] = DateTime.parse(messageMap['timestamp']);
+        }
+        
+        final message = MessageModel.fromFirestore(messageMap, messageId);
+        
+        // Update status to sending
+        final sendingMessage = message.copyWith(status: MessageStatus.sending);
+        await _localStorage.saveMessage(sendingMessage);
+        
+        // Send to Firestore
+        final userId = message.senderId;
+        final text = message.text;
+        
         final messageRef = _firestore
             .collection('chats')
             .doc(chatId)
             .collection('messages')
             .doc();
         
-        // Use server timestamp for better consistency
         await messageRef.set({
           'senderId': userId,
           'text': text,
           'timestamp': FieldValue.serverTimestamp(),
         });
         
-        // Update chat document with last message info
+        // Update chat document
         await _firestore.collection('chats').doc(chatId).update({
           'lastMessage': text,
           'lastMessageTime': FieldValue.serverTimestamp(),
           'lastMessageSenderId': userId,
         });
         
-        print('ChatService: Message sent to Firestore');
-        return true;
-      } catch (firestoreError) {
-        print('ChatService: Error sending message to Firestore: $firestoreError');
+        // Mark as sent
+        final sentMessage = message.copyWith(status: MessageStatus.sent);
+        await _localStorage.saveMessage(sentMessage);
         
-        // Still return true since the message was saved locally
-        return true;
+        successfulSends.add(messageKey);
+      } catch (e) {
+        print('ChatService: Error sending pending message $messageId: $e');
       }
-    } catch (e) {
-      print('ChatService: Error sending message: $e');
+    }
+    
+    // Remove successfully sent messages from the queue
+    pendingMessages.removeWhere((key) => successfulSends.contains(key));
+    await box.put(pendingKey, jsonEncode(pendingMessages));
+    
+  } catch (e) {
+    print('ChatService: Error sending pending messages: $e');
+  }
+}
+
+
+// Add method to retry a failed message
+Future<bool> retryMessage(String chatId, String messageId) async {
+  try {
+    final box = await _localStorage.getMessageBox();
+    final messageKey = '${chatId}_${messageId}';
+    final String? messageData = box.get(messageKey);
+    
+    if (messageData == null) {
+      print('ChatService: Message not found for retry: $messageId');
       return false;
     }
+    
+    // Get the message
+    final Map<String, dynamic> messageMap = json.decode(messageData);
+    
+    // Fix timestamp if needed
+    if (messageMap.containsKey('timestamp') && messageMap['timestamp'] is String) {
+      messageMap['timestamp'] = DateTime.parse(messageMap['timestamp']);
+    }
+    
+    final message = MessageModel.fromFirestore(messageMap, messageId);
+    
+    // Update status to pending
+    final pendingMessage = message.copyWith(status: MessageStatus.pending);
+    await _localStorage.saveMessage(pendingMessage);
+    
+    // Add to pending queue
+    await _addPendingMessage(chatId, messageId);
+    
+    // If online, try to send immediately
+    final isOnline = await _connectivityService.checkConnectivity();
+    if (isOnline) {
+      _sendPendingMessages();
+    }
+    
+    return true;
+  } catch (e) {
+    print('ChatService: Error retrying message: $e');
+    return false;
   }
-  
+}
+
   // Mark chat as read with offline support
   Future<bool> markChatAsRead(String chatId) async {
     try {

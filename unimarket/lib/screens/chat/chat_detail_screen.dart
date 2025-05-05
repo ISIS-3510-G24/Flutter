@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:unimarket/models/message_model.dart';
 import 'package:unimarket/models/user_model.dart';
 import 'package:unimarket/screens/profile/user_profile_screen.dart';
 import 'package:unimarket/services/chat_service.dart';
+import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/services/image_cache_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
@@ -29,40 +29,46 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   final ChatService _chatService = ChatService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ConnectivityService _connectivityService = ConnectivityService();
   List<MessageModel> _messages = [];
   bool _isLoading = true;
+  StreamSubscription? _connectivitySubscription;
   bool _isSending = false;
   UserModel? _otherUser;
   String? _currentUserId;
   StreamSubscription? _messagesSubscription;
 
-  @override
-  void initState() {
-    super.initState();
-    _currentUserId = _chatService.currentUserId;
-    
-    // Reset lastMessageSenderId first
-    _fixChatSenderIds();
-    
-    // Then load messages and mark as read
-    _loadMessages();
-    _markChatAsRead();
-    
-    // Set the other user from the widget if available
-    if (widget.otherUser != null) {
-      _otherUser = widget.otherUser;
-    } else {
-      _loadChatParticipant();
-    }
+@override
+void initState() {
+  super.initState();
+  _currentUserId = _chatService.currentUserId;
+  
+  // Add this line to set up connectivity listener
+  _setupConnectivityListener();
+  
+  // Reset lastMessageSenderId first
+  _fixChatSenderIds();
+  
+  // Then load messages and mark as read
+  _loadMessages();
+  _markChatAsRead();
+  
+  // Set the other user from the widget if available
+  if (widget.otherUser != null) {
+    _otherUser = widget.otherUser;
+  } else {
+    _loadChatParticipant();
   }
+}
 
-  @override
-  void dispose() {
-    _messageController.dispose();
-    _scrollController.dispose();
-    _messagesSubscription?.cancel();
-    super.dispose();
-  }
+ @override
+void dispose() {
+  _messageController.dispose();
+  _scrollController.dispose();
+  _messagesSubscription?.cancel();
+  _connectivitySubscription?.cancel();
+  super.dispose();
+}
 
   Future<void> _fixChatSenderIds() async {
     try {
@@ -75,6 +81,56 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
+Widget _buildConnectivityBanner() {
+  return StreamBuilder<bool>(
+    stream: _connectivityService.connectivityStream,
+    initialData: _connectivityService.hasInternetAccess,
+    builder: (context, snapshot) {
+      final isOnline = snapshot.data ?? true;
+      
+      // Only show banner if offline
+      if (isOnline) return const SizedBox.shrink();
+      
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+        color: CupertinoColors.systemYellow.withOpacity(0.8),
+        child: Row(
+          children: [
+            Icon(
+              CupertinoIcons.wifi_slash,
+              size: 18,
+              color: CupertinoColors.black,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                "You're offline. Messages will be sent when you're back online.",
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: CupertinoColors.black,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+void _setupConnectivityListener() {
+  _connectivitySubscription = _connectivityService.connectivityStream.listen((isConnected) {
+    if (mounted) {
+      setState(() {
+        // Just trigger a UI refresh when connectivity changes
+      });
+      
+      if (isConnected) {
+        // Optionally refresh messages when connection is restored
+        _refreshMessages();
+      }
+    }
+  });
+}
 
 Widget _buildUserAvatar(UserModel? user) {
   final ImageCacheService imageCacheService = ImageCacheService();
@@ -306,9 +362,8 @@ Widget _buildUserAvatar(UserModel? user) {
     await _loadMessages();
   }
 
-  @override
- Widget build(BuildContext context) {
-  // Envolver con MaterialApp para proveer MaterialLocalizations
+ @override
+Widget build(BuildContext context) {
   return Material(
     color: Colors.transparent,
     child: CupertinoPageScaffold(
@@ -320,51 +375,51 @@ Widget _buildUserAvatar(UserModel? user) {
               )
             : const Text('Chat'),
         trailing: GestureDetector(
-  onTap: () {
-    if (_otherUser != null) {
-      // Navegar al perfil del usuario
-      Navigator.push(
-        context,
-        CupertinoPageRoute(
-          builder: (context) => UserProfileScreen(
-            userId: _otherUser!.id,
-            initialUserData: _otherUser,
-          ),
+          onTap: () {
+            if (_otherUser != null) {
+              Navigator.push(
+                context,
+                CupertinoPageRoute(
+                  builder: (context) => UserProfileScreen(
+                    userId: _otherUser!.id,
+                    initialUserData: _otherUser,
+                  ),
+                ),
+              );
+            }
+          },
+          child: _buildUserAvatar(_otherUser),
         ),
-      );
-    }
-  },
-  child: _buildUserAvatar(_otherUser),
-),
       ),
-        child: SafeArea(
-          bottom: false, // Allow content to extend behind the bottom safe area
-          child: Column(
-            children: [
-              // Messages list with pull-to-refresh
-              Expanded(
-                child: _isLoading
-                    ? const Center(child: CupertinoActivityIndicator())
-                    : _messages.isEmpty
-                        ? _buildEmptyChat()
-                        : CupertinoScrollbar(
-                            controller: _scrollController,
-                            child: RefreshIndicator(
-                              onRefresh: _refreshMessages,
-                              color: AppColors.primaryBlue,
-                              child: _buildMessagesList(),
-                            ),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // Add the connectivity banner here
+            _buildConnectivityBanner(),
+            
+            // The rest of your UI remains the same
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CupertinoActivityIndicator())
+                  : _messages.isEmpty
+                      ? _buildEmptyChat()
+                      : CupertinoScrollbar(
+                          controller: _scrollController,
+                          child: RefreshIndicator(
+                            onRefresh: _refreshMessages,
+                            color: AppColors.primaryBlue,
+                            child: _buildMessagesList(),
                           ),
-              ),
-              
-              // Message input
-              _buildMessageInput(),
-              
-              // Bottom safe area padding
-              MediaQuery.of(context).padding.bottom > 0
-                  ? SizedBox(height: MediaQuery.of(context).padding.bottom)
-                  : const SizedBox(height: 10),
-            ],
+                        ),
+            ),
+            
+            _buildMessageInput(),
+            
+            MediaQuery.of(context).padding.bottom > 0
+                ? SizedBox(height: MediaQuery.of(context).padding.bottom)
+                : const SizedBox(height: 10),
+          ],
           ),
         ),
       ),
@@ -419,66 +474,154 @@ Widget _buildUserAvatar(UserModel? user) {
       ),
     );
   }
-
-  Widget _buildMessagesList() {
-    return ListView.builder(
-      controller: _scrollController,
-      reverse: true, // Display most recent messages at the bottom
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      itemCount: _messages.length,
-      physics: const AlwaysScrollableScrollPhysics(),
-      itemBuilder: (context, index) {
-        final message = _messages[index];
-        final isMe = message.senderId == _currentUserId;
-        
-        // For debugging issue with message display
-        print('Building message: ID=${message.id}, From=${isMe ? "Me" : "Other"}, Text="${message.text}"');
-        
-        final showTimestamp = index == 0 || 
-            _shouldShowTimestamp(_messages[index], _messages[index - 1]);
-        
-        return Column(
-          children: [
-            // Timestamp if needed
-            if (showTimestamp)
-              Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 12),
-                child: Text(
-                  _formatMessageDate(message.timestamp),
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: CupertinoColors.systemGrey,
-                  ),
-                ),
-              ),
-              
-            // Message bubble
-            Align(
-              alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-              child: Container(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.7,
-                ),
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isMe ? AppColors.primaryBlue : CupertinoColors.systemGrey6,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  message.text,
-                  style: GoogleFonts.inter(
-                    fontSize: 16,
-                    color: isMe ? CupertinoColors.white : CupertinoColors.black,
-                  ),
+Widget _buildMessagesList() {
+  return ListView.builder(
+    controller: _scrollController,
+    reverse: true, // Display most recent messages at the bottom
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+    itemCount: _messages.length,
+    physics: const AlwaysScrollableScrollPhysics(),
+    itemBuilder: (context, index) {
+      final message = _messages[index];
+      final isMe = message.senderId == _currentUserId;
+      
+      // For debugging issue with message display
+      print('Building message: ID=${message.id}, From=${isMe ? "Me" : "Other"}, Text="${message.text}"');
+      
+      final showTimestamp = index == 0 || 
+          _shouldShowTimestamp(_messages[index], _messages[index - 1]);
+      
+      return Column(
+        children: [
+          // Timestamp if needed
+          if (showTimestamp)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 12),
+              child: Text(
+                _formatMessageDate(message.timestamp),
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: CupertinoColors.systemGrey,
                 ),
               ),
             ),
-          ],
-        );
-      },
-    );
+            
+          // Message bubble with status
+          Align(
+            alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+              children: [
+                // Message bubble
+                Container(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.7,
+                  ),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isMe ? AppColors.primaryBlue : CupertinoColors.systemGrey6,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    message.text,
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      color: isMe ? CupertinoColors.white : CupertinoColors.black,
+                    ),
+                  ),
+                ),
+                
+                // Status indicator (only for my messages)
+                if (isMe) _buildMessageStatusIndicator(message),
+              ],
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+// Add this method to display message status indicators
+Widget _buildMessageStatusIndicator(MessageModel message) {
+  // Only show status for my messages
+  if (message.senderId != _currentUserId) {
+    return const SizedBox(width: 4);
   }
+  
+  switch (message.status) {
+    case MessageStatus.sending:
+      return Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 4),
+        child: SizedBox(
+          width: 12,
+          height: 12,
+          child: CupertinoActivityIndicator(radius: 6),
+        ),
+      );
+      
+    case MessageStatus.sent:
+      return Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 4),
+        child: Icon(
+          CupertinoIcons.checkmark,
+          size: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      );
+      
+    case MessageStatus.failed:
+      return GestureDetector(
+        onTap: () => _retryFailedMessage(message),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 4),
+          child: Icon(
+            CupertinoIcons.exclamationmark_triangle_fill,
+            size: 14,
+            color: CupertinoColors.systemRed,
+          ),
+        ),
+      );
+      
+    case MessageStatus.pending:
+      return Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 4),
+        child: Icon(
+          CupertinoIcons.clock,
+          size: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      );
+  }
+}
+
+// Add this method to handle retrying failed messages
+void _retryFailedMessage(MessageModel message) {
+  showCupertinoDialog(
+    context: context,
+    builder: (context) => CupertinoAlertDialog(
+      title: Text("Retry Message"),
+      content: Text("This message couldn't be sent. Would you like to try again?"),
+      actions: [
+        CupertinoDialogAction(
+          child: Text("Cancel"),
+          onPressed: () => Navigator.pop(context),
+        ),
+        CupertinoDialogAction(
+          child: Text("Retry"),
+          isDefaultAction: true,
+          onPressed: () {
+            Navigator.pop(context);
+            _chatService.retryMessage(message.chatId, message.id);
+          },
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildMessageInput() {
     return Container(
@@ -541,6 +684,8 @@ Widget _buildUserAvatar(UserModel? user) {
   bool _isSameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
+
+
 
   String _formatMessageDate(DateTime date) {
     final now = DateTime.now();

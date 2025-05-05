@@ -288,54 +288,54 @@ class HiveChatStorage {
     }
   }
   
-  // Save a message to storage with retry
-  Future<bool> saveMessage(MessageModel message) async {
-    int attempts = 0;
-    const maxAttempts = 3;
-    
-    while (attempts < maxAttempts) {
-      try {
-        print('HiveChatStorage: Saving message ${message.id} for chat ${message.chatId}');
-        
-        // Create a unique key for this message
-        final messageKey = '${message.chatId}_${message.id}';
-        
-        // Prepare message data
-        final Map<String, dynamic> messageData = message.toMap();
-        messageData['id'] = message.id;
-        
-        // Handle DateTime serialization
-        messageData['timestamp'] = message.timestamp.toIso8601String();
-        
-        // Save message
-        final box = await _messageBox;
-        await box.put(messageKey, jsonEncode(messageData));
-        
-        // Update message list for this chat
-        await _addMessageToChat(message.chatId, message.id);
-        
-        print('HiveChatStorage: Message saved: $messageKey');
-        return true;
-      } catch (e) {
-        attempts++;
-        print('HiveChatStorage: Error saving message ${message.id} (attempt $attempts): $e');
-        
-        if (attempts >= maxAttempts) {
-          return false;
-        }
-        
-        await Future.delayed(Duration(milliseconds: 300 * attempts));
-        
-        // Try to recover if needed
-        if (e.toString().contains('box not open') || e.toString().contains('HiveError')) {
-          await _ensureBoxesOpen();
-        }
+ Future<bool> saveMessage(MessageModel message) async {
+  int attempts = 0;
+  const maxAttempts = 3;
+  
+  while (attempts < maxAttempts) {
+    try {
+      print('HiveChatStorage: Saving message ${message.id} for chat ${message.chatId}');
+      
+      // Create a unique key for this message
+      final messageKey = '${message.chatId}_${message.id}';
+      
+      // Prepare message data
+      final Map<String, dynamic> messageData = message.toMap();
+      messageData['id'] = message.id;
+      
+      // Handle DateTime serialization
+      messageData['timestamp'] = message.timestamp.toIso8601String();
+      
+      // Handle status - included in toMap() now
+      
+      // Save message
+      final box = await _messageBox;
+      await box.put(messageKey, jsonEncode(messageData));
+      
+      // Update message list for this chat
+      await _addMessageToChat(message.chatId, message.id);
+      
+      print('HiveChatStorage: Message saved: $messageKey, status: ${message.status}');
+      return true;
+    } catch (e) {
+      attempts++;
+      print('HiveChatStorage: Error saving message ${message.id} (attempt $attempts): $e');
+      
+      if (attempts >= maxAttempts) {
+        return false;
+      }
+      
+      await Future.delayed(Duration(milliseconds: 300 * attempts));
+      
+      // Try to recover if needed
+      if (e.toString().contains('box not open') || e.toString().contains('HiveError')) {
+        await _ensureBoxesOpen();
       }
     }
-    
-    return false;
   }
   
+  return false;
+}
   // Save multiple messages with batch processing
   Future<bool> saveMessages(List<MessageModel> messages) async {
     try {
@@ -631,6 +631,22 @@ class HiveChatStorage {
       return 0;
     }
   }
+
+  // Add this method to retrieve pending messages for background sending
+Future<List<String>> getPendingMessageKeys() async {
+  try {
+    final box = await _messageBox;
+    final String? queueString = box.get('pending_messages');
+    
+    if (queueString == null) return [];
+    
+    final List<dynamic> queue = jsonDecode(queueString);
+    return queue.map((item) => item.toString()).toList();
+  } catch (e) {
+    print('HiveChatStorage: Error getting pending message keys: $e');
+    return [];
+  }
+}
   
   // Compress old messages to save storage space
   Future<bool> compressOldMessages(int maxDaysToKeep) async {
@@ -689,4 +705,8 @@ class HiveChatStorage {
       return false;
     }
   }
+Future<Box> getMessageBox() async {
+  await _ensureBoxesOpen();
+  return Hive.box(_messageBoxName);
+}
 }
