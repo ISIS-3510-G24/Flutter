@@ -1,5 +1,8 @@
+// lib/screens/search/algolia_image_widget.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class ProductImageWidget extends StatelessWidget {
   final List<String> imageUrls;
@@ -24,62 +27,30 @@ class ProductImageWidget extends StatelessWidget {
     Widget imageWidget;
 
     if (imageUrls.isEmpty) {
-      // No hay imágenes disponibles
       imageWidget = _buildPlaceholder();
     } else {
-      String imageUrl = imageUrls.first;
-      
-      // Manejar tipos de URL
-      if (imageUrl.startsWith('content://')) {
-        // Las URIs de contenido no son compatibles directamente
-        print('ADVERTENCIA: URI de contenido no soportada: $imageUrl');
-        imageWidget = _buildPlaceholder();
-      } else if (imageUrl.startsWith('http')) {
-        // URL de red
-        imageWidget = Image.network(
-          imageUrl,
-          fit: fit,
+      final url = imageUrls.first;
+      if (url.startsWith('http')) {
+        imageWidget = CachedNetworkImage(
+          imageUrl: url,
           width: width,
           height: height,
-          errorBuilder: (context, error, stackTrace) {
-            print('Error cargando imagen: $error');
-            return _buildPlaceholder();
-          },
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            
-            return Center(
-              child: CircularProgressIndicator(
-                value: loadingProgress.expectedTotalBytes != null
-                    ? loadingProgress.cumulativeBytesLoaded / 
-                      loadingProgress.expectedTotalBytes!
-                    : null,
-              ),
-            );
-          },
+          fit: fit,
+          placeholder: (_, __) => SizedBox(
+            width: width,
+            height: height,
+            child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+          errorWidget: (_, __, ___) => _buildPlaceholder(),
         );
       } else {
-        // Intentar como URL de red de todos modos
-        imageWidget = Image.network(
-          imageUrl,
-          fit: fit,
-          width: width,
-          height: height,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildPlaceholder();
-          },
-        );
+        imageWidget = _buildPlaceholder();
       }
     }
 
-    // Aplicar el borderRadius si se proporciona
     if (borderRadius != null) {
-      return ClipRRect(
-        borderRadius: borderRadius!,
-        child: imageWidget,
-      );
+      return ClipRRect(borderRadius: borderRadius!, child: imageWidget);
     }
-
     return imageWidget;
   }
 

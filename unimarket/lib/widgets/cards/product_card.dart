@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:unimarket/services/product_cache_service.dart';
 
 class ProductCard extends StatelessWidget {
   final String title;
@@ -61,30 +63,28 @@ class ProductCard extends StatelessWidget {
     if (imageUrl != null && imageUrl!.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(6),
-        child: Container(
+        child: SizedBox(
           width: size,
           height: size,
-          child: Image.network(
-            imageUrl!,
+          child: CachedNetworkImage(
+            imageUrl: imageUrl!,
             fit: BoxFit.cover,
             width: size,
             height: size,
-            errorBuilder: (context, error, stackTrace) {
+            cacheManager: ProductCacheService.productImageCacheManager,
+            placeholder: (context, url) => Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                color: AppColors.transparentGrey,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Center(
+                child: CupertinoActivityIndicator(),
+              ),
+            ),
+            errorWidget: (context, url, error) {
               return _buildPlaceholderImage(size: size);
-            },
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Container(
-                width: size,
-                height: size,
-                decoration: BoxDecoration(
-                  color: AppColors.transparentGrey,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Center(
-                  child: CupertinoActivityIndicator(),
-                ),
-              );
             },
           ),
         ),

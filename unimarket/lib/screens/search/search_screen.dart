@@ -1,5 +1,6 @@
+// lib/screens/search/search_screen.dart
+
 import 'package:flutter/cupertino.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/models/product_model.dart';
 import 'package:unimarket/screens/search/algolia_image_widget.dart';
@@ -18,39 +19,35 @@ class _SearchScreenState extends State<SearchScreen> {
   final AlgoliaService _algoliaService = AlgoliaService();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
-  
+
   List<ProductModel> _searchResults = [];
   List<String> _searchHistory = [];
   bool _isLoading = false;
   bool _isSearching = false;
-  
+
   @override
   void initState() {
     super.initState();
     _loadSearchHistory();
-    
-    // Auto-focus the search field
     WidgetsBinding.instance.addPostFrameCallback((_) {
       FocusScope.of(context).requestFocus(_searchFocus);
     });
   }
-  
+
   @override
   void dispose() {
     _searchController.dispose();
     _searchFocus.dispose();
     super.dispose();
   }
-  
-  // Load search history from SharedPreferences
+
   Future<void> _loadSearchHistory() async {
     final history = await _algoliaService.getSearchHistory();
     setState(() {
       _searchHistory = history;
     });
   }
-  
-  // Perform search
+
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) {
       setState(() {
@@ -59,52 +56,29 @@ class _SearchScreenState extends State<SearchScreen> {
       });
       return;
     }
-    
     setState(() {
       _isLoading = true;
       _isSearching = true;
     });
-    
     final results = await _algoliaService.searchProducts(query);
-    
     setState(() {
       _searchResults = results;
       _isLoading = false;
     });
-    
-    // Refresh search history after search
     _loadSearchHistory();
   }
-  
-  // Format price (same as in your ExploreScreen)
+
   String _formatPrice(double price) {
-    int wholePart = price.toInt();
-    String priceString = wholePart.toString();
-    String result = '';
-    
-    if (priceString.length > 6) {
-      result = priceString[0] + "'";
-      String remainingDigits = priceString.substring(1);
-      for (int i = 0; i < remainingDigits.length; i++) {
-        result += remainingDigits[i];
-        int positionFromRight = remainingDigits.length - 1 - i;
-        if (positionFromRight % 3 == 0 && i < remainingDigits.length - 1) {
-          result += '.';
-        }
-      }
-    } else {
-      for (int i = 0; i < priceString.length; i++) {
-        result += priceString[i];
-        int positionFromRight = priceString.length - 1 - i;
-        if (positionFromRight % 3 == 0 && i < priceString.length - 1) {
-          result += '.';
-        }
-      }
+    final whole = price.toInt().toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < whole.length; i++) {
+      buffer.write(whole[i]);
+      final pos = whole.length - 1 - i;
+      if (pos % 3 == 0 && i < whole.length - 1) buffer.write('.');
     }
-    
-    return "$result \$";
+    return '${buffer.toString()} \$';
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
@@ -114,12 +88,8 @@ class _SearchScreenState extends State<SearchScreen> {
           focusNode: _searchFocus,
           placeholder: "Search products...",
           onSubmitted: _performSearch,
-          onChanged: (value) {
-            if (value.isEmpty) {
-              setState(() {
-                _isSearching = false;
-              });
-            }
+          onChanged: (v) {
+            if (v.isEmpty) setState(() => _isSearching = false);
           },
         ),
         leading: CupertinoButton(
@@ -132,7 +102,6 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Results or History based on search state
             Expanded(
               child: _isSearching
                   ? _buildSearchResults()
@@ -143,12 +112,11 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
     );
   }
-  
+
   Widget _buildSearchResults() {
     if (_isLoading) {
       return const Center(child: CupertinoActivityIndicator());
     }
-    
     if (_searchResults.isEmpty) {
       return Center(
         child: Column(
@@ -156,73 +124,50 @@ class _SearchScreenState extends State<SearchScreen> {
           children: [
             const Icon(CupertinoIcons.search, size: 50, color: CupertinoColors.systemGrey),
             const SizedBox(height: 16),
-            Text(
-              "No products found",
-              style: GoogleFonts.inter(fontSize: 16, color: CupertinoColors.systemGrey),
-            ),
+            Text("No products found",
+                style: GoogleFonts.inter(fontSize: 16, color: CupertinoColors.systemGrey)),
           ],
         ),
       );
     }
-    
     return GridView.builder(
       padding: const EdgeInsets.all(20),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.9,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
+        crossAxisCount: 2, childAspectRatio: 0.9, crossAxisSpacing: 10, mainAxisSpacing: 10,
       ),
       itemCount: _searchResults.length,
-      itemBuilder: (context, index) {
-        final product = _searchResults[index];
+      itemBuilder: (ctx, i) {
+        final p = _searchResults[i];
         return GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              CupertinoPageRoute(
-                builder: (ctx) => ProductDetailScreen(product: product),
-              ),
-            );
-          },
+          onTap: () => Navigator.push(
+            context,
+            CupertinoPageRoute(builder: (_) => ProductDetailScreen(product: p)),
+          ),
           child: Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: CupertinoColors.white,
               borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(
-                  color: CupertinoColors.systemGrey4,
-                  blurRadius: 5,
-                  spreadRadius: 1,
-                ),
-              ],
+              boxShadow: [BoxShadow(color: CupertinoColors.systemGrey4, blurRadius: 5, spreadRadius: 1)],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-               // Modifica esta parte de tu SearchScreen para manejar mejor las imágenes
-// Reemplaza el bloque correspondiente en _buildSearchResults()
-
-Expanded(
-  child: ProductImageWidget(
-    imageUrls: product.imageUrls,
-    borderRadius: BorderRadius.circular(10),
-    width: double.infinity,
-    height: double.infinity,
-  ),
-),
+                Expanded(
+                  child: ProductImageWidget(
+                    imageUrls: p.imageUrls,
+                    borderRadius: BorderRadius.circular(10),
+                    width: double.infinity,
+                    height: double.infinity,
+                  ),
+                ),
                 const SizedBox(height: 10),
-                Text(
-                  product.title,
-                  style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  _formatPrice(product.price),
-                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
+                Text(p.title,
+                    style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                Text(_formatPrice(p.price),
+                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -230,17 +175,14 @@ Expanded(
       },
     );
   }
-  
+
   Widget _buildSearchHistory() {
     if (_searchHistory.isEmpty) {
       return Center(
-        child: Text(
-          "No recent searches",
-          style: GoogleFonts.inter(fontSize: 16, color: CupertinoColors.systemGrey),
-        ),
+        child: Text("No recent searches",
+            style: GoogleFonts.inter(fontSize: 16, color: CupertinoColors.systemGrey)),
       );
     }
-    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -249,24 +191,17 @@ Expanded(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                "Recent Searches",
-                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+              Text("Recent Searches",
+                  style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold)),
               CupertinoButton(
                 padding: EdgeInsets.zero,
                 onPressed: () async {
                   await _algoliaService.clearSearchHistory();
                   _loadSearchHistory();
                 },
-                child: Text(
-                  "Clear",
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: AppColors.primaryBlue,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                child: Text("Clear",
+                    style: GoogleFonts.inter(
+                        fontSize: 14, color: AppColors.primaryBlue, fontWeight: FontWeight.w600)),
               ),
             ],
           ),
@@ -274,46 +209,28 @@ Expanded(
         Expanded(
           child: ListView.builder(
             itemCount: _searchHistory.length,
-            itemBuilder: (context, index) {
-              final query = _searchHistory[index];
+            itemBuilder: (ctx, i) {
+              final q = _searchHistory[i];
               return CupertinoButton(
                 padding: EdgeInsets.zero,
                 onPressed: () {
-                  _searchController.text = query;
-                  _performSearch(query);
+                  _searchController.text = q;
+                  _performSearch(q);
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: CupertinoColors.systemGrey5,
-                        width: 1,
-                      ),
-                    ),
+                    border: Border(bottom: BorderSide(color: CupertinoColors.systemGrey5, width: 1)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(
-                        CupertinoIcons.clock,
-                        size: 18,
-                        color: CupertinoColors.systemGrey,
-                      ),
+                      const Icon(CupertinoIcons.clock, size: 18, color: CupertinoColors.systemGrey),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          query,
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            color: CupertinoColors.black,
-                          ),
-                        ),
+                        child: Text(q,
+                            style: GoogleFonts.inter(fontSize: 16, color: CupertinoColors.black)),
                       ),
-                      Icon(
-                        CupertinoIcons.forward,
-                        size: 18,
-                        color: CupertinoColors.systemGrey,
-                      ),
+                      Icon(CupertinoIcons.forward, size: 18, color: CupertinoColors.systemGrey),
                     ],
                   ),
                 ),

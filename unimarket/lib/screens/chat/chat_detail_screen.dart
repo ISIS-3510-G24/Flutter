@@ -8,6 +8,7 @@ import 'package:unimarket/models/message_model.dart';
 import 'package:unimarket/models/user_model.dart';
 import 'package:unimarket/screens/profile/user_profile_screen.dart';
 import 'package:unimarket/services/chat_service.dart';
+import 'package:unimarket/services/image_cache_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
 class ChatDetailScreen extends StatefulWidget {
@@ -73,6 +74,72 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       print('ChatDetailScreen: Error fixing lastMessageSenderId: $e');
     }
   }
+
+
+Widget _buildUserAvatar(UserModel? user) {
+  final ImageCacheService imageCacheService = ImageCacheService();
+  
+  if (user == null) {
+    return Container(
+      width: 35,
+      height: 35,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: CupertinoColors.systemGrey5,
+      ),
+      child: Center(
+        child: Icon(
+          CupertinoIcons.person_fill,
+          color: CupertinoColors.systemGrey,
+          size: 20,
+        ),
+      ),
+    );
+  }
+  
+  // Si no hay photoURL
+  if (user.photoURL == null) {
+    return Container(
+      width: 35,
+      height: 35,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: CupertinoColors.systemGrey5,
+      ),
+      child: Center(
+        child: Text(
+          user.displayName.isNotEmpty 
+              ? user.displayName.substring(0, 1).toUpperCase() 
+              : "?",
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppColors.primaryBlue,
+          ),
+        ),
+      ),
+    );
+  }
+  
+  // Usar el servicio de caché para mostrar la imagen
+  return ClipOval(
+    child: imageCacheService.getOptimizedImageWidget(
+      user.photoURL,
+      width: 35,
+      height: 35,
+      fit: BoxFit.cover,
+      placeholder: Container(
+        width: 35,
+        height: 35,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: CupertinoColors.systemGrey5,
+        ),
+        child: Center(child: CupertinoActivityIndicator()),
+      ),
+    ),
+  );
+}
   
   Future<void> _loadChatParticipant() async {
     final user = await _chatService.getChatParticipant(widget.chatId);
@@ -252,35 +319,23 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 style: GoogleFonts.inter(fontWeight: FontWeight.bold),
               )
             : const Text('Chat'),
-        trailing: _otherUser?.photoURL != null
-            ? GestureDetector(  // Añadir GestureDetector para hacer clickeable la foto
-                onTap: () {
-                  if (_otherUser != null) {
-                    // Navegar al perfil del usuario
-                    Navigator.push(
-                      context,
-                      CupertinoPageRoute(
-                        builder: (context) => UserProfileScreen(
-                          userId: _otherUser!.id,
-                          initialUserData: _otherUser,
-                        ),
-                      ),
-                    );
-                  }
-                },
-                child: Container(
-                  width: 35,
-                  height: 35,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    image: DecorationImage(
-                      image: NetworkImage(_otherUser!.photoURL!),
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-              )
-            : null,
+        trailing: GestureDetector(
+  onTap: () {
+    if (_otherUser != null) {
+      // Navegar al perfil del usuario
+      Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (context) => UserProfileScreen(
+            userId: _otherUser!.id,
+            initialUserData: _otherUser,
+          ),
+        ),
+      );
+    }
+  },
+  child: _buildUserAvatar(_otherUser),
+),
       ),
         child: SafeArea(
           bottom: false, // Allow content to extend behind the bottom safe area

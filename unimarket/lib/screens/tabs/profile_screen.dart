@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:unimarket/services/image_cache_service.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_performance/firebase_performance.dart';
@@ -23,6 +24,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final FirebaseAnalytics analytics = FirebaseAnalytics.instance;
   final UserService _userService = UserService();
   UserModel? _userProfile;
+  final ImageCacheService _imageCacheService = ImageCacheService();
   bool _isLoading = true;
 
   @override
@@ -55,76 +57,174 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // Cargar perfil del usuario desde Firestore
-  Future<void> _loadUserProfile() async {
-    setState(() {
-      _isLoading = true;
+Future<void> _loadUserProfile() async {
+  setState(() {
+    _isLoading = true;
+  });
+  
+  try {
+    // Set a timeout to prevent infinite loading
+    Future.delayed(Duration(seconds: 5), () {
+      if (mounted && _isLoading) {
+        print("ProfileScreen: Loading timeout reached");
+        setState(() {
+          _isLoading = false;
+        });
+      }
     });
     
+    // First try to get the user from the service
     final profile = await _userService.getCurrentUserProfile();
+    
+    if (!mounted) return;
+    
+    if (profile != null) {
+      setState(() {
+        _userProfile = profile;
+        _isLoading = false;
+      });
+      
+      // If we have a profile picture URL, cache it for offline use
+      if (profile.photoURL != null && profile.photoURL!.isNotEmpty) {
+        _imageCacheService.getImageFile(profile.photoURL!).then((file) {
+          print("ProfileScreen: Profile picture cached: ${file?.path}");
+        });
+      }
+      
+      return;
+    }
+    
+    // If we failed to get a profile, create a placeholder from Firebase Auth
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      // Create a basic profile from FirebaseAuth user
+      setState(() {
+        _userProfile = UserModel(
+          id: user.uid,
+          displayName: user.displayName ?? "User",
+          email: user.email ?? "user@example.com",
+          photoURL: user.photoURL,
+        );
+        _isLoading = false;
+      });
+      
+      // If we have a photo URL, cache it
+      if (user.photoURL != null && user.photoURL!.isNotEmpty) {
+        _imageCacheService.getImageFile(user.photoURL!);
+      }
+      
+      return;
+    }
+    
     setState(() {
-      _userProfile = profile;
       _isLoading = false;
     });
-  }
-
-  // Método para seleccionar una imagen de la galería
-  Future<void> _pickProfileImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+  } catch (e) {
+    print("ProfileScreen: Error loading user profile: $e");
     
-    if (pickedFile != null) {
-      File imageFile = File(pickedFile.path);
-      
-      // Mostrar indicador de carga
-      showCupertinoDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CupertinoActivityIndicator()),
-      );
-      
-      try {
-        final downloadUrl = await _userService.uploadProfilePicture(imageFile);
-        
-        // Descartar indicador de carga
-        Navigator.pop(context);
-        
-        if (downloadUrl != null) {
-          setState(() {
-            if (_userProfile != null) {
-              _userProfile = UserModel(
-                id: _userProfile!.id,
-                displayName: _userProfile!.displayName,
-                email: _userProfile!.email,
-                photoURL: downloadUrl,
-                bio: _userProfile!.bio,
-                ratingAverage: _userProfile!.ratingAverage,
-                reviewsCount: _userProfile!.reviewsCount,
-                createdAt: _userProfile!.createdAt,
-                updatedAt: _userProfile!.updatedAt,
-              );
-            }
-          });
-        }
-      } catch (e) {
-        // Descartar indicador de carga
-        Navigator.pop(context);
-        // Mostrar error
-        showCupertinoDialog(
-          context: context,
-          builder: (context) => CupertinoAlertDialog(
-            title: const Text("Error"),
-            content: Text("Error al subir la imagen: $e"),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text("OK"),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
-      }
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
+}
+
+
+
+Future<void> _pickProfileImage() async {
+  final picker = ImagePicker();
+  final pickedFile = await picker.pickImage(
+    source: ImageSource.gallery,
+    maxWidth: 800, // Optimizar tamaño de imagen
+    maxHeight: 800,
+    imageQuality: 85, // Buena calidad sin ser demasiado grande
+  );
+  
+  if (pickedFile != null) {
+    File imageFile = File(pickedFile.path);
+    
+    // Mostrar indicador de carga
+    showCupertinoDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CupertinoActivityIndicator()),
+    );
+    
+    try {
+      final downloadUrl = await _userService.uploadProfilePicture(imageFile);
+      
+      // Descartar indicador de carga
+      Navigator.of(context, rootNavigator: true).pop();
+      
+      if (downloadUrl != null) {
+        setState(() {
+          if (_userProfile != null) {
+            _userProfile = UserModel(
+              id: _userProfile!.id,
+              displayName: _userProfile!.displayName,
+              email: _userProfile!.email,
+              photoURL: downloadUrl,
+              bio: _userProfile!.bio,
+              ratingAverage: _userProfile!.ratingAverage,
+              reviewsCount: _userProfile!.reviewsCount,
+              createdAt: _userProfile!.createdAt,
+              updatedAt: _userProfile!.updatedAt,
+            );
+          }
+        });
+        
+        // Guardar la imagen en caché inmediatamente
+        await _imageCacheService.getImageFile(downloadUrl);
+      }
+    } catch (e) {
+      // Descartar indicador de carga
+      Navigator.of(context, rootNavigator: true).pop();
+      
+      // Mostrar error
+      showCupertinoDialog(
+        context: context,
+        builder: (context) => CupertinoAlertDialog(
+          title: const Text("Error"),
+          content: Text("Error al subir la imagen: $e"),
+          actions: [
+            CupertinoDialogAction(
+              child: const Text("OK"),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+}
+
+Widget _buildProfileImage(User? user) {
+  // URL de la foto de perfil, ya sea del UserModel o del Firebase User
+  final String? photoUrl = _userProfile?.photoURL ?? user?.photoURL;
+  
+  if (photoUrl == null || photoUrl.isEmpty) {
+    // Sin foto de perfil, usar imagen de placeholder
+    return Image.asset(
+      "assets/images/Avatar.png",
+      fit: BoxFit.cover,
+      width: 100,
+      height: 100,
+    );
+  }
+  
+  // Usar el servicio de caché para cargar la imagen
+  return _imageCacheService.getOptimizedImageWidget(
+    photoUrl,
+    width: 100,
+    height: 100,
+    fit: BoxFit.cover,
+    circle: true,
+    placeholder: Center(child: CupertinoActivityIndicator()),
+    defaultAsset: "assets/images/Avatar.png",
+  );
+}
+  
 
   @override
   Widget build(BuildContext context) {
@@ -144,78 +244,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   const SizedBox(height: 20),
 
-                  // 🔹 Avatar con botón de edición
                   Stack(
-                    alignment: Alignment.bottomRight,
-                    children: [
-                      CircleAvatar(
-                        radius: 50,
-                        backgroundColor: CupertinoColors.systemGrey5,
-                        child: _userProfile?.photoURL != null
-                            ? ClipOval(
-                                child: Image.network(
-                                  _userProfile!.photoURL!,
-                                  fit: BoxFit.cover,
-                                  width: 100,
-                                  height: 100,
-                                  loadingBuilder: (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Center(
-                                      child: CupertinoActivityIndicator(),
-                                    );
-                                  },
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Image.asset(
-                                      "assets/images/Avatar.png",
-                                      fit: BoxFit.cover,
-                                    );
-                                  },
-                                ),
-                              )
-                            : user?.photoURL != null
-                                ? ClipOval(
-                                    child: Image.network(
-                                      user!.photoURL!,
-                                      fit: BoxFit.cover,
-                                      width: 100,
-                                      height: 100,
-                                      loadingBuilder: (context, child, loadingProgress) {
-                                        if (loadingProgress == null) return child;
-                                        return Center(
-                                          child: CupertinoActivityIndicator(),
-                                        );
-                                      },
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return Image.asset(
-                                          "assets/images/Avatar.png",
-                                          fit: BoxFit.cover,
-                                        );
-                                      },
-                                    ),
-                                  )
-                                : Image.asset(
-                                    "assets/images/Avatar.png",
-                                    fit: BoxFit.cover,
-                                  ),
-                      ),
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryBlue,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            CupertinoIcons.pencil,
-                            color: CupertinoColors.white,
-                            size: 16,
-                          ),
-                        ),
-                        onPressed: _pickProfileImage,
-                      ),
-                    ],
-                  ),
+  alignment: Alignment.bottomRight,
+  children: [
+    CircleAvatar(
+      radius: 50,
+      backgroundColor: CupertinoColors.systemGrey5,
+      child: ClipOval(
+        child: _buildProfileImage(user),
+      ),
+    ),
+    CupertinoButton(
+      padding: EdgeInsets.zero,
+      child: Container(
+        padding: const EdgeInsets.all(5),
+        decoration: BoxDecoration(
+          color: AppColors.primaryBlue,
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          CupertinoIcons.pencil,
+          color: CupertinoColors.white,
+          size: 16,
+        ),
+      ),
+      onPressed: _pickProfileImage,
+    ),
+  ],
+),
 
                   const SizedBox(height: 10),
 
