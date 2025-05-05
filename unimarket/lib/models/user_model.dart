@@ -53,4 +53,20 @@ class UserModel {
     'major': major, // Added major field
   };
 }
+
+ // New fromMap factory method
+  factory UserModel.fromMap(Map<String, dynamic> map) {
+    return UserModel(
+      id: map['id'] as String,
+      displayName: map['displayName'] as String,
+      email: map['email'] as String,
+      photoURL: map['profilePicture'] as String?,
+      bio: map['bio'] as String?,
+      ratingAverage: map['ratingAverage'] != null ? (map['ratingAverage'] as num).toDouble() : null,
+      reviewsCount: map['reviewsCount'] as int?,
+      createdAt: map['createdAt'] != null ? DateTime.parse(map['createdAt'] as String) : null,
+      updatedAt: map['updatedAt'] != null ? DateTime.parse(map['updatedAt'] as String) : null,
+      major: map['major'] as String?,
+    );
+  }
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
+import 'package:unimarket/services/image_cache_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -20,6 +21,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final ChatService _chatService = ChatService();
+  final ImageCacheService _imageCacheService = ImageCacheService();
   final UserService _userService = UserService();
   bool _isLoading = true;
   bool _hasError = false;
@@ -166,6 +168,17 @@ class _ChatScreenState extends State<ChatScreen> {
           });
         }
       });
+      final List<String> imageUrls = [];
+for (final chat in _chats) {
+  final user = _chatUsers[chat.id];
+  if (user != null && user.photoURL != null && user.photoURL!.isNotEmpty) {
+    imageUrls.add(user.photoURL!);
+  }
+}
+if (imageUrls.isNotEmpty) {
+  _imageCacheService.precacheImages(imageUrls);
+}
+
     } catch (e) {
       print("ChatScreen: Error setting up chat listener: $e");
       if (mounted && !_isDisposed) {
@@ -369,39 +382,49 @@ class _ChatScreenState extends State<ChatScreen> {
                         color: CupertinoColors.systemGrey5,
                       ),
                       child: user != null && user.photoURL != null && user.photoURL!.isNotEmpty
-                          ? ClipOval(
-                              child: Image.network(
-                                user.photoURL!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  // Fallback to initials if image fails to load
-                                  return Center(
-                                    child: Text(
-                                      user.displayName.isNotEmpty 
-                                          ? user.displayName.substring(0, 1).toUpperCase() 
-                                          : "?",
-                                      style: GoogleFonts.inter(
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.primaryBlue,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            )
-                          : Center(
-                              child: Text(
-                                user != null && user.displayName.isNotEmpty
-                                    ? user.displayName.substring(0, 1).toUpperCase()
-                                    : "?",
-                                style: GoogleFonts.inter(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.primaryBlue,
-                                ),
-                              ),
-                            ),
+    ? ClipOval(
+        child: _imageCacheService.getOptimizedImageWidget(
+          user.photoURL,
+          width: 50,
+          height: 50,
+          fit: BoxFit.cover,
+          placeholder: Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: CupertinoColors.systemGrey5,
+            ),
+            child: Center(child: CupertinoActivityIndicator()),
+          ),
+          errorWidget: Center(
+            child: Text(
+              user.displayName.isNotEmpty 
+                  ? user.displayName.substring(0, 1).toUpperCase() 
+                  : "?",
+              style: GoogleFonts.inter(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primaryBlue,
+              ),
+            ),
+          ),
+        ),
+      )
+    : Center(
+        child: Text(
+          user != null && user.displayName.isNotEmpty
+              ? user.displayName.substring(0, 1).toUpperCase()
+              : "?",
+          style: GoogleFonts.inter(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: AppColors.primaryBlue,
+          ),
+        ),
+      ),
+
+
                     ),
                     const SizedBox(width: 12),
                     
