@@ -72,8 +72,9 @@ class _SearchScreenState extends State<SearchScreen> {
       _searchHistory = history;
     });
   }
+
 Future<void> _performSearch(String query) async {
-   // Validar longitud antes de procesar
+  // Validar longitud antes de procesar
   if (query.length > _maxSearchLength) {
     _showSearchTooLongAlert();
     return;
@@ -87,8 +88,7 @@ Future<void> _performSearch(String query) async {
     return;
   }
   
-  
-  // Siempre añadir la búsqueda al historial, independientemente del resultado
+  // Guardar la búsqueda en el historial
   await _algoliaService.addSearchToHistory(query);
   
   setState(() {
@@ -96,7 +96,7 @@ Future<void> _performSearch(String query) async {
     _isSearching = true;
   });
   
-  // Añadir un timeout para evitar carga infinita
+  // Agregar timeout para evitar carga infinita
   Timer loadingTimeout = Timer(Duration(seconds: 8), () {
     if (_isLoading) {
       setState(() {
@@ -107,26 +107,13 @@ Future<void> _performSearch(String query) async {
   });
   
   try {
-    // Verificar conectividad explícitamente
-    bool isConnected = await _connectivityService.checkConnectivity();
-    
-    if (!isConnected) {
-      // No hay conexión a internet
-      setState(() {
-        _searchResults = [];
-        _isLoading = false;
-        _hasNoInternet = true;
-      });
-      _loadSearchHistory(); // Refrescar historial incluso sin conexión
-      return;
-    }
-    
-    // Si hay conexión, realizar la búsqueda
+    // Intentar obtener resultados (primero buscará en caché)
     final results = await _algoliaService.searchProducts(query)
         .timeout(Duration(seconds: 5), onTimeout: () {
           throw Exception('Search timed out');
         });
     
+    // Si llegamos aquí, tenemos resultados (de caché o de internet)
     setState(() {
       _searchResults = results;
       _isLoading = false;
@@ -136,17 +123,31 @@ Future<void> _performSearch(String query) async {
   } catch (e) {
     print("Error en búsqueda: $e");
     
+    // Si hay un error, verificar si es por falta de conectividad
+    bool isConnected = await _connectivityService.checkConnectivity();
+    
     setState(() {
-      _searchResults = [];
+      if (!isConnected) {
+        // Solo mostrar mensaje de sin internet si realmente no hay conexión
+        _hasNoInternet = true;
+      } else {
+        // Si hay internet pero falló por otra razón, mostrar resultados vacíos
+        _hasNoInternet = false;
+      }
       _isLoading = false;
-      _hasNoInternet = true;
+      // Mantener los resultados anteriores si había alguno y es error de conexión
+      if (!isConnected && _searchResults.isNotEmpty) {
+        // No borrar los resultados existentes
+      } else {
+        _searchResults = [];
+      }
     });
-    _loadSearchHistory(); // Refrescar historial incluso con error
+    _loadSearchHistory();
   } finally {
-    // Asegurarse de cancelar el timeout
     loadingTimeout.cancel();
   }
 }
+
   String _formatPrice(double price) {
     final whole = price.toInt().toString();
     final buffer = StringBuffer();
