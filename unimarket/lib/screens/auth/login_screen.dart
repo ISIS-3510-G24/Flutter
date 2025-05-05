@@ -29,22 +29,31 @@ class _LoginScreenState extends State<LoginScreen> {
    StreamSubscription? _connectivitySubscription;
   bool _biometricsAvailable = false;
 
- @override
-void initState() {
-  super.initState();
-  _checkBiometrics();
-  _checkConnectivity();
-  _loadSavedEmail();
-  _hasInternetAccess = _connectivityService.hasInternetAccess;
-  _isCheckingConnectivity = _connectivityService.isChecking;
-  _savedCredentialsFuture = BiometricAuthService.hasSavedCredentials();
-
-  _connectivitySubscription = _connectivityService.connectivityStream.listen((hasInternet) {
-      if (mounted) {
-        setState(() {
-          _hasInternetAccess = hasInternet;
-        });
-        
+ @override 
+  void initState() { 
+    super.initState(); 
+    _checkBiometrics(); 
+    _loadSavedEmail(); 
+    _savedCredentialsFuture = BiometricAuthService.hasSavedCredentials(); 
+     
+    // Initialize with current state 
+    _hasInternetAccess = _connectivityService.hasInternetAccess; 
+    _isCheckingConnectivity = _connectivityService.isChecking; 
+     
+    // Set up connectivity listeners 
+    _connectivitySubscription = _connectivityService.connectivityStream.listen((hasInternet) { 
+      if (mounted) { 
+        setState(() { 
+          _hasInternetAccess = hasInternet; 
+          // When we get a connectivity result, we're no longer checking 
+          _isCheckingConnectivity = false; 
+        }); 
+      } 
+    }); 
+    _checkConnectivity(); 
+    WidgetsBinding.instance.addPostFrameCallback((_){
+      if (!_hasInternetAccess){
+        _connectivityService.checkConnectivity();
       }
     });
 }
@@ -122,13 +131,16 @@ void initState() {
     }
   }
    
-  void _handleRetryPressed() async {
-    // Force a connectivity check
-    bool hasInternet = await _connectivityService.checkConnectivity();
-    
-    // If there's internet, refresh data
-    
-  }
+void _handleRetryPressed() async { 
+    if (mounted) { 
+      setState(() { 
+        _isCheckingConnectivity = true; 
+      }); 
+    } 
+     
+    await _connectivityService.checkConnectivity(); 
+     
+  } 
   
 
 
@@ -155,21 +167,24 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
   }
 }
 
-  void _showOfflineWarning() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Offline Mode'),
-        content: const Text('You are using the app in offline mode. Some features may be limited.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
+  void _showOfflineWarning() { 
+  showCupertinoDialog( 
+    context: context, 
+    builder: (context) => CupertinoAlertDialog( 
+      title: const Text('Offline Mode'), 
+      content: const Text( 
+        'You are using the app in offline mode. Some features may be limited.', 
+      ), 
+      actions: [ 
+        CupertinoDialogAction( 
+          isDefaultAction: true, 
+          onPressed: () => Navigator.pop(context), 
+          child: const Text('OK'), 
+        ), 
+      ], 
+    ), 
+  ); 
+} 
 
   void _showLoginError(String errorMessage) {
     if (!mounted) return;
@@ -241,6 +256,8 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
                         CupertinoButton(
                           padding: EdgeInsets.zero,
                           minSize: 0,
+                          
+                          onPressed: _handleRetryPressed,
                           child: Text(
                             "Retry",
                             style: GoogleFonts.inter(
@@ -248,7 +265,6 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
                               color: Colors.blue, // Changed to Material's blue
                             ),
                           ),
-                          onPressed: _handleRetryPressed,
                         ),
                     ],
                   ),
