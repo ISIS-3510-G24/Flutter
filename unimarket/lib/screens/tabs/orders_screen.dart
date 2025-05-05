@@ -83,9 +83,9 @@ void initState() {
     return;
   }
 
-  // Si no están en el caché, obtén los datos del servidor
-  print("Fetching $cacheKey orders from server");
-  final orders = await fetchFunction(); // Asegúrate de que esto devuelve List<Map<String, dynamic>>
+  // Si no están en el caché, se obtienen los datos del servidor
+  print("Fetching $cacheKey orders from server (first time)...");
+  final orders = await fetchFunction(); 
 await _ordersCache.put(cacheKey, orders);
 print("Orders type: ${orders.runtimeType}");
 print("Stored $cacheKey orders in cache: ${orders.length} items");
