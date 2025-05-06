@@ -1,5 +1,7 @@
 // lib/screens/search/search_screen.dart
+import 'dart:async';
 
+import 'package:unimarket/services/connectivity_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/models/product_model.dart';
@@ -14,30 +16,53 @@ class SearchScreen extends StatefulWidget {
   @override
   _SearchScreenState createState() => _SearchScreenState();
 }
-
 class _SearchScreenState extends State<SearchScreen> {
   final AlgoliaService _algoliaService = AlgoliaService();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
-
+  final ConnectivityService _connectivityService = ConnectivityService();
+  final int _maxSearchLength = 100; // Límite máximo de caracteres
+  
   List<ProductModel> _searchResults = [];
   List<String> _searchHistory = [];
   bool _isLoading = false;
   bool _isSearching = false;
-
+  bool _hasNoInternet = false;
+  int _currentLength = 0; // Para mostrar el contador
+  StreamSubscription? _connectivitySubscription;
+  
   @override
   void initState() {
     super.initState();
     _loadSearchHistory();
+    
+    // Agregar listener para el contador de caracteres
+    _searchController.addListener(_updateCharCount);
+    
+    // Escuchar cambios de conectividad
+    _connectivitySubscription = _connectivityService.connectivityStream.listen((hasInternet) {
+      setState(() {
+        _hasNoInternet = !hasInternet;
+      });
+    });
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       FocusScope.of(context).requestFocus(_searchFocus);
     });
   }
-
+  
+  void _updateCharCount() {
+    setState(() {
+      _currentLength = _searchController.text.length;
+    });
+  }
+  
   @override
   void dispose() {
+    _searchController.removeListener(_updateCharCount);
     _searchController.dispose();
     _searchFocus.dispose();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
@@ -48,25 +73,80 @@ class _SearchScreenState extends State<SearchScreen> {
     });
   }
 
-  Future<void> _performSearch(String query) async {
-    if (query.trim().isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _isSearching = false;
-      });
-      return;
-    }
+Future<void> _performSearch(String query) async {
+  // Validar longitud antes de procesar
+  if (query.length > _maxSearchLength) {
+    _showSearchTooLongAlert();
+    return;
+  }
+  
+  if (query.trim().isEmpty) {
     setState(() {
-      _isLoading = true;
-      _isSearching = true;
+      _searchResults = [];
+      _isSearching = false;
     });
-    final results = await _algoliaService.searchProducts(query);
+    return;
+  }
+  
+  // Guardar la búsqueda en el historial
+  await _algoliaService.addSearchToHistory(query);
+  
+  setState(() {
+    _isLoading = true;
+    _isSearching = true;
+  });
+  
+  // Agregar timeout para evitar carga infinita
+  Timer loadingTimeout = Timer(Duration(seconds: 8), () {
+    if (_isLoading) {
+      setState(() {
+        _isLoading = false;
+        _hasNoInternet = true;
+      });
+    }
+  });
+  
+  try {
+    // Intentar obtener resultados (primero buscará en caché)
+    final results = await _algoliaService.searchProducts(query)
+        .timeout(Duration(seconds: 5), onTimeout: () {
+          throw Exception('Search timed out');
+        });
+    
+    // Si llegamos aquí, tenemos resultados (de caché o de internet)
     setState(() {
       _searchResults = results;
       _isLoading = false;
+      _hasNoInternet = false;
     });
     _loadSearchHistory();
+  } catch (e) {
+    print("Error en búsqueda: $e");
+    
+    // Si hay un error, verificar si es por falta de conectividad
+    bool isConnected = await _connectivityService.checkConnectivity();
+    
+    setState(() {
+      if (!isConnected) {
+        // Solo mostrar mensaje de sin internet si realmente no hay conexión
+        _hasNoInternet = true;
+      } else {
+        // Si hay internet pero falló por otra razón, mostrar resultados vacíos
+        _hasNoInternet = false;
+      }
+      _isLoading = false;
+      // Mantener los resultados anteriores si había alguno y es error de conexión
+      if (!isConnected && _searchResults.isNotEmpty) {
+        // No borrar los resultados existentes
+      } else {
+        _searchResults = [];
+      }
+    });
+    _loadSearchHistory();
+  } finally {
+    loadingTimeout.cancel();
   }
+}
 
   String _formatPrice(double price) {
     final whole = price.toInt().toString();
@@ -78,27 +158,59 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     return '${buffer.toString()} \$';
   }
-
-  @override
-  Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: CupertinoSearchTextField(
-          controller: _searchController,
-          focusNode: _searchFocus,
-          placeholder: "Search products...",
-          onSubmitted: _performSearch,
-          onChanged: (v) {
-            if (v.isEmpty) setState(() => _isSearching = false);
-          },
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
+void _showSearchTooLongAlert() {
+  showCupertinoDialog(
+    context: context,
+    builder: (context) => CupertinoAlertDialog(
+      title: Text("Search Too Long"),
+      content: Text("Please reduce the length of your search. Searches are limited to 100 characters."),
+      actions: [
+        CupertinoDialogAction(
+          child: Text("OK"),
           onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back, color: AppColors.primaryBlue),
+        ),
+      ],
+    ),
+  );
+}
+@override
+Widget build(BuildContext context) {
+  return CupertinoPageScaffold(
+    navigationBar: CupertinoNavigationBar(
+      middle: CupertinoSearchTextField(
+        controller: _searchController,
+        focusNode: _searchFocus,
+        placeholder: "Search products...",
+        onSubmitted: _performSearch,
+        onChanged: (v) {
+          if (v.isEmpty) setState(() => _isSearching = false);
+          
+          // Limitar la longitud del texto
+          if (v.length > _maxSearchLength) {
+            _searchController.text = v.substring(0, _maxSearchLength);
+            _searchController.selection = TextSelection.fromPosition(
+              TextPosition(offset: _maxSearchLength)
+            );
+          }
+        },
+      ),
+      leading: CupertinoButton(
+        padding: EdgeInsets.zero,
+        onPressed: () => Navigator.pop(context),
+        child: const Icon(CupertinoIcons.back, color: AppColors.primaryBlue),
+      ),
+      // Agregar trailing con el contador
+      trailing: Text(
+        "$_currentLength/$_maxSearchLength",
+        style: GoogleFonts.inter(
+          fontSize: 10, 
+          color: _currentLength >= _maxSearchLength 
+            ? CupertinoColors.systemRed 
+            : CupertinoColors.systemGrey
         ),
       ),
-      child: SafeArea(
+    ),
+    child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -113,23 +225,71 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildSearchResults() {
-    if (_isLoading) {
-      return const Center(child: CupertinoActivityIndicator());
-    }
-    if (_searchResults.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(CupertinoIcons.search, size: 50, color: CupertinoColors.systemGrey),
-            const SizedBox(height: 16),
-            Text("No products found",
-                style: GoogleFonts.inter(fontSize: 16, color: CupertinoColors.systemGrey)),
-          ],
-        ),
-      );
-    }
+Widget _buildSearchResults() {
+  if (_isLoading) {
+    return const Center(child: CupertinoActivityIndicator());
+  }
+  
+  if (_hasNoInternet) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(CupertinoIcons.wifi_slash, 
+                    size: 50, 
+                    color: CupertinoColors.systemGrey),
+          const SizedBox(height: 16),
+          Text("No internet connection",
+              style: GoogleFonts.inter(
+                fontSize: 16, 
+                color: CupertinoColors.systemGrey)),
+          const SizedBox(height: 8),
+          Text("Check your connection and try again",
+              style: GoogleFonts.inter(
+                fontSize: 14, 
+                color: CupertinoColors.systemGrey)),
+          const SizedBox(height: 16),
+          CupertinoButton(
+            child: Text("Retry",
+                style: GoogleFonts.inter(
+                  color: AppColors.primaryBlue,
+                  fontWeight: FontWeight.w600)),
+            onPressed: () async {
+              setState(() => _isLoading = true);
+              bool hasInternet = await _connectivityService.checkConnectivity();
+              if (hasInternet && _searchController.text.isNotEmpty) {
+                _performSearch(_searchController.text);
+              } else {
+                setState(() {
+                  _isLoading = false;
+                  _hasNoInternet = !hasInternet;
+                });
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+  
+  if (_searchResults.isEmpty) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(CupertinoIcons.search, 
+                    size: 50, 
+                    color: CupertinoColors.systemGrey),
+          const SizedBox(height: 16),
+          Text("No products found",
+              style: GoogleFonts.inter(
+                fontSize: 16, 
+                color: CupertinoColors.systemGrey)),
+        ],
+      ),
+    );
+  }
+
     return GridView.builder(
       padding: const EdgeInsets.all(20),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
