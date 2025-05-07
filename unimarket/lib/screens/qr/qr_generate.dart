@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:unimarket/data/firebase_dao.dart';
@@ -55,16 +54,14 @@ class _QrGenerateState extends State<QrGenerate> {
   const cacheKey = 'qr_productos';
   
   try {
-    // 1. Try fetching fresh data from Firebase
+    // 1. Primero se intenta hacer el fetch de firebase
     final productsWithHashes = await _firebaseDAO.getProductsForCurrentSELLER();
 
-    // 2. Convert Firestore data to cacheable format
+    // 2. si se obtiene, se transforman las ordenes en un hasmap cacheable
     final cacheableData = _convertFirestoreData(productsWithHashes);
 
-    // 3. Store in cache
+    // 3. Almacenar en cache usando DefaultCacheManager
     await _storeInCache(cacheKey, cacheableData);
-
-    // 4. Update UI if widget is still mounted
     if (mounted) {
       setState(() {
         _productsWithHashes = productsWithHashes;
@@ -80,7 +77,7 @@ class _QrGenerateState extends State<QrGenerate> {
   }
 }
 
-// Helper method to convert Firestore-specific types
+// Transformación de datos de las ordenes a un hashmap cacheable
 Map<String, dynamic> _convertFirestoreData(Map<String, dynamic> originalData) {
   return originalData.map((key, value) {
     // Handle nested conversion

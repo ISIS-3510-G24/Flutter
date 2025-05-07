@@ -335,11 +335,9 @@ Future<bool> sendPreferencesToFirebase ( Set<String> selectedPreferences)async {
     await orderRef.update({
       'status': 'Delivered',
     });
-    print("Order $orderId status updated to 'Delivered'.");
+    //print("Order $orderId status updated to 'Delivered'.");
   } catch (e) {
-    print("Error updating order status using orderId: $e");
-
-    // Debugging in case it fails
+    //print("Error updating order status using orderId: $e");
     try {
       final querySnapshot = await _firestore
           .collection('orders')

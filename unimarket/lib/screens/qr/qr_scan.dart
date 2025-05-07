@@ -82,7 +82,7 @@ class _QrScanState extends State<QrScan> {
                 _firebaseDAO.updateOrderStatusDelivered(orderId,hashConfirm).then((_) {
                 _showSuccessDialog();
                 }).catchError((e) {
-                  // If offline, save to the shared Hive queue
+                  // si no se puede por falta de internet, mandarlo al Shared Preferences storage compartido
                 _offlineQueueService.addOrderToQueue(orderId,hashConfirm,);
                 _showOfflineSuccessDialog();
                 });

@@ -1,6 +1,6 @@
 import 'package:unimarket/models/product_model.dart';
 
-/// Elemento que viaja en la cola offline – persistido en Hive/SharedPrefs
+/// Elemento que viaja en la cola offline – persistido en SharedPrefs/NSUserDefaults
 class QueuedOrderModel {
   final String       queueId;
   final String       orderID;
