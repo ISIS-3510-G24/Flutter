@@ -65,6 +65,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // If still null, show error
       if (currentUserId == null) {
+        _showErrorDialog("There is no uid", "oops");
         print('ChatScreen: No current user (currentUserId is null)');
         setState(() {
           _isLoading = false;
@@ -544,4 +545,20 @@ if (imageUrls.isNotEmpty) {
       return 'Now';
     }
   }
+
+  void _showErrorDialog(String title, String message) {
+  showCupertinoDialog(
+    context: context,
+    builder: (context) => CupertinoAlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        CupertinoButton(
+          child: const Text('OK'),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    ),
+  );
+}
 }
