@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:unimarket/models/queued_product_model.dart';
+import 'package:unimarket/models/queued_order_model.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:unimarket/services/connectivity_service.dart';
@@ -25,12 +26,15 @@ class OfflineQueueService {
   // ---- Estado interno ----
   List<QueuedProductModel> _queuedProducts = [];
   bool _isProcessing = false;
+  List<QueuedOrderModel> _queuedOrders = [];
+  bool _isProcessingOrders = false;
   Timer? _processingTimer;
   // Añadimos la variable de suscripción para manejar los listeners
   StreamSubscription? _connectivitySubscription;
 
   // ---- Constantes ----
   static const String _storageKey = 'offline_product_queue';
+  static const String _qrscanKey = 'product_delivery_queue';
   static const int _maxRetries = 3;
   static const Duration _retryDelay = Duration(minutes: 5);
 
@@ -38,6 +42,7 @@ class OfflineQueueService {
   // 1) Este controller solo emite *cambios* posteriores
   final _internalController =
       StreamController<List<QueuedProductModel>>.broadcast();
+
 
   // 2) Este getter emite el snapshot actual **y** luego sigue
   Stream<List<QueuedProductModel>> get queueStream =>
@@ -61,6 +66,7 @@ class OfflineQueueService {
     debugPrint('🔧 Inicializando OfflineQueueService');
     try {
       await _loadQueuedProducts(); // carga lo que había en disco
+      await _loadOrders();
       debugPrint('📦 Cargados ${_queuedProducts.length} productos en la cola');
       
       // Cancelar suscripciones anteriores para evitar duplicados
@@ -103,6 +109,7 @@ class OfflineQueueService {
         if (await _connectivityService.checkConnectivity()) {
           debugPrint('🔌 Conexión confirmada, procesando cola...');
           processQueue();
+          processOrderQueue();
         }
       });
     }
@@ -113,6 +120,7 @@ class OfflineQueueService {
     if (await _connectivityService.checkConnectivity()) {
       debugPrint('✅ Conexión disponible, procesando cola');
       processQueue();
+      processOrderQueue();
     } else {
       debugPrint('❌ Sin conexión, no se procesará la cola ahora');
     }
@@ -373,6 +381,109 @@ class OfflineQueueService {
     _processingTimer?.cancel();
     _connectivitySubscription?.cancel();
     _internalController.close();
+    _orderController.close();
     debugPrint('✅ OfflineQueueService limpiado correctamente');
+  }
+
+
+  //Vainas para el orders
+  //controller solo para ordenes
+  final _orderController = StreamController<List<QueuedOrderModel>>.broadcast();
+
+  Stream<List<QueuedOrderModel>> get orderQueueStream => Stream.multi((controller) {
+    controller.add(List.unmodifiable(_queuedOrders));
+    final sub = _orderController.stream.listen(controller.add);
+    controller.onCancel = () => sub.cancel();
+  });
+
+  List<QueuedOrderModel> get queuedOrders => List.unmodifiable(_queuedOrders);
+
+    // Order Operations
+  Future<String> addOrderToQueue(String orderID, String hashConfirm) async {
+    final id = const Uuid().v4();
+    debugPrint('➕ Adding order to queue: $orderID');
+    
+    _queuedOrders.add(QueuedOrderModel(
+      queueId: id,
+      orderID: orderID,
+      hashConfirm: hashConfirm,
+      status: 'queued',
+      queuedTime: DateTime.now(),
+      retryCount: 0,
+    ));
+    
+    await _saveOrders();
+    _notifyOrders();
+    _processIfOnline();
+    return id;
+  }
+
+  Future<void> _saveOrders() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _qrscanKey,
+      _queuedOrders.map((o) => jsonEncode(o.toJson())).toList(),
+    );
+  }
+
+  Future<void> _loadOrders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_qrscanKey) ?? [];
+    _queuedOrders = raw.map((s) => QueuedOrderModel.fromJson(jsonDecode(s))).toList();
+    _notifyOrders();
+  }
+
+  void _notifyOrders() => _orderController.add(List.unmodifiable(_queuedOrders));
+
+  Future<void> processOrderQueue() async {
+    if (_isProcessingOrders || !await _connectivityService.checkConnectivity()) {
+      return;
+    }
+    
+    _isProcessingOrders = true;
+    try {
+      final pending = _queuedOrders.where((o) => 
+        o.status == 'queued' || 
+        (o.status == 'failed' && o.retryCount < _maxRetries)
+      ).toList();
+
+      for (final order in pending) {
+        await _updateOrderStatus(order.queueId, 'processing');
+        
+        try {
+          await _firebaseDAO.updateOrderStatus(
+            order.orderID, 
+            'Delivered'
+          ).timeout(const Duration(seconds: 20));
+          
+          await _updateOrderStatus(order.queueId, 'completed');
+        } catch (e) {
+          await _updateOrderStatus(
+            order.queueId, 
+            'failed', 
+            error: e.toString()
+          );
+        }
+      }
+    } finally {
+      _isProcessingOrders = false;
+    }
+  }
+
+  Future<void> _updateOrderStatus(String id, String status, {String? error}) async {
+    final index = _queuedOrders.indexWhere((o) => o.queueId == id);
+    if (index == -1) return;
+    
+    var updated = _queuedOrders[index].copyWith(status: status);
+    if (status == 'failed') {
+      updated = updated.copyWith(
+        retryCount: updated.retryCount + 1,
+        errorMessage: error,
+      );
+    }
+    
+    _queuedOrders[index] = updated;
+    await _saveOrders();
+    _notifyOrders();
   }
 }
