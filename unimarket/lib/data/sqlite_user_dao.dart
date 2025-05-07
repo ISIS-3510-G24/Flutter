@@ -20,6 +20,8 @@ class SQLiteUserDAO {
 
   // Table names
   static const String tableUsers = 'users';
+  static const String tableOrderInfo = 'orderInfo';
+
 
   // Get database instance with robust error handling
   Future<Database> get database async {
@@ -134,6 +136,15 @@ class SQLiteUserDAO {
       }
     }
   }
+  Future<void> _createOrderInfoTable(Database db) async {
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS $tableOrderInfo (
+      orderId TEXT PRIMARY KEY,
+      hashConfirm TEXT NOT NULL
+    )
+  ''');
+}
+
 
   // Create database tables with proper schema
   Future<void> _onCreate(Database db, int version) async {
@@ -158,6 +169,8 @@ class SQLiteUserDAO {
     ''');
     
     print('SQLiteUserDAO: Tables created successfully');
+    await _createOrderInfoTable(db);
+    print('SQLiteUserDAO: ORDER INFO Table created successfully');
   }
 
   // Handle database upgrades with clean rebuild if needed
@@ -486,4 +499,49 @@ class SQLiteUserDAO {
       return false;
     }
   }
+
+  //cOSAS PARA EL QR DE ORDERS
+
+  //Método para guardar una unica orden
+  Future<void> saveOrderInfo(String orderId, String hashConfirm) async {
+    try {
+      final db = await database;
+      await db.insert(
+        tableOrderInfo,
+        {
+          'orderId': orderId,
+          'hashConfirm': hashConfirm,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      print('SQLiteUserDAO: Saved orderInfo $orderId');
+    } catch (e) {
+      print('SQLiteUserDAO: Error saving orderInfo: $e');
+    }
+  }
+
+  //manda a guardar todas las ordenes fetched cuando tenía internet
+  Future<void> saveOrderInfoMap(Map<String, String> orderMap) async {
+    for (final entry in orderMap.entries) {
+      await saveOrderInfo(entry.key, entry.value);
+    }
+  }
+
+  // EC strategy: obtiene el hashmap en caso de que no haya internet
+  Future<Map<String, String>> getAllOrderInfo() async {
+    try {
+      final db = await database;
+      final List<Map<String, dynamic>> rows = await db.query(tableOrderInfo);
+      return {
+        for (var row in rows)
+          row['orderId'].toString(): row['hashConfirm'].toString(),
+      };
+    } catch (e) {
+      print('SQLiteUserDAO: Error retrieving orderInfo: $e');
+      return {};
+    }
+  }
+
+
+
 }

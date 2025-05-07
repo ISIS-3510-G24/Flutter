@@ -385,7 +385,7 @@ class OfflineQueueService {
     debugPrint('✅ OfflineQueueService limpiado correctamente');
   }
 
-
+/////_--------------------------------------------------------------------------------------------
   //Vainas para el orders
   //controller solo para ordenes
   final _orderController = StreamController<List<QueuedOrderModel>>.broadcast();
@@ -398,10 +398,10 @@ class OfflineQueueService {
 
   List<QueuedOrderModel> get queuedOrders => List.unmodifiable(_queuedOrders);
 
-    // Order Operations
+
   Future<String> addOrderToQueue(String orderID, String hashConfirm) async {
     final id = const Uuid().v4();
-    debugPrint('➕ Adding order to queue: $orderID');
+    debugPrint('Adding order to queue: $orderID');
     
     _queuedOrders.add(QueuedOrderModel(
       queueId: id,
