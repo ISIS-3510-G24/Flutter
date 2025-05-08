@@ -27,7 +27,15 @@ class _QrScanState extends State<QrScan> {
   void initState() {
     super.initState();
     _hashAndOrders = widget.hashAndOrders;
-    _fetchHashes();
+    //_fetchHashes();
+    if (_hashAndOrders != null) {
+      print("Printing hashAndOrders contents:");
+      _hashAndOrders!.forEach((key, value) {
+        print("Hash: $key -> Order ID: $value");
+      });
+    } else {
+      print("hashAndOrders is null");
+    }
   }
 
   Future<void> _fetchHashes() async {
