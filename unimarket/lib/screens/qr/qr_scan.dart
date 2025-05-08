@@ -81,7 +81,7 @@ class _QrScanState extends State<QrScan> {
           for (final barcode in barcodes) {
             print('Barcode found! ${barcode.rawValue}');
             final hashConfirm = barcode.rawValue;
-            if (hashConfirm != null && _hashAndOrders!.containsKey(hashConfirm)) {
+            if (hashConfirm != null && (_hashAndOrders!.containsKey(hashConfirm) ||_hashAndOrders!.containsValue(hashConfirm) )) {
               final orderId = _hashAndOrders![hashConfirm];
               print("Order ID obtained: $orderId");
               print("debugging hashes");
