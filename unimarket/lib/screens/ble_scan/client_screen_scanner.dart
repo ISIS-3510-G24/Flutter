@@ -91,7 +91,7 @@ Widget build(BuildContext context) {
                   );
                 }
               : null,
-            color: _isButtonEnabled ? AppColors.primaryBlue : CupertinoColors.inactiveGray,
+            color: _isButtonEnabled ? CupertinoColors.white : CupertinoColors.inactiveGray,
             child: Text('Proceed to Scan QR'),
           ),
           SizedBox(height: 20),

@@ -4,7 +4,7 @@ import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/data/sqlite_user_dao.dart';
 import 'package:unimarket/screens/tabs/profile_screen.dart';
 import 'package:unimarket/services/offline_queue_service.dart';
-
+import 'package:http/http.dart' as http;
 
 class QrScan extends StatefulWidget {
   final Map<String, String> hashAndOrders;
@@ -35,6 +35,14 @@ class _QrScanState extends State<QrScan> {
       print("hashAndOrders is null");
     }
   }
+  Future<bool> hasInternetConnection({Duration timeout = const Duration(seconds: 3)}) async {
+  try {
+    final response = await http.get(Uri.parse('https://www.google.com')).timeout(timeout);
+    return response.statusCode == 200;
+  } catch (_) {
+    return false;
+  }
+}
 
   Future<void> _fetchHashes() async {
     try {
@@ -86,18 +94,19 @@ class _QrScanState extends State<QrScan> {
             if (hashConfirm != null && (_hashAndOrders!.containsKey(hashConfirm) ||_hashAndOrders!.containsValue(hashConfirm) )) {
               final orderId = _hashAndOrders![hashConfirm];
               print("Order ID obtained: $orderId");
-              print("debugging hashes");
-
-              _hashAndOrders?.forEach((hashConfirm, productID) {
-                print("hashConfirm: $hashConfirm, productID: $productID");
-              });
               if (orderId != null) {
-                _firebaseDAO.updateOrderStatusDelivered(orderId,hashConfirm).then((_) {
-                _showSuccessDialog();
-                }).catchError((e) {
-                  // si no se puede por falta de internet, mandarlo al Shared Preferences storage compartido
-                _offlineQueueService.addOrderToQueue(orderId,hashConfirm,);
-                _showOfflineSuccessDialog();
+                hasInternetConnection().then((isOnline) {
+                  if (isOnline) {
+                    _firebaseDAO.updateOrderStatusDelivered(orderId, hashConfirm).then((_) {
+                      _showSuccessDialog();
+                    }).catchError((e) {
+                      _offlineQueueService.addOrderToQueue(orderId, hashConfirm);
+                      _showOfflineSuccessDialog();
+                    });
+                  } else {
+                    _offlineQueueService.addOrderToQueue(orderId, hashConfirm);
+                    _showOfflineSuccessDialog();
+                  }
                 });
               }
             }
