@@ -11,6 +11,7 @@ import 'package:unimarket/services/chat_service.dart';
 import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/screens/chat/response_time_indicator.dart';
+import 'package:unimarket/services/screen_metrics_service.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -31,11 +32,13 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isDisposed = false;
   StreamSubscription? _chatSubscription;
   Timer? _loadingTimer;
+  final ScreenMetricsService _metricsService = ScreenMetricsService(); 
 
   @override
   void initState() {
     super.initState();
     _loadChats();
+    _metricsService.recordScreenEntry('chat_metrics'); 
   }
   
   @override
@@ -43,6 +46,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _isDisposed = true;
     _chatSubscription?.cancel();
     _loadingTimer?.cancel();
+    _metricsService.recordScreenExit('chat_metrics'); // Add this
     super.dispose();
   }
 

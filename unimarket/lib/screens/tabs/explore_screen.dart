@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart'; // Añadido para usar Badge
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:unimarket/screens/product/product_upload_screen.dart';
+import 'package:unimarket/screens/product/queued_products_screen.dart';
 import 'package:unimarket/widgets/buttons/floating_action_button_factory.dart';
 import 'package:unimarket/services/product_service.dart';
 import 'package:unimarket/models/product_model.dart';
@@ -13,7 +15,7 @@ import 'package:unimarket/screens/search/search_screen.dart';
 import 'package:unimarket/services/product_cache_service.dart';
 import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/screens/product/queued_product_indicator.dart';
-
+import 'package:unimarket/services/screen_metrics_service.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -26,7 +28,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   final ProductService _productService = ProductService();
   final ProductCacheService _cacheService = ProductCacheService();
   final ConnectivityService _connectivityService = ConnectivityService();
-  
+  final ScreenMetricsService _metricsService = ScreenMetricsService();
   
   List<ProductModel> _allProducts = [];
   List<ProductModel> _filteredProducts = [];
@@ -36,13 +38,18 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   bool _hasInternetAccess = true;
   bool _isCheckingConnectivity = false;
   bool _usedCachedAll = false; // Track if we're showing cached all products
+  int _queuedProductsCount = 0; // Añadido: contador para la cola
   
   StreamSubscription? _connectivitySubscription;
   StreamSubscription? _checkingSubscription;
+  StreamSubscription? _queueSubscription; // Añadido: suscripción a la cola
 
  @override
   void initState() {
     super.initState();
+    
+    // Registrar métricas
+    _metricsService.recordScreenEntry('explore_metrics');
     
     // Register observer
     WidgetsBinding.instance.addObserver(this);
@@ -79,6 +86,15 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
       }
     });
     
+    // Suscribirse a los cambios en la cola de productos
+    _queueSubscription = _productService.queuedProductsStream.listen((queuedProducts) {
+      if (mounted) {
+        setState(() {
+          _queuedProductsCount = queuedProducts.length;
+        });
+      }
+    });
+    
     // Load data from cache immediately
     _loadFilteredProductsFromCache();
     _loadAllProductsFromCache();
@@ -98,12 +114,16 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   
   @override
   void dispose() {
+    // Registrar métricas
+    _metricsService.recordScreenExit('explore_metrics');
+    
     // Remove observer
     WidgetsBinding.instance.removeObserver(this);
     
     // Cancel subscriptions
     _connectivitySubscription?.cancel();
     _checkingSubscription?.cancel();
+    _queueSubscription?.cancel(); // Cancelar suscripción a la cola
     _isDisposed = true;
     super.dispose();
   }
@@ -116,6 +136,23 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
     if (hasInternet) {
       _onRefresh();
     }
+  }
+
+  // Navegar a la pantalla de cola de productos
+  void _navigateToQueuedProducts() {
+    // Registrar métricas
+    _metricsService.recordScreenExit('explore_metrics');
+    
+    // Navegar a la pantalla de productos en cola
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (context) => const QueuedProductsScreen(),
+      ),
+    ).then((_) {
+      // Registrar re-entrada cuando vuelva
+      _metricsService.recordScreenEntry('explore_metrics');
+    });
   }
 
   // Load filtered products from cache (fast)
@@ -319,12 +356,18 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   
   // Navigate to the SearchScreen when search icon is tapped
   void _navigateToSearch() {
+    // Registrar métricas
+    _metricsService.recordScreenExit('explore_metrics');
+    
     Navigator.push(
       context,
       CupertinoPageRoute(
         builder: (context) => const SearchScreen(),
       ),
-    );
+    ).then((_) {
+      // Registrar re-entrada cuando vuelva
+      _metricsService.recordScreenEntry('explore_metrics');
+    });
   }
   
   // UPDATED: Build product image with CachedNetworkImage
@@ -372,12 +415,18 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   Widget _buildProductCard(ProductModel product) {
     return GestureDetector(
       onTap: () {
+        // Registrar métricas
+        _metricsService.recordScreenExit('explore_metrics');
+        
         Navigator.push(
           context,
           CupertinoPageRoute(
             builder: (ctx) => ProductDetailScreen(product: product),
           ),
-        );
+        ).then((_) {
+          // Registrar re-entrada cuando vuelva
+          _metricsService.recordScreenEntry('explore_metrics');
+        });
       },
       child: Container(
         padding: const EdgeInsets.all(10),
@@ -418,9 +467,15 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Registrar re-entrada cuando la app vuelve al primer plano
+      _metricsService.recordScreenEntry('explore_metrics');
+      
       // Check connectivity and clear old cache when the app is resumed
       _connectivityService.checkConnectivity();
       _cacheService.clearOldCache(); // New: clear old cached items periodically
+    } else if (state == AppLifecycleState.paused) {
+      // Registrar salida cuando la app va a segundo plano
+      _metricsService.recordScreenExit('explore_metrics');
     }
   }
 
@@ -448,6 +503,50 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
                   color: CupertinoColors.systemRed,
                 ),
               ),
+            
+            // NUEVO: Botón para ver la cola de productos
+            if (_queuedProductsCount > 0)
+              Padding(
+                padding: const EdgeInsets.only(right: 8.0),
+                child: GestureDetector(
+                  onTap: _navigateToQueuedProducts,
+                  child: Stack(
+                    children: [
+                      Icon(
+                        CupertinoIcons.clock,
+                        size: 24,
+                        color: AppColors.primaryBlue,
+                      ),
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: Container(
+                          padding: EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: CupertinoColors.systemRed,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: BoxConstraints(
+                            minWidth: 14,
+                            minHeight: 14,
+                          ),
+                          child: Text(
+                            _queuedProductsCount > 9 ? '9+' : _queuedProductsCount.toString(),
+                            style: TextStyle(
+                              color: CupertinoColors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            
+            // Ícono de búsqueda
             CupertinoButton(
               padding: EdgeInsets.zero,
               onPressed: _navigateToSearch,
@@ -510,6 +609,43 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
                       ],
                     ),
                   ),
+                
+                // NUEVO: Banner de Productos en Cola (visible solo cuando no hay banner de conexión)
+                if (_queuedProductsCount > 0 && !isOffline && !_isCheckingConnectivity)
+                  GestureDetector(
+                    onTap: _navigateToQueuedProducts,
+                    child: Container(
+                      width: double.infinity,
+                      color: AppColors.primaryBlue.withOpacity(0.2),
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                      child: Row(
+                        children: [
+                          Icon(
+                            CupertinoIcons.clock,
+                            size: 16, 
+                            color: AppColors.primaryBlue,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              "$_queuedProductsCount ${_queuedProductsCount == 1 ? 'product' : 'products'} pending upload",
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppColors.primaryBlue,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          Icon(
+                            CupertinoIcons.chevron_right,
+                            size: 14,
+                            color: AppColors.primaryBlue,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  
                 Expanded(
                   child: CustomScrollView(
                     physics: const BouncingScrollPhysics(
