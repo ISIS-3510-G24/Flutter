@@ -188,11 +188,11 @@ Future<String> createUser(String email, String password, String bio, String disp
 
       for (final doc in ordersQuery.docs) {
         final hashConfirm = doc['hashConfirm'] as String;
-        final productID = doc['productID'] as String;
+        final orderID = doc.id;
         //print("hashconfirm: $hashConfirm");
         //print("producID: $productID");
         // Agregar al mapa
-        hashToProductMap[hashConfirm] = productID;
+        hashToProductMap[hashConfirm] = orderID;
       }
 
       return hashToProductMap;

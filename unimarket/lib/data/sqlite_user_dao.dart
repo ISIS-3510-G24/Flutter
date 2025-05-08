@@ -171,7 +171,7 @@ class SQLiteUserDAO {
     print('SQLiteUserDAO: Tables created successfully');
     await db.execute('''CREATE TABLE IF NOT EXISTS $tableOrderInfo (
       orderId TEXT PRIMARY KEY,
-      hashConfirm TEXT NOT NULL'''
+      hashConfirm TEXT NOT NULL,'''
     );
     print('SQLiteUserDAO: ORDER INFO Table created successfully');
   }
@@ -506,7 +506,7 @@ class SQLiteUserDAO {
   //cOSAS PARA EL QR DE ORDERS
 
   //Método para guardar una unica orden
-  Future<void> saveOrderInfo(String orderId, String hashConfirm) async {
+  Future<void> saveOrderInfo(String hashConfirm, String orderId) async {
     try {
       final db = await database;
       await db.insert(
@@ -537,7 +537,7 @@ class SQLiteUserDAO {
       final List<Map<String, dynamic>> rows = await db.query(tableOrderInfo);
       return {
         for (var row in rows)
-          row['orderId'].toString(): row['hashConfirm'].toString(),
+          row['hashConfirm'].toString(): row['orderId'].toString(),
       };
     } catch (e) {
       print('SQLiteUserDAO: Error retrieving orderInfo: $e');
