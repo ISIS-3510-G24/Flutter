@@ -25,8 +25,9 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isCheckingConnectivity = false;
   bool _isOffline = false;
   bool _hasInternetAccess = true;
+  bool _isLoading = false;
   Future<bool> _savedCredentialsFuture = Future.value(false);
-   StreamSubscription? _connectivitySubscription;
+  StreamSubscription? _connectivitySubscription;
   bool _biometricsAvailable = false;
 
  @override 
@@ -348,32 +349,39 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25),
                   child: GestureDetector(
-                    onTap: () async {
+                    onTap: _isLoading ? null : () async {
+                      setState(() => _isLoading = true);
+
                       debugPrint("Login attempt with email: ${_emailController.text}");
                       await _attemptLogin(
                         _emailController.text.trim(),
                         _passwordController.text.trim(),
                       );
+
+                      setState(() => _isLoading = false);
                     },
                     child: Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Color(0xFF66B7EF),
+                        color: _isLoading ? Colors.grey : Color(0xFF66B7EF),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Center(
-                        child: Text(
-                          "Login",
-                          style: GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
+                        child: _isLoading
+                            ? CircularProgressIndicator(color: Colors.white)
+                            : Text(
+                                "Login",
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              ),
                       ),
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 10),
             
                 // Biometric Login Button (conditionally shown)
@@ -386,33 +394,37 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 25),
                       child: GestureDetector(
-                        onTap: _handleBiometricLogin,
+                        onTap: _isLoading ? null : () async {
+                          setState(() => _isLoading = true);
+
+                          await _handleBiometricLogin();
+
+                          setState(() => _isLoading = false);
+                        },
                         child: Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: Color(0xFF66B7EF),
+                            color: _isLoading ? Colors.grey : Color(0xFF66B7EF),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Center(
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.fingerprint,
-                                  color: Colors.white,
-                                  size: 24,
-                                ),
-                                const SizedBox(width: 10),
-                                Text(
-                                  "Login with Biometrics",
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
+                            child: _isLoading
+                                ? CircularProgressIndicator(color: Colors.white)
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.fingerprint, color: Colors.white, size: 24),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        "Login with Biometrics",
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
-                              ],
-                            ),
                           ),
                         ),
                       ),
