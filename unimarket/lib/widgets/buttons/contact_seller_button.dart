@@ -53,7 +53,7 @@ Future<void> _contactSeller() async {
     print('Attempting to contact seller: ${widget.sellerId}');
     
     // Get current user ID to confirm it's available
-    final currentUserId = _chatService.currentUserId;
+    final currentUserId = await _chatService.getCurrentUserId();
     if (currentUserId == null) {
       throw Exception('Not logged in');
     }
