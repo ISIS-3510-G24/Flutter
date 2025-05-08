@@ -32,6 +32,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isDisposed = false;
   StreamSubscription? _chatSubscription;
   Timer? _loadingTimer;
+  late String _currentuserId;
 
   @override
   void initState() {
@@ -59,13 +60,20 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       // Check for current user
       // Try to get current user from chat service
-      String? currentUserId = _chatService.currentUserId;
+      String? currentUserId = await _chatService.getCurrentUserId();
+      
       // If null, fall back to cached biometric ID
-      currentUserId ??= await BiometricAuthService.getSavedUserID();
+      //YA NO TOCA ESTO PORQUE EL _chatService.getCurrentUserId(); TIENE OFFLINE SCENARIOS
+      /*try{
+        currentUserId ??= await BiometricAuthService.getSavedUserID();
+      }catch (er){
+        _showErrorDialog("There is no uid", "oops");
+      }*/
+      
 
       // If still null, show error
       if (currentUserId == null) {
-        _showErrorDialog("There is no uid", "oops");
+        
         print('ChatScreen: No current user (currentUserId is null)');
         setState(() {
           _isLoading = false;
@@ -74,6 +82,7 @@ class _ChatScreenState extends State<ChatScreen> {
         });
         return;
       }
+      _currentuserId = currentUserId;
       
       print('ChatScreen: Loading chats for user: $currentUserId');
       
@@ -351,7 +360,7 @@ if (imageUrls.isNotEmpty) {
         print('  - Last message: $lastMessage');
         print('  - Last message time: ${chat.lastMessageTime}');
         print('  - Last message sender: ${chat.lastMessageSenderId}');
-        print('  - Current user: ${_chatService.currentUserId}');
+        //print('  - Current user: $currentUserId');
         print('  - Has unread messages: ${chat.hasUnreadMessages}');
         
         // Add separator after each item except the last
@@ -513,7 +522,7 @@ if (imageUrls.isNotEmpty) {
               ChatResponseTimeIndicator(
                 lastMessageTime: chat.lastMessageTime,
                 lastMessageSenderId: chat.lastMessageSenderId!,
-                currentUserId: _chatService.currentUserId ?? '',
+                currentUserId: _currentuserId,
               ),
             
             // Add separator after each item except the last
