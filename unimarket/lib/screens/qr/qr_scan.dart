@@ -30,9 +30,7 @@ class _QrScanState extends State<QrScan> {
     //_fetchHashes();
     if (_hashAndOrders != null) {
       print("Printing hashAndOrders contents:");
-      _hashAndOrders!.forEach((key, value) {
-        print("Hash: $key -> Order ID: $value");
-      });
+      
     } else {
       print("hashAndOrders is null");
     }
@@ -80,6 +78,10 @@ class _QrScanState extends State<QrScan> {
 
           for (final barcode in barcodes) {
             print('Barcode found! ${barcode.rawValue}');
+            _hashAndOrders!.forEach((key, value) {
+              print("Hash: $key -> Order ID: $value, Barcode scanned: ${barcode.rawValue}, is it the same?: ${barcode.rawValue == key}");
+            });
+
             final hashConfirm = barcode.rawValue;
             if (hashConfirm != null && (_hashAndOrders!.containsKey(hashConfirm) ||_hashAndOrders!.containsValue(hashConfirm) )) {
               final orderId = _hashAndOrders![hashConfirm];
