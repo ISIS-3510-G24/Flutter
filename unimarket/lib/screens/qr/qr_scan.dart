@@ -171,3 +171,13 @@ void _showErrorDialog(String title, String message) {
   );
 }
 }
+
+
+/*
+flutter: Printing hashAndOrders contents:
+flutter: Barcode found! B2480s98ssme11b9xx30c7f72784e6b0
+flutter: Hash: B2480c97debe99b5bb30c7f72784e6b0 -> Order ID: PjR4maicGtvFmm1kzSXF, Barcode scanned: B2480s98ssme11b9xx30c7f72784e6b0, is it the same?: false
+flutter: Hash: a1936b97debe99b5bb30c7f72784e6b0 -> Order ID: k264oSAnuGZx2YqR8Cfx, Barcode scanned: B2480s98ssme11b9xx30c7f72784e6b0, is it the same?: false
+flutter: Hash: a1936b97debe99b5bb30c7f72784i8c9 -> Order ID: tqYlCyQZDVmA8IBGOok9, Barcode scanned: B2480s98ssme11b9xx30c7f72784e6b0, is it the same?: false
+
+*/
