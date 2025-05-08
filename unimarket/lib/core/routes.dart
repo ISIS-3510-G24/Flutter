@@ -32,8 +32,8 @@ class Routes {
         return CupertinoPageRoute(builder: (_) => const AuthValidator());
       case '/genQR':
         return CupertinoPageRoute(builder: (_) => const QrGenerate());
-      case '/scanQR':
-        return CupertinoPageRoute(builder: (_) => const QrScan());
+      /*case '/scanQR':
+        return CupertinoPageRoute(builder: (_) => const QrScan());*/
       case '/BLEscan':
         return CupertinoPageRoute(builder: (_) => const ClientScreenScan());
       case '/wishlist': 

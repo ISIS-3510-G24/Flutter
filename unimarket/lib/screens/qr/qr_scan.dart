@@ -7,7 +7,9 @@ import 'package:unimarket/services/offline_queue_service.dart';
 
 
 class QrScan extends StatefulWidget {
-  const QrScan({super.key});
+  final Map<String, String> hashAndOrders;
+
+  const QrScan({Key? key, required this.hashAndOrders}) : super(key: key);
 
   @override
   State<QrScan> createState() => _QrScanState();
@@ -16,7 +18,7 @@ class QrScan extends StatefulWidget {
 class _QrScanState extends State<QrScan> {
   //Aplica el patrón de DAO
   final FirebaseDAO _firebaseDAO = FirebaseDAO(); 
-  Map<String, String>? _hashAndOrders;
+  late Map<String, String>? _hashAndOrders;
   final sqliteUserDAO = SQLiteUserDAO();
   final OfflineQueueService _offlineQueueService = OfflineQueueService();
   //bool _isLoading = true;
@@ -24,6 +26,7 @@ class _QrScanState extends State<QrScan> {
   @override
   void initState() {
     super.initState();
+    _hashAndOrders = widget.hashAndOrders;
     _fetchHashes();
   }
 
