@@ -169,7 +169,10 @@ class SQLiteUserDAO {
     ''');
     
     print('SQLiteUserDAO: Tables created successfully');
-    await _createOrderInfoTable(db);
+    await db.execute('''CREATE TABLE IF NOT EXISTS $tableOrderInfo (
+      orderId TEXT PRIMARY KEY,
+      hashConfirm TEXT NOT NULL'''
+    );
     print('SQLiteUserDAO: ORDER INFO Table created successfully');
   }
 
