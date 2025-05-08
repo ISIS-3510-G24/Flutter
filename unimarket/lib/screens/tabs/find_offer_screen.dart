@@ -12,9 +12,9 @@ import 'package:unimarket/services/find_service.dart';
 import 'package:unimarket/screens/upload/create_offer_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/location_preferences/distance_calculation.dart';
-import 'dart:async'; // Add this import for StreamSubscription
-import 'package:connectivity_plus/connectivity_plus.dart'; // Import for ConnectivityResult
-
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:unimarket/services/screen_metrics_service.dart';
 
 class FindAndOfferScreen extends StatefulWidget {
   const FindAndOfferScreen({Key? key}) : super(key: key);
@@ -22,8 +22,6 @@ class FindAndOfferScreen extends StatefulWidget {
   @override
   State<FindAndOfferScreen> createState() => _FindAndOfferScreenState();
 }
-
-
 
 class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   StreamSubscription? _connectivitySubscription; // Declare the variable
@@ -50,11 +48,12 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   ];
   List<RecommendationModel> _recommendedProducts = []; // Nueva lista para productos recomendados
   List<FindModel> _nearbyFinds = []; // Nueva lista para finds cercanos
+  final ScreenMetricsService _metricsService = ScreenMetricsService(); 
 
   @override
   void initState() {
     super.initState();
-    // Configurar el listener de conectividad
+   _metricsService.recordScreenEntry('find_metrics');  
 
   _setupConnectivityListener();
 
@@ -71,6 +70,7 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   @override
   void dispose() {
     _connectivitySubscription?.cancel(); // Cancelar el listener de conectividad
+    _metricsService.recordScreenExit('find_metrics');
     super.dispose();
   }
 
