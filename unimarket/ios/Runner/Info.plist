@@ -26,12 +26,24 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>This app needs access to save photos to your gallery</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>We need access to Bluetooth to advertise as a seller device.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>We need access to Bluetooth to advertise as a seller device.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs camera access to scan QR codes</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use Face ID to authenticate</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We need access to your location to scan for nearby devices.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>We need access to your microphone to record audio.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>This app needs access to save photos to your gallery</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>This app needs photos access to get QR code from photo library</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>We need access to your speech to convert it to text.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -55,17 +67,5 @@
 	<true/>
 	<key>firebase_performance_collection_enabled</key>
 	<true/>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>We need access to Bluetooth to advertise as a seller device.</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>We need access to Bluetooth to advertise as a seller device.</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Use Face ID to authenticate</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>We need access to your location to scan for nearby devices.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>We need access to your microphone to record audio.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>We need access to your speech to convert it to text.</string>
 </dict>
 </plist>
