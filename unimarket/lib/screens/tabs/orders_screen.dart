@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,12 +9,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:unimarket/screens/payment/payment_screen.dart';
 import 'package:unimarket/services/product_service.dart';
 import 'package:unimarket/models/order_model.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'dart:async';
 import 'package:unimarket/services/cache_orders_service.dart';
 import 'package:unimarket/services/connectivity_service.dart';
-import 'package:unimarket/services/cache_orders_service.dart';
 import 'package:unimarket/screens/orders/order_details_screen.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -28,12 +28,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
   List<Map<String, dynamic>> sellingProducts = [];
   final ProductService _productService = ProductService();
   final CacheOrdersService<String, Map<String, dynamic>> _ordersCache =
-    CacheOrdersService(50, "orders_cache"); // Almacena hasta 50 órdenes individuales
+      CacheOrdersService(50, "orders_cache"); // Almacena hasta 50 órdenes individuales
   final ConnectivityService _connectivityService = ConnectivityService(); // Singleton instance
-  late StreamSubscription<bool> _connectivitySubscription; // Subscription to connectivity changes
-  bool _isConnected = true; // Connectivity state
+  late StreamSubscription<bool> _connectivitySubscription;
   late StreamSubscription<bool> _checkingSubscription;
 
+  bool _isConnected = true; // Connectivity state
   bool _isCheckingConnectivity = false;
 
   @override
@@ -427,18 +427,26 @@ Widget build(BuildContext context) {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: Image.network(
-              product["image"]!,
-              width: 100,
-              height: 100,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return SvgPicture.asset(
-                  "assets/svgs/ImagePlaceHolder.svg",
-                  width: 100,
-                  height: 100,
-                  fit: BoxFit.cover,
-                );
+            child: FutureBuilder<File?>(
+              future: _loadCachedImage(product["image"]),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const CupertinoActivityIndicator();
+                } else if (snapshot.hasError || snapshot.data == null) {
+                  return SvgPicture.asset(
+                    "assets/svgs/ImagePlaceHolder.svg",
+                    width: 100,
+                    height: 100,
+                    fit: BoxFit.cover,
+                  );
+                } else {
+                  return Image.file(
+                    snapshot.data!,
+                    width: 100,
+                    height: 100,
+                    fit: BoxFit.cover,
+                  );
+                }
               },
             ),
           ),
@@ -552,4 +560,24 @@ Widget build(BuildContext context) {
       ),
     );
   }
-}
+
+Future<File?> _loadCachedImage(String? imageUrl) async {
+  if (imageUrl == null || imageUrl.isEmpty) {
+    print("No image URL provided.");
+    return null;
+  }
+
+  try {
+    // Intenta obtener la imagen desde el caché
+    final file = await DefaultCacheManager().getSingleFile(imageUrl);
+    if (_isConnected) {
+      print("Image downloaded and cached successfully: $imageUrl");
+    } else {
+      print("Offline: Loaded image from cache: $imageUrl");
+    }
+    return file;
+  } catch (e) {
+    print("Error loading or caching image: $imageUrl. Error: $e");
+    return null;
+  }
+}}
