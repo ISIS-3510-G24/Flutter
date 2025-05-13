@@ -1,11 +1,13 @@
 import 'package:local_auth/local_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:unimarket/services/auth_storage_service.dart';
 
 class BiometricAuthService {
   static final LocalAuthentication _localAuth = LocalAuthentication();
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
   static const _emailKey = 'biometric_email';
   static const _passwordKey = 'biometric_password';
+  static const _uiKey = 'biometric_uid';
 
   static Future<bool> get hasBiometrics async {
     try {
@@ -46,11 +48,22 @@ class BiometricAuthService {
       return {'email': null, 'password': null};
     }
   }
+static Future<String?> getSavedUserID() async {
+  try {
+    final uid = await _secureStorage.read(key: _uiKey);
+    return uid;
+  } catch (e) {
+    print('Error reading credentials: $e');
+    return null;
+  }
+}
 
-  static Future<void> saveCredentials(String email, String password) async {
+
+  static Future<void> saveCredentials(String email, String password, String userID) async {
     try {
       await _secureStorage.write(key: _emailKey, value: email);
       await _secureStorage.write(key: _passwordKey, value: password);
+      await _secureStorage.write(key: _uiKey, value: userID);
       print('Credentials saved successfully');
     } catch (e) {
       print('Error saving credentials: $e');

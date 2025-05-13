@@ -102,15 +102,20 @@ Future<bool> _signUp() async {
       return false;
     }
 
-    await _firebaseDAO.createUser(
+    String uid = await _firebaseDAO.createUser(
       email, 
       password, 
       bio, 
       displayName, 
       selectedMajor!
     );
-    await BiometricAuthService.saveCredentials(email, password);
+    if (uid!= "fail"){
+    await BiometricAuthService.saveCredentials(email, password, uid);
     return true;
+    }
+    else{
+      return false;
+    }
   } on FirebaseAuthException catch (e) {
     _handleFirebaseAuthError(e);
     return false;

@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:unimarket/data/firebase_dao.dart';
@@ -55,16 +54,14 @@ class _QrGenerateState extends State<QrGenerate> {
   const cacheKey = 'qr_productos';
   
   try {
-    // 1. Try fetching fresh data from Firebase
+    // 1. Primero se intenta hacer el fetch de firebase
     final productsWithHashes = await _firebaseDAO.getProductsForCurrentSELLER();
 
-    // 2. Convert Firestore data to cacheable format
+    // 2. si se obtiene, se transforman las ordenes en un hasmap cacheable
     final cacheableData = _convertFirestoreData(productsWithHashes);
 
-    // 3. Store in cache
+    // 3. Almacenar en cache usando DefaultCacheManager
     await _storeInCache(cacheKey, cacheableData);
-
-    // 4. Update UI if widget is still mounted
     if (mounted) {
       setState(() {
         _productsWithHashes = productsWithHashes;
@@ -80,7 +77,7 @@ class _QrGenerateState extends State<QrGenerate> {
   }
 }
 
-// Helper method to convert Firestore-specific types
+// Transformación de datos de las ordenes a un hashmap cacheable
 Map<String, dynamic> _convertFirestoreData(Map<String, dynamic> originalData) {
   return originalData.map((key, value) {
     // Handle nested conversion
@@ -128,6 +125,7 @@ Future<void> _handleFetchError(String cacheKey) async {
             _isLoading = false;
             _isConnected = false; 
           });
+          _showOfflineSuccessPopup();
         }
         debugPrint("Loaded products from cache");
         return;
@@ -145,13 +143,28 @@ Future<void> _handleFetchError(String cacheKey) async {
       _showNoConnectionPopup();
     }
   }
+  void _showOfflineSuccessPopup() {
+  showCupertinoDialog(
+    context: context,
+    builder: (context) => CupertinoAlertDialog(
+      title: const Text("Offline Mode"),
+      content: const Text("You are offline. Newer product sales will not be shown until you're back online."),
+      actions: [
+        CupertinoDialogAction(
+          child: const Text("OK"),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ],
+    ),
+  );
+}
 
-   Future<void> _onRefresh() async {
+   /*Future<void> _onRefresh() async {
     setState(() {
       _isLoading = true;
     });
     await _fetchProducts();
-  }
+  }*/
 
   void _showQrPopup(String hashConfirm) {
     
@@ -203,53 +216,58 @@ Future<void> _handleFetchError(String cacheKey) async {
           children: [
             // Add the banner here
             if (!_isConnected)
-              Container(
-                width: double.infinity,
-                color: CupertinoColors.systemYellow.withOpacity(0.3),
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                child: Row(
-                  children: [
-                    const Icon(
-                      CupertinoIcons.exclamationmark_triangle,
-                      size: 16,
-                      color: CupertinoColors.systemYellow,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        "You are offline. Shown orders may be outdated.",
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: CupertinoColors.systemGrey,
-                        ),
-                      ),
-                    ),
-                    CupertinoButton(
-                      padding: EdgeInsets.zero,
-                      minSize: 0,
-                      onPressed: _onRefresh,
-                      child: Text(
-                        "Retry",
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: AppColors.primaryBlue,
-                        ),
-                      ),
-                    ),
-                  ],
+  Container(
+    width: double.infinity,
+    color: CupertinoColors.systemYellow.withOpacity(0.3),
+    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+    child: Row(
+      children: [
+        const Icon(
+          CupertinoIcons.exclamationmark_triangle,
+          size: 16,
+          color: CupertinoColors.systemYellow,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            "You are offline. Shown orders may be outdated.",
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: CupertinoColors.systemGrey,
+            ),
+          ),
+        ),
+        CupertinoButton(
+          padding: EdgeInsets.zero,
+          minSize: 0,
+          onPressed: () async {
+            // Call the same function as the refresh control
+            await _fetchProducts();
+            // Optional: Show a brief loading indicator
+            setState(() {});
+          },
+          child: Text(
+            "Retry",
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: AppColors.primaryBlue,
+            ),
+          ),
+        ),
+      ],
+    ),
+  ),
+Expanded(
+  child: _isLoading
+      ? const Center(child: CupertinoActivityIndicator())
+      : _productsWithHashes == null
+          ? const Center(child: Text("Failed to load products"))
+          : CustomScrollView(
+              slivers: [
+                CupertinoSliverRefreshControl(
+                  onRefresh: _fetchProducts, // Same function as Retry
                 ),
-              ),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CupertinoActivityIndicator())
-                  : _productsWithHashes == null
-                      ? const Center(child: Text("Failed to load products"))
-                      : CustomScrollView(
-                slivers: [
-                  CupertinoSliverRefreshControl(
-                    onRefresh: _fetchProducts,
-                  ),
-                  SliverPadding(
+                SliverPadding(
                     padding: const EdgeInsets.all(10),
                     sliver: (_productsWithHashes != null && _productsWithHashes!.isEmpty)
                         ? const SliverFillRemaining(

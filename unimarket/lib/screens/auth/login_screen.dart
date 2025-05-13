@@ -5,9 +5,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/data/firebase_dao.dart';
-import 'package:local_auth/local_auth.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:unimarket/services/auth_storage_service.dart';
+import 'package:unimarket/services/connectivity_service.dart';
+
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback showRegisterPage;
@@ -20,16 +20,43 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final ConnectivityService _connectivityService = ConnectivityService();
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
+  bool _isCheckingConnectivity = false;
+  bool _isOffline = false;
+  bool _hasInternetAccess = true;
+  bool _isLoading = false;
   Future<bool> _savedCredentialsFuture = Future.value(false);
+  StreamSubscription? _connectivitySubscription;
   bool _biometricsAvailable = false;
 
- @override
-void initState() {
-  super.initState();
-  _checkBiometrics();
-  _loadSavedEmail();
-  _savedCredentialsFuture = BiometricAuthService.hasSavedCredentials();
+ @override 
+  void initState() { 
+    super.initState(); 
+    _checkBiometrics(); 
+    _loadSavedEmail(); 
+    _savedCredentialsFuture = BiometricAuthService.hasSavedCredentials(); 
+     
+    // Initialize with current state 
+    _hasInternetAccess = _connectivityService.hasInternetAccess; 
+    _isCheckingConnectivity = _connectivityService.isChecking; 
+     
+    // Set up connectivity listeners 
+    _connectivitySubscription = _connectivityService.connectivityStream.listen((hasInternet) { 
+      if (mounted) { 
+        setState(() { 
+          _hasInternetAccess = hasInternet; 
+          // When we get a connectivity result, we're no longer checking 
+          _isCheckingConnectivity = false; 
+        }); 
+      } 
+    }); 
+    _checkConnectivity(); 
+    WidgetsBinding.instance.addPostFrameCallback((_){
+      if (!_hasInternetAccess){
+        _connectivityService.checkConnectivity();
+      }
+    });
 }
 
   Future<void> _checkBiometrics() async {
@@ -71,10 +98,10 @@ void initState() {
     // Try online login first with timeout
     final success = await _firebaseDAO.signIn(email, password)
       .timeout(const Duration(seconds: 10));
-    
+    String userID = await _firebaseDAO.getCurrentUserIdreal();
     if (success && mounted) {
       debugPrint('Online login successful');
-      await BiometricAuthService.saveCredentials(email, password);
+      await BiometricAuthService.saveCredentials(email, password, userID);
       Navigator.pushReplacementNamed(context, '/home');
       return;
     }
@@ -91,6 +118,33 @@ void initState() {
     _showLoginError('Login failed. Please try again.');
   }
 }
+
+  Future<void> _checkConnectivity() async {
+    
+    // Check connectivity
+    final bool hasInternet = await _connectivityService.checkConnectivity();
+    
+    if (mounted) {
+      setState(() {
+        _isOffline = !hasInternet;
+      });
+      
+    }
+  }
+   
+void _handleRetryPressed() async { 
+    if (mounted) { 
+      setState(() { 
+        _isCheckingConnectivity = true; 
+      }); 
+    } 
+     
+    await _connectivityService.checkConnectivity(); 
+     
+  } 
+  
+
+
 
 Future<void> _checkOfflineCredentials(String email, String password) async {
   try {
@@ -114,21 +168,24 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
   }
 }
 
-  void _showOfflineWarning() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Offline Mode'),
-        content: const Text('You are using the app in offline mode. Some features may be limited.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
+  void _showOfflineWarning() { 
+  showCupertinoDialog( 
+    context: context, 
+    builder: (context) => CupertinoAlertDialog( 
+      title: const Text('Offline Mode'), 
+      content: const Text( 
+        'You are using the app in offline mode. Some features may be limited.', 
+      ), 
+      actions: [ 
+        CupertinoDialogAction( 
+          isDefaultAction: true, 
+          onPressed: () => Navigator.pop(context), 
+          child: const Text('OK'), 
+        ), 
+      ], 
+    ), 
+  ); 
+} 
 
   void _showLoginError(String errorMessage) {
     if (!mounted) return;
@@ -158,40 +215,88 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        backgroundColor: Color(0xFFf1f1f1),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // UniMarket image
-                ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(10),
-                    bottomRight: Radius.circular(10),
-                  ),
-                  child: Image.asset(
-                    'assets/images/PlainLogoWithBackground.png',
-                    width: double.infinity,
-                    height: 300,
-                    fit: BoxFit.cover,
+  // Get current connectivity state - make sure you have these variables defined in your state
+    bool isOffline = !_hasInternetAccess;
+  
+  return MaterialApp(
+    home: Scaffold(
+      backgroundColor: Color(0xFFf1f1f1),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Add the connection status banner at the top
+              if (isOffline || _isCheckingConnectivity)
+                Container(
+                  width: double.infinity,
+                  color: CupertinoColors.systemYellow.withOpacity(0.3),
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                  child: Row(
+                    children: [
+                      _isCheckingConnectivity 
+                          ? CupertinoActivityIndicator(radius: 8)
+                          : const Icon(
+                              CupertinoIcons.exclamationmark_triangle,
+                              size: 16,
+                              color: CupertinoColors.systemYellow,
+                            ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _isCheckingConnectivity
+                              ? "Checking internet connection..."
+                              : "No internet connection. Some features may not work.",
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: CupertinoColors.systemGrey,
+                          ),
+                        ),
+                      ),
+                      if (!_isCheckingConnectivity)
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          minSize: 0,
+                          
+                          onPressed: _handleRetryPressed,
+                          child: Text(
+                            "Retry",
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: Colors.blue, 
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 20),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 25),
-                  child: Text(
-                    "Welcome!",
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 40,
-                      color: Colors.black,
-                    ),
+
+              // Rest of your existing content
+              ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(10),
+                  bottomRight: Radius.circular(10),
+                ),
+                child: Image.asset(
+                  'assets/images/PlainLogoWithBackground.png',
+                  width: double.infinity,
+                  height: 300,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 25),
+                child: Text(
+                  "Welcome!",
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 40,
+                    color: Colors.black,
                   ),
                 ),
-                const SizedBox(height: 40),
+              ),
+              const SizedBox(height: 40),
             
                 // Username textbox
                 Padding(
@@ -244,32 +349,39 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25),
                   child: GestureDetector(
-                    onTap: () async {
+                    onTap: _isLoading ? null : () async {
+                      setState(() => _isLoading = true);
+
                       debugPrint("Login attempt with email: ${_emailController.text}");
                       await _attemptLogin(
                         _emailController.text.trim(),
                         _passwordController.text.trim(),
                       );
+
+                      setState(() => _isLoading = false);
                     },
                     child: Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Color(0xFF66B7EF),
+                        color: _isLoading ? Colors.grey : Color(0xFF66B7EF),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Center(
-                        child: Text(
-                          "Login",
-                          style: GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
+                        child: _isLoading
+                            ? CircularProgressIndicator(color: Colors.white)
+                            : Text(
+                                "Login",
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              ),
                       ),
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 10),
             
                 // Biometric Login Button (conditionally shown)
@@ -282,33 +394,37 @@ Future<void> _checkOfflineCredentials(String email, String password) async {
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 25),
                       child: GestureDetector(
-                        onTap: _handleBiometricLogin,
+                        onTap: _isLoading ? null : () async {
+                          setState(() => _isLoading = true);
+
+                          await _handleBiometricLogin();
+
+                          setState(() => _isLoading = false);
+                        },
                         child: Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: Color(0xFF66B7EF),
+                            color: _isLoading ? Colors.grey : Color(0xFF66B7EF),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Center(
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.fingerprint,
-                                  color: Colors.white,
-                                  size: 24,
-                                ),
-                                const SizedBox(width: 10),
-                                Text(
-                                  "Login with Biometrics",
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
+                            child: _isLoading
+                                ? CircularProgressIndicator(color: Colors.white)
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.fingerprint, color: Colors.white, size: 24),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        "Login with Biometrics",
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
-                              ],
-                            ),
                           ),
                         ),
                       ),

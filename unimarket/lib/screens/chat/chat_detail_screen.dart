@@ -37,24 +37,28 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   StreamSubscription? _messagesSubscription;
 
   @override
-  void initState() {
-    super.initState();
-    _currentUserId = _chatService.currentUserId;
-    
-    // Reset lastMessageSenderId first
-    _fixChatSenderIds();
-    
-    // Then load messages and mark as read
-    _loadMessages();
-    _markChatAsRead();
-    
-    // Set the other user from the widget if available
-    if (widget.otherUser != null) {
-      _otherUser = widget.otherUser;
-    } else {
-      _loadChatParticipant();
-    }
+void initState() {
+  super.initState();
+  _initializeState(); 
+}
+
+Future<void> _initializeState() async {
+  _currentUserId = await _chatService.getCurrentUserId();
+
+  // Reset lastMessageSenderId first
+  _fixChatSenderIds();
+
+  // Then load messages and mark as read
+  _loadMessages();
+  _markChatAsRead();
+
+  // Set the other user from the widget if available
+  if (widget.otherUser != null) {
+    _otherUser = widget.otherUser;
+  } else {
+    _loadChatParticipant();
   }
+}
 
   @override
   void dispose() {
