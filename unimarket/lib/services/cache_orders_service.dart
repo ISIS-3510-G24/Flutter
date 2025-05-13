@@ -2,60 +2,82 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class CacheOrdersService<K, V> {
-  final int capacity;
-  final _cache = <K, V>{};
-  final _usageOrder = <K>[];
-  final String storageKey;
+  final int capacity; // Capacidad máxima del caché
+  final _cache = <K, V>{}; // Mapa para almacenar las órdenes individuales
+  final _usageOrder = <K>[]; // Lista para mantener el orden de uso
+  final String storageKey; // Clave para almacenamiento persistente
 
   CacheOrdersService(this.capacity, this.storageKey);
 
+  /// Carga los datos desde SharedPreferences al iniciar
   Future<void> loadFromStorage() async {
   final prefs = await SharedPreferences.getInstance();
   final cachedData = prefs.getString(storageKey);
   if (cachedData != null) {
-    final decodedData = jsonDecode(cachedData) as Map<String, dynamic>;
-    _cache.clear();
-    _usageOrder.clear();
-    decodedData.forEach((key, value) {
-      // Convierte explícitamente cada valor en un List<Map<String, dynamic>>
-      _cache[key as K] = (value as List)
-          .map((item) => item as Map<String, dynamic>)
-          .toList() as V;
-      _usageOrder.add(key as K);
-    });
+    try {
+      final decodedData = jsonDecode(cachedData) as Map<String, dynamic>;
+      _cache.clear();
+      _usageOrder.clear();
+      decodedData.forEach((key, value) {
+        // Verifica que cada valor sea un Map<String, dynamic>
+        if (value is Map<String, dynamic>) {
+          _cache[key as K] = value as V;
+          _usageOrder.add(key as K);
+        } else {
+          print("Invalid data format for key: $key");
+        }
+      });
+      print("Cache successfully loaded from storage: ${_cache.length} items");
+    } catch (e) {
+      print("Error loading cache from storage: $e");
+    }
+  } else {
+    print("No cached data found in storage.");
   }
 }
 
-  Future<void> saveToStorage() async {
+  /// Guarda los datos actuales del caché en SharedPreferences
+ Future<void> saveToStorage() async {
   final prefs = await SharedPreferences.getInstance();
-  final encodedData = jsonEncode(_cache);
-  await prefs.setString(storageKey, encodedData);
+  try {
+    final encodedData = jsonEncode(_cache); // Convierte el mapa a JSON
+    await prefs.setString(storageKey, encodedData);
+    print("Cache successfully saved to storage: ${_cache.length} items");
+  } catch (e) {
+    print("Error saving cache to storage: $e");
+  }
 }
 
+  /// Obtiene una orden del caché
   V? get(K key) {
     if (!_cache.containsKey(key)) return null;
-    _usageOrder.remove(key);
-    _usageOrder.add(key);
+    _usageOrder.remove(key); // Elimina la clave de su posición actual
+    _usageOrder.add(key); // Agrega la clave al final (más recientemente utilizada)
+    print("Accessed key: $key. Usage order: $_usageOrder");
     return _cache[key];
   }
 
- Future<void> put(K key, V value) async {
+  /// Agrega una nueva orden al caché
+  Future<void> put(K key, V value) async {
   if (_cache.containsKey(key)) {
-    _usageOrder.remove(key);
+    _usageOrder.remove(key); // Elimina la clave de su posición actual
   } else if (_cache.length >= capacity) {
-    K oldestKey = _usageOrder.removeAt(0);
-    _cache.remove(oldestKey);
+    K oldestKey = _usageOrder.removeAt(0); // Elimina la clave menos recientemente utilizada
+    _cache.remove(oldestKey); // Elimina el elemento del caché
+    print("Removed least recently used order: $oldestKey");
   }
-  _cache[key] = value;
-  _usageOrder.add(key);
+  _cache[key] = value; // Agrega el nuevo valor al caché
+  _usageOrder.add(key); // Agrega la clave al final (más recientemente utilizada)
+  print("Added order to cache: $key. Current cache size: ${_cache.length}");
+  print("Current usage order: $_usageOrder");
   await saveToStorage(); // Guarda los datos en almacenamiento persistente
 }
 
+  /// Limpia todo el caché
   Future<void> clear() async {
-  _cache.clear();
-  _usageOrder.clear();
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.remove(storageKey); // Limpia el almacenamiento persistente
-  print("SharedPreferences cleared for key: $storageKey");
-}
+    _cache.clear();
+    _usageOrder.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(storageKey); // Limpia el almacenamiento persistente
+  }
 }

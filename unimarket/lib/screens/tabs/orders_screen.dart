@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,9 +9,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:unimarket/screens/payment/payment_screen.dart';
 import 'package:unimarket/services/product_service.dart';
 import 'package:unimarket/models/order_model.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'dart:async';
 import 'package:unimarket/services/cache_orders_service.dart';
+import 'package:unimarket/services/connectivity_service.dart';
+import 'package:unimarket/screens/orders/order_details_screen.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -24,56 +27,97 @@ class _OrdersScreenState extends State<OrdersScreen> {
   List<Map<String, dynamic>> historyProducts = [];
   List<Map<String, dynamic>> sellingProducts = [];
   final ProductService _productService = ProductService();
-  final CacheOrdersService<String, List<Map<String, dynamic>>> _ordersCache =
-      CacheOrdersService(10, "30 minutes"); // Cache for 10 keys with a 30-minute expiration
+  final CacheOrdersService<String, Map<String, dynamic>> _ordersCache =
+      CacheOrdersService(50, "orders_cache"); // Almacena hasta 50 órdenes individuales
+  final ConnectivityService _connectivityService = ConnectivityService(); // Singleton instance
+  late StreamSubscription<bool> _connectivitySubscription;
+  late StreamSubscription<bool> _checkingSubscription;
+
   bool _isConnected = true; // Connectivity state
-  final Connectivity _connectivity = Connectivity();
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  bool _isCheckingConnectivity = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCache().then((_) {
+      _setupConnectivityListener();
+      _loadOrdersWithCache("buying", _fetchBuyingOrders);
+      _loadOrdersWithCache("history", _fetchHistoryOrders);
+      _loadOrdersWithCache("selling", _fetchSellingOrders);
+      _checkAndShowPeakHourNotification();
+    });
+  }
+
+  Future<void> _initializeCache() async {
+    await _ordersCache.loadFromStorage(); // Load data from SharedPreferences
+    print("Cache loaded from storage: ${_ordersCache.get("buying")?.length ?? 0} buying items");
+    print("Cache loaded from storage: ${_ordersCache.get("history")?.length ?? 0} history items");
+    print("Cache loaded from storage: ${_ordersCache.get("selling")?.length ?? 0} selling items");
+  }
+
+  void _setupConnectivityListener() {
+    _connectivitySubscription = _connectivityService.connectivityStream.listen((bool isConnected) {
+      setState(() {
+        _isConnected = isConnected;
+      });
+      if (!_isConnected) {
+        print("You are offline. Some features may not work.");
+      } else {
+        print("You are online.");
+      }
+    });
+
+    _checkingSubscription = _connectivityService.checkingStream.listen((bool isChecking) {
+      setState(() {
+        _isCheckingConnectivity = isChecking;
+      });
+    });
+  }
+
+  void _handleRetryPressed() async {
+    // Forzar una verificación de conectividad
+    bool hasInternet = await _connectivityService.checkConnectivity();
+    setState(() {
+      _isConnected = hasInternet;
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription.cancel(); // Cancel the subscription
+    _checkingSubscription.cancel();
+    super.dispose();
+  }
+
+  void _clearCache() async {
+    await _ordersCache.clear(); // Clear the cache in memory and SharedPreferences
+    print("Cache cleared");
+    setState(() {
+      buyingProducts = [];
+      historyProducts = [];
+      sellingProducts = [];
+    });
+  }
 
   void _checkAndShowPeakHourNotification() {
     // Placeholder implementation for the method
     print("Checking and showing peak hour notification...");
   }
 
-  @override
-void initState() {
-  super.initState();
-  _initializeCache().then((_) {
-    _setupConnectivityListener();
-    _loadOrdersWithCache("buying", _fetchBuyingOrders);
-    _loadOrdersWithCache("history", _fetchHistoryOrders);
-    _loadOrdersWithCache("selling", _fetchSellingOrders);
-    _checkAndShowPeakHourNotification();
-  });
-}
-
- Future<void> _initializeCache() async {
-  await _ordersCache.loadFromStorage(); // Carga los datos desde SharedPreferences
-  print("Cache loaded from storage: ${_ordersCache.get("buying")?.length ?? 0} buying items");
-  print("Cache loaded from storage: ${_ordersCache.get("history")?.length ?? 0} history items");
-  print("Cache loaded from storage: ${_ordersCache.get("selling")?.length ?? 0} selling items");
-}
-
-  @override
-  void dispose() {
-    _connectivitySubscription?.cancel();
-    super.dispose();
+ Future<void> _loadOrdersWithCache(
+    String cacheKey, Future<List<Map<String, dynamic>>> Function() fetchFunction) async {
+  // Verifica si las órdenes están en el caché
+  final cachedOrders = <Map<String, dynamic>>[];
+  print("Checking cache for $cacheKey orders...");
+  for (var order in buyingProducts) {
+    final cachedOrder = _ordersCache.get(order['orderId']);
+    if (cachedOrder != null) {
+      print("Found cached order: ${order['orderId']}");
+      cachedOrders.add(cachedOrder);
+    }
   }
 
-  void _setupConnectivityListener() {
-  _connectivitySubscription = _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> results) {
-    setState(() {
-      // Verifica si hay al menos un tipo de conexión disponible
-      _isConnected = results.isNotEmpty && results.any((result) => result != ConnectivityResult.none);
-    });
-  });
-}
-
-  Future<void> _loadOrdersWithCache(
-    String cacheKey, Future<List<Map<String, dynamic>>> Function() fetchFunction) async {
-  // Verifica si los datos están en el caché
-  final cachedOrders = _ordersCache.get(cacheKey);
-  if (cachedOrders != null) {
+  if (cachedOrders.isNotEmpty) {
     print("Loaded $cacheKey orders from cache: ${cachedOrders.length} items");
     setState(() {
       if (cacheKey == "buying") buyingProducts = cachedOrders;
@@ -83,12 +127,14 @@ void initState() {
     return;
   }
 
-  // Si no están en el caché, se obtienen los datos del servidor
-  print("Fetching $cacheKey orders from server (first time)...");
-  final orders = await fetchFunction(); 
-await _ordersCache.put(cacheKey, orders);
-print("Orders type: ${orders.runtimeType}");
-print("Stored $cacheKey orders in cache: ${orders.length} items");
+  // Si no están en el caché, obtén los datos del servidor
+  print("Fetching $cacheKey orders from server...");
+  final orders = await fetchFunction();
+  for (var order in orders) {
+    print("Adding order to cache: ${order['orderId']}");
+    await _ordersCache.put(order['orderId'], order); // Agrega cada orden al caché
+  }
+  print("Stored $cacheKey orders in cache: ${orders.length} items");
   setState(() {
     if (cacheKey == "buying") buyingProducts = orders;
     if (cacheKey == "history") historyProducts = orders;
@@ -229,16 +275,6 @@ print("Stored $cacheKey orders in cache: ${orders.length} items");
     }
   }
 
-  void _clearCache() async {
-  await _ordersCache.clear(); // Borra el caché en memoria y en SharedPreferences
-  print("Cache cleared");
-  setState(() {
-    buyingProducts = [];
-    historyProducts = [];
-    sellingProducts = [];
-  });
-}
-
   @override
 Widget build(BuildContext context) {
   return CupertinoPageScaffold(
@@ -258,28 +294,45 @@ Widget build(BuildContext context) {
           SafeArea(
             child: Column(
               children: [
-                if (!_isConnected)
+                if (!_isConnected || _isCheckingConnectivity)
                   Container(
                     width: double.infinity,
                     color: CupertinoColors.systemYellow.withOpacity(0.3),
                     padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                     child: Row(
                       children: [
-                        const Icon(
-                          CupertinoIcons.exclamationmark_triangle,
-                          size: 16,
-                          color: CupertinoColors.systemYellow,
-                        ),
+                        _isCheckingConnectivity
+                            ? const CupertinoActivityIndicator(radius: 8)
+                            : const Icon(
+                                CupertinoIcons.exclamationmark_triangle,
+                                size: 16,
+                                color: CupertinoColors.systemYellow,
+                              ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            "You are offline. Some features may not work.",
+                            _isCheckingConnectivity
+                                ? "Checking internet connection..."
+                                : "You are offline. Some features may not work.",
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               color: CupertinoColors.systemGrey,
                             ),
                           ),
                         ),
+                        if (!_isCheckingConnectivity)
+                          CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            minSize: 0,
+                            child: Text(
+                              "Retry",
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                            onPressed: _handleRetryPressed,
+                          ),
                       ],
                     ),
                   ),
@@ -353,57 +406,76 @@ Widget build(BuildContext context) {
   }
 
   Widget _buildProductItem(Map<String, dynamic> product) {
-    return CupertinoButton(
-      padding: EdgeInsets.zero,
-      onPressed: () {},
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                product["image"]!,
-                width: 100,
-                height: 100,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
+  return CupertinoButton(
+    padding: EdgeInsets.zero,
+    onPressed: () {
+      // Marca el producto como usado en el caché
+      _ordersCache.put(product['orderId'], product);
+
+      // Navega a la pantalla de detalles
+      Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (context) => OrderDetailsScreen(order: product),
+        ),
+      );
+    },
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: FutureBuilder<File?>(
+              future: _loadCachedImage(product["image"]),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const CupertinoActivityIndicator();
+                } else if (snapshot.hasError || snapshot.data == null) {
                   return SvgPicture.asset(
                     "assets/svgs/ImagePlaceHolder.svg",
                     width: 100,
                     height: 100,
                     fit: BoxFit.cover,
                   );
-                },
-              ),
+                } else {
+                  return Image.file(
+                    snapshot.data!,
+                    width: 100,
+                    height: 100,
+                    fit: BoxFit.cover,
+                  );
+                }
+              },
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product["name"]!,
+                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                ),
+                Text(
+                  product["details"]!,
+                  style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
+                ),
+                if (product.containsKey("price"))
                   Text(
-                    product["name"]!,
-                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                    product["price"]!,
+                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.primaryBlue),
                   ),
+                if (product.containsKey("status"))
                   Text(
-                    product["details"]!,
+                    product["status"]!,
                     style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
                   ),
-                  if (product.containsKey("price"))
-                    Text(
-                      product["price"]!,
-                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.primaryBlue),
-                    ),
-                  if (product.containsKey("status"))
-                    Text(
-                      product["status"]!,
-                      style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
-                    ),
-                ],
-              ),
+              ],
             ),
+          ),
             if (_selectedTab != 2) ...[
               CupertinoButton(
                 padding: EdgeInsets.zero,
@@ -488,4 +560,24 @@ Widget build(BuildContext context) {
       ),
     );
   }
-}
+
+Future<File?> _loadCachedImage(String? imageUrl) async {
+  if (imageUrl == null || imageUrl.isEmpty) {
+    print("No image URL provided.");
+    return null;
+  }
+
+  try {
+    // Intenta obtener la imagen desde el caché
+    final file = await DefaultCacheManager().getSingleFile(imageUrl);
+    if (_isConnected) {
+      print("Image downloaded and cached successfully: $imageUrl");
+    } else {
+      print("Offline: Loaded image from cache: $imageUrl");
+    }
+    return file;
+  } catch (e) {
+    print("Error loading or caching image: $imageUrl. Error: $e");
+    return null;
+  }
+}}
