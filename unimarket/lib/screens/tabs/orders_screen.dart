@@ -28,10 +28,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
   List<Map<String, dynamic>> sellingProducts = [];
   final ProductService _productService = ProductService();
   final CacheOrdersService<String, Map<String, dynamic>> _ordersCache =
-    CacheOrdersService(2, "orders_cache"); // Almacena hasta 100 órdenes individuales
+    CacheOrdersService(50, "orders_cache"); // Almacena hasta 50 órdenes individuales
   final ConnectivityService _connectivityService = ConnectivityService(); // Singleton instance
   late StreamSubscription<bool> _connectivitySubscription; // Subscription to connectivity changes
   bool _isConnected = true; // Connectivity state
+  late StreamSubscription<bool> _checkingSubscription;
+
+  bool _isCheckingConnectivity = false;
 
   @override
   void initState() {
@@ -63,11 +66,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
         print("You are online.");
       }
     });
+
+    _checkingSubscription = _connectivityService.checkingStream.listen((bool isChecking) {
+      setState(() {
+        _isCheckingConnectivity = isChecking;
+      });
+    });
+  }
+
+  void _handleRetryPressed() async {
+    // Forzar una verificación de conectividad
+    bool hasInternet = await _connectivityService.checkConnectivity();
+    setState(() {
+      _isConnected = hasInternet;
+    });
   }
 
   @override
   void dispose() {
     _connectivitySubscription.cancel(); // Cancel the subscription
+    _checkingSubscription.cancel();
     super.dispose();
   }
 
@@ -276,28 +294,45 @@ Widget build(BuildContext context) {
           SafeArea(
             child: Column(
               children: [
-                if (!_isConnected)
+                if (!_isConnected || _isCheckingConnectivity)
                   Container(
                     width: double.infinity,
                     color: CupertinoColors.systemYellow.withOpacity(0.3),
                     padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                     child: Row(
                       children: [
-                        const Icon(
-                          CupertinoIcons.exclamationmark_triangle,
-                          size: 16,
-                          color: CupertinoColors.systemYellow,
-                        ),
+                        _isCheckingConnectivity
+                            ? const CupertinoActivityIndicator(radius: 8)
+                            : const Icon(
+                                CupertinoIcons.exclamationmark_triangle,
+                                size: 16,
+                                color: CupertinoColors.systemYellow,
+                              ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            "You are offline. Some features may not work.",
+                            _isCheckingConnectivity
+                                ? "Checking internet connection..."
+                                : "You are offline. Some features may not work.",
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               color: CupertinoColors.systemGrey,
                             ),
                           ),
                         ),
+                        if (!_isCheckingConnectivity)
+                          CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            minSize: 0,
+                            child: Text(
+                              "Retry",
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                            onPressed: _handleRetryPressed,
+                          ),
                       ],
                     ),
                   ),
