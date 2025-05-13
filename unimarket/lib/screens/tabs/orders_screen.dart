@@ -37,8 +37,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _isCheckingConnectivity = false;
 
   @override
+  // `_initializeCache()` es una función que realiza una tarea asíncrona (cargar datos del caché).
+  // Debido a que `initState()` no puede ser `async`, se usa `.then()` para manejar la ejecución del código después de que la tarea asíncrona haya terminado.
   void initState() {
     super.initState();
+      // Se usa `then` para encadenar acciones que se ejecutan después de que el Future de _initializeCache haya completado su ejecución.
     _initializeCache().then((_) {
       _setupConnectivityListener();
       _loadOrdersWithCache("buying", _fetchBuyingOrders);
@@ -50,9 +53,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Future<void> _initializeCache() async {
     await _ordersCache.loadFromStorage(); // Load data from SharedPreferences
-    print("Cache loaded from storage: ${_ordersCache.get("buying")?.length ?? 0} buying items");
-    print("Cache loaded from storage: ${_ordersCache.get("history")?.length ?? 0} history items");
-    print("Cache loaded from storage: ${_ordersCache.get("selling")?.length ?? 0} selling items");
   }
 
   void _setupConnectivityListener() {
@@ -568,16 +568,27 @@ Future<File?> _loadCachedImage(String? imageUrl) async {
   }
 
   try {
-    // Intenta obtener la imagen desde el caché
+    // Intenta obtener la imagen desde el caché primero
     final file = await DefaultCacheManager().getSingleFile(imageUrl);
-    if (_isConnected) {
-      print("Image downloaded and cached successfully: $imageUrl");
+
+    if (file.existsSync()) {
+      // Si la imagen está en caché y existe, la carga desde el caché
+      if (_isConnected) {
+        print("Image downloaded and cached successfully: $imageUrl");
+      } else {
+        print("Offline: Loaded image from cache: $imageUrl");
+      }
+      return file;
     } else {
-      print("Offline: Loaded image from cache: $imageUrl");
+      // Si no existe en el caché, la descarga
+      print("Image not found in cache, downloading: $imageUrl");
+      final downloadedFile = await DefaultCacheManager().getSingleFile(imageUrl);
+      print("Image downloaded and cached: $imageUrl");
+      return downloadedFile;
     }
-    return file;
   } catch (e) {
     print("Error loading or caching image: $imageUrl. Error: $e");
     return null;
   }
-}}
+}
+}
