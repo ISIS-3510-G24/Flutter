@@ -27,7 +27,7 @@ Future<bool> signIn(String email, String password) async {
     }
   }
 
-Future<bool> createUser(String email, String password, String bio, String displayName, String major )async {
+Future<String> createUser(String email, String password, String bio, String displayName, String major )async {
     try {
       
        UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
@@ -55,10 +55,10 @@ Future<bool> createUser(String email, String password, String bio, String displa
       "message": "Placeholder review",
     });
       print("User creation successful");
-      return true; 
+      return uid; 
     } catch (e) {
       print("User creation failed: $e");
-      return false;
+      return "fail";
     }
   }
 
@@ -71,6 +71,9 @@ Future<bool> createUser(String email, String password, String bio, String displa
   }
   String? getCurrentUserId() {
     return _auth.currentUser?.uid;
+  }
+  Future<String> getCurrentUserIdreal() async {
+    return _auth.currentUser!.uid;
   }
 
   Future<List<Map<String, dynamic>>> getAllProducts({String? filter}) async {
@@ -185,11 +188,11 @@ Future<bool> createUser(String email, String password, String bio, String displa
 
       for (final doc in ordersQuery.docs) {
         final hashConfirm = doc['hashConfirm'] as String;
-        final productID = doc['productID'] as String;
-        print("hashconfirm: $hashConfirm");
-        print("producID: $productID");
+        final orderID = doc.id;
+        //print("hashconfirm: $hashConfirm");
+        //print("producID: $productID");
         // Agregar al mapa
-        hashToProductMap[hashConfirm] = productID;
+        hashToProductMap[hashConfirm] = orderID;
       }
 
       return hashToProductMap;
@@ -332,11 +335,9 @@ Future<bool> sendPreferencesToFirebase ( Set<String> selectedPreferences)async {
     await orderRef.update({
       'status': 'Delivered',
     });
-    print("Order $orderId status updated to 'Delivered'.");
+    //print("Order $orderId status updated to 'Delivered'.");
   } catch (e) {
-    print("Error updating order status using orderId: $e");
-
-    // Debugging in case it fails
+    //print("Error updating order status using orderId: $e");
     try {
       final querySnapshot = await _firestore
           .collection('orders')

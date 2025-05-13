@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:unimarket/models/chat_model.dart';
 import 'package:unimarket/models/message_model.dart';
 import 'package:unimarket/models/user_model.dart';
+import 'package:unimarket/services/auth_storage_service.dart';
 import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/data/hive_chat_storage.dart';
@@ -58,8 +59,28 @@ class ChatService {
   }
   
   // Get current user ID
-  String? get currentUserId => _auth.currentUser?.uid;
+  //DEPRECATED BC IT DOESNT FOLLOW OFFLINE SCENARIO HANDLING
+  //String? get currentUserId => _auth.currentUser?.uid;
   
+  //Aux method that gets the currentuserId in both online and offline scenarios
+  Future<String?> getCurrentUserId() async {
+    // First try Firebase auth
+    final firebaseUserId = _auth.currentUser?.uid;
+    if (firebaseUserId != null) return firebaseUserId;
+    
+    // Fallback to biometric storage
+    try {
+      final biometricUserId = await BiometricAuthService.getSavedUserID();
+      if (biometricUserId != null) {
+        return biometricUserId;
+      }
+    } catch (e) {
+      print('Failed to get user ID from biometric storage: $e');
+    }
+    
+    return null;
+  }
+
   // Get user chats with improved offline support
   Stream<List<ChatModel>> getUserChats() {
     final controller = StreamController<List<ChatModel>>();
@@ -85,7 +106,7 @@ class ChatService {
     StreamSubscription? firestoreSubscription;
     Future<void> setupFirestoreListener() async {
       // Ensure current user exists
-      final userId = currentUserId;
+      final userId = await getCurrentUserId();
       if (userId == null) {
         print('ChatService: No current user');
         controller.add([]);
@@ -183,7 +204,8 @@ Future<void> _preloadChatUsers(List<ChatModel> chats) async {
     // Get all unique participant IDs except current user
     for (final chat in chats) {
       for (final participantId in chat.participants) {
-        if (participantId != currentUserId && !_userCache.containsKey(participantId)) {
+        final userId = await getCurrentUserId();
+        if (participantId != userId && !_userCache.containsKey(participantId)) {
           userIds.add(participantId);
         }
       }
@@ -325,7 +347,7 @@ Future<void> _preloadChatUsers(List<ChatModel> chats) async {
   // Método para crear o obtener un chat existente con otro usuario
 Future<ChatModel?> createOrGetChat(String otherUserId) async {
   try {
-    final userId = currentUserId;
+    final userId = await getCurrentUserId();
     if (userId == null) {
       print('ChatService: No current user ID available');
       return null;
@@ -398,7 +420,7 @@ Future<ChatModel?> createOrGetChat(String otherUserId) async {
 // Método auxiliar para encontrar un chat existente
 Future<ChatModel?> _findExistingChat(String otherUserId) async {
   try {
-    final userId = currentUserId;
+    final userId = await getCurrentUserId();
     if (userId == null) return null;
     
     // Primero buscar en el almacenamiento local
@@ -460,7 +482,7 @@ Future<ChatModel?> _findExistingChat(String otherUserId) async {
       }
       
       // Get current user ID
-      final userId = currentUserId;
+      final userId = await getCurrentUserId();
       if (userId == null) {
         print('ChatService: Cannot send message - no current user');
         return false;
@@ -549,7 +571,7 @@ Future<ChatModel?> _findExistingChat(String otherUserId) async {
   Future<bool> markChatAsRead(String chatId) async {
     try {
       // Get current user ID
-      final userId = currentUserId;
+      final userId = await getCurrentUserId();
       if (userId == null) {
         print('ChatService: Cannot mark chat as read - no current user');
         return false;
@@ -596,7 +618,7 @@ Future<ChatModel?> _findExistingChat(String otherUserId) async {
       }
       
       // Get current user ID
-      final userId = currentUserId;
+      final userId = await getCurrentUserId();
       if (userId == null) {
         print('ChatService: Cannot get participant - no current user');
         return null;
