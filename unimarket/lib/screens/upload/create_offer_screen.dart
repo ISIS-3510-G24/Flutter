@@ -38,20 +38,24 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
   }
 
   void _setupConnectivityListener() {
-    // Verificar conectividad al iniciar
-    _handleRetryPressed();
-
-    _connectivitySubscription = _connectivityService.connectivityStream.listen((bool isConnected) async {
+    _connectivitySubscription = _connectivityService.connectivityStream.listen((bool isConnected) {
       setState(() {
         _isConnected = isConnected;
       });
 
       if (isConnected) {
         print("Internet connection restored. Syncing local offers...");
-        await _syncLocalOffers();
+        _syncLocalOffers();
       } else {
         print("You are offline. Some features may not work.");
       }
+    });
+
+    // Configura la suscripción para el checkingStream
+    _checkingSubscription = _connectivityService.checkingStream.listen((bool isChecking) {
+      setState(() {
+        _isCheckingConnectivity = isChecking;
+      });
     });
   }
 
@@ -96,11 +100,11 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
   }
 
   @override
-  void dispose() {
-    _connectivitySubscription.cancel(); // Cancelar la suscripción
-    _checkingSubscription.cancel();
-    super.dispose();
-  }
+void dispose() {
+  _connectivitySubscription.cancel();
+  _checkingSubscription?.cancel(); // Verifica si está inicializado antes de cancelarlo
+  super.dispose();
+}
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
