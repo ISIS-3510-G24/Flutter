@@ -17,8 +17,10 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getLocalOffers() async {
   final db = await database;
-  return await db.query('offers');
-}
+  final offers = await db.query('offers');
+  print("Retrieved local offers from database: $offers");
+  return offers;
+  }
 
 Future<int> deleteLocalOffer(int id) async {
   final db = await database;
@@ -60,7 +62,10 @@ Future<int> deleteLocalOffer(int id) async {
   }
 
   Future<int> insertOffer(Map<String, dynamic> offer) async {
-    final db = await database;
-    return await db.insert('offers', offer);
-  }
+  final db = await database;
+  print("Inserting offer into local database: $offer");
+  return await db.insert('offers', offer);
+}
+
+
 }
