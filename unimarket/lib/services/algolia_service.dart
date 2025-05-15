@@ -1,45 +1,173 @@
-import 'dart:collection';
 import 'package:algolia/algolia.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:unimarket/models/product_model.dart';
 import 'package:unimarket/services/algolia_adapter_service.dart';
 
-/// ArrayMap: un cache de tamaño fijo que expulsa la entrada
-/// menos recientemente usada (LRU) cuando supera [capacity].
+/// ArrayMap: estructura de datos que almacena elementos en arrays para optimizar
+/// el uso de memoria a costa de un poco de rendimiento.
 ///
 /// Parámetros:
 /// - [capacity]: número máximo de entradas que retiene en memoria.
 class ArrayMap<K, V> {
   final int capacity;
-  final LinkedHashMap<K, V> _map;
+  final List<int> _hashes;      // Array para almacenar los hashes
+  final List<dynamic> _entries; // Array para almacenar claves y valores de forma intercalada
 
-  ArrayMap(this.capacity) : _map = LinkedHashMap();
+  ArrayMap(this.capacity) 
+      : _hashes = [],
+        _entries = [];
 
-  /// Obtiene el valor y lo marca como usado (se mueve al final de la lista).
+  /// Obtiene el valor asociado a la clave proporcionada.
   V? get(K key) {
-    if (!_map.containsKey(key)) return null;
-    V value = _map.remove(key)!;
-    _map[key] = value;
-    return value;
-  }
-
-  /// Inserta o actualiza el valor. Si no existe y estamos al límite,
-  /// elimina la clave más antigua (_map.keys.first).
-  void put(K key, V value) {
-    if (_map.containsKey(key)) {
-      _map.remove(key);
-    } else if (_map.length >= capacity) {
-      _map.remove(_map.keys.first);
+    final hash = key.hashCode;
+    final index = _binarySearch(hash);
+    
+    if (index >= 0) {
+      // Encontramos un hash que coincide, pero debemos verificar que la clave sea exactamente la misma
+      final entryIndex = index * 2;
+      if (_entries[entryIndex] == key) {
+        return _entries[entryIndex + 1] as V;
+      }
+      
+      // Si hay colisión de hash, buscar linealmente
+      int i = index - 1;
+      while (i >= 0 && _hashes[i] == hash) {
+        if (_entries[i * 2] == key) {
+          return _entries[i * 2 + 1] as V;
+        }
+        i--;
+      }
+      
+      i = index + 1;
+      while (i < _hashes.length && _hashes[i] == hash) {
+        if (_entries[i * 2] == key) {
+          return _entries[i * 2 + 1] as V;
+        }
+        i++;
+      }
     }
-    _map[key] = value;
+    
+    return null;
   }
 
-  bool containsKey(K key) => _map.containsKey(key);
-  void remove(K key) => _map.remove(key);
-  void clear() => _map.clear();
+  /// Inserta o actualiza el valor. Si estamos al límite de capacidad,
+  /// no se añadirá el nuevo elemento.
+  void put(K key, V value) {
+    final hash = key.hashCode;
+    final index = _binarySearch(hash);
+    
+    if (index >= 0) {
+      // Hash encontrado, revisar si la clave existe
+      int i = index;
+      while (i >= 0 && _hashes[i] == hash) {
+        if (_entries[i * 2] == key) {
+          // Actualizar valor existente
+          _entries[i * 2 + 1] = value;
+          return;
+        }
+        i--;
+      }
+      
+      i = index + 1;
+      while (i < _hashes.length && _hashes[i] == hash) {
+        if (_entries[i * 2] == key) {
+          // Actualizar valor existente
+          _entries[i * 2 + 1] = value;
+          return;
+        }
+        i++;
+      }
+      
+      // Insertar nuevo par (key, value) con el mismo hash
+      _insertAt(index + 1, key, value, hash);
+    } else {
+      // Hash no encontrado, calculamos el punto de inserción
+      final insertionPoint = -(index + 1);
+      _insertAt(insertionPoint, key, value, hash);
+    }
+  }
+
+  /// Inserta un par clave-valor en la posición específica
+  void _insertAt(int index, K key, V value, int hash) {
+    if (_hashes.length >= capacity) {
+      // Si alcanzamos capacidad, no insertamos más elementos
+      return;
+    }
+    
+    // Insertar hash
+    _hashes.insert(index, hash);
+    
+    // Insertar clave y valor
+    final entryIndex = index * 2;
+    if (entryIndex >= _entries.length) {
+      _entries.add(key);
+      _entries.add(value);
+    } else {
+      _entries.insert(entryIndex, key);
+      _entries.insert(entryIndex + 1, value);
+    }
+  }
+
+  /// Búsqueda binaria para encontrar el hash
+  int _binarySearch(int hash) {
+    int low = 0;
+    int high = _hashes.length - 1;
+    
+    while (low <= high) {
+      final mid = (low + high) ~/ 2;
+      final midVal = _hashes[mid];
+      
+      if (midVal < hash) {
+        low = mid + 1;
+      } else if (midVal > hash) {
+        high = mid - 1;
+      } else {
+        return mid; // Clave encontrada
+      }
+    }
+    
+    return -(low + 1); // Clave no encontrada, retorna punto de inserción
+  }
+
+  bool containsKey(K key) => get(key) != null;
+
+  void remove(K key) {
+    final hash = key.hashCode;
+    final index = _binarySearch(hash);
+    
+    if (index >= 0) {
+      // Buscar la clave exacta
+      int i = index;
+      while (i >= 0 && _hashes[i] == hash) {
+        if (_entries[i * 2] == key) {
+          _hashes.removeAt(i);
+          _entries.removeAt(i * 2); // Eliminar clave
+          _entries.removeAt(i * 2); // Eliminar valor
+          return;
+        }
+        i--;
+      }
+      
+      i = index + 1;
+      while (i < _hashes.length && _hashes[i] == hash) {
+        if (_entries[i * 2] == key) {
+          _hashes.removeAt(i);
+          _entries.removeAt(i * 2); // Eliminar clave
+          _entries.removeAt(i * 2); // Eliminar valor
+          return;
+        }
+        i++;
+      }
+    }
+  }
+
+  void clear() {
+    _hashes.clear();
+    _entries.clear();
+  }
 }
 
-/// Servicio de búsqueda con Algolia y caché LRU en memoria.
+/// Servicio de búsqueda con Algolia y caché ArrayMap en memoria.
 class AlgoliaService {
   // Singleton pattern
   static final AlgoliaService _instance = AlgoliaService._internal();
@@ -52,15 +180,15 @@ class AlgoliaService {
     apiKey: 'dc1ff8ca6c391a652b422a4ef11c8fd3', // Solo búsqueda
   );
 
-  // Caché LRU en memoria: capacidad máxima de 20 entradas.
+  // Caché ArrayMap en memoria: capacidad máxima de 20 entradas.
   final ArrayMap<String, List<ProductModel>> _searchCache = ArrayMap(20);
 
   // Límite de historial de búsqueda en SharedPreferences
-  final int _historyLimit = 10;
+  final int _historyLimit = 20;
 
   Algolia get algolia => _algolia;
 
-  /// Busca productos. Usa caché LRU para no repetir llamadas idénticas.
+  /// Busca productos. Usa caché ArrayMap para no repetir llamadas idénticas.
   Future<List<ProductModel>> searchProducts(String query) async {
     // 1) Intentar leer de caché
     final cached = _searchCache.get(query);
@@ -152,6 +280,6 @@ class AlgoliaService {
   }
 
   Future<void> addSearchToHistory(String query) async {
-  return _addToSearchHistory(query);
-}
+    return _addToSearchHistory(query);
+  }
 }
