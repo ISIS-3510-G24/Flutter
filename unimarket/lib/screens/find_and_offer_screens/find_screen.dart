@@ -188,34 +188,36 @@ class _FindsScreenState extends State<FindsScreen> {
   }
 
   Widget _buildMainImage() {
-    return Container(
-      height: 200,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: AppColors.lightGreyBackground,
-      ),
-      child: widget.find.image.isNotEmpty
-          ? Image.network(
-              widget.find.image,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => const Center(
-                child: Icon(
-                  CupertinoIcons.photo,
-                  size: 50,
-                  color: CupertinoColors.systemGrey,
-                ),
-              ),
-            )
-          : const Center(
+  return Container(
+    height: 200,
+    width: double.infinity,
+    decoration: BoxDecoration(
+      color: AppColors.lightGreyBackground,
+    ),
+    child: widget.find.image.isNotEmpty
+        ? CachedNetworkImage(
+            imageUrl: widget.find.image, // URL de la imagen
+            placeholder: (context, url) => const Center(
+              child: CupertinoActivityIndicator(),
+            ), // Indicador de carga
+            errorWidget: (context, url, error) => const Center(
               child: Icon(
                 CupertinoIcons.photo,
                 size: 50,
                 color: CupertinoColors.systemGrey,
               ),
+            ), // Icono en caso de error
+            fit: BoxFit.cover,
+          )
+        : const Center(
+            child: Icon(
+              CupertinoIcons.photo,
+              size: 50,
+              color: CupertinoColors.systemGrey,
             ),
-    );
-  }
-
+          ),
+  );
+}
   Widget _buildFindDetails() {
     return Padding(
       padding: const EdgeInsets.all(16.0),

@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:unimarket/screens/find_and_offer_screens/audio_to_text_screen.dart';
 import 'package:unimarket/services/connectivity_service.dart';
+import 'package:unimarket/data/firebase_dao.dart';
 
 class ConfirmProductScreen extends StatefulWidget {
   final String postType; // "find" o "offer"
@@ -55,10 +56,10 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
         _isConnected = isConnected;
       });
 
-      if (isConnected) {
-        print("Internet connection restored. Syncing offline finds...");
-        _uploadOfflineFinds();
-      } else {
+      if (isConnected && !_isSyncing) {
+  print("Internet connection restored. Syncing offline finds...");
+  _uploadOfflineFinds();
+} else {
         print("You are offline. Some features may not work.");
       }
     });
@@ -70,7 +71,13 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
     });
   }
 
-  Future<void> _uploadOfflineFinds() async {
+ bool _isSyncing = false;
+
+Future<void> _uploadOfflineFinds() async {
+  if (_isSyncing) return; // Previene múltiples ejecuciones simultáneas
+  _isSyncing = true;
+
+  try {
     print("Starting offline finds sync...");
     final findsMap = await HiveFindStorage.getAllFinds();
 
@@ -81,6 +88,14 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
         final find = entry.value;
 
         try {
+          // Verifica si el find ya existe en Firebase
+          final exists = await _findService.findExists(find['title']);
+          if (exists) {
+            print("Find with title '${find['title']}' already exists in Firebase. Skipping upload.");
+            await HiveFindStorage.deleteFind(key); // Elimina el find localmente
+            continue;
+          }
+
           print("Uploading find with key $key: $find");
           await _findService.createFind(
             title: find['title'],
@@ -99,7 +114,11 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
     } else {
       print("No offline finds to sync.");
     }
+  } finally {
+    _isSyncing = false;
   }
+}
+
 
   void _handleRetryPressed() async {
     // Forzar una verificación de conectividad

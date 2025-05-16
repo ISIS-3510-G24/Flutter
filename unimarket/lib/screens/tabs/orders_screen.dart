@@ -27,6 +27,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
   List<Map<String, dynamic>> historyProducts = [];
   List<Map<String, dynamic>> sellingProducts = [];
   final ProductService _productService = ProductService();
+
+  //Aquí se guardan todas las órdenes (compras, ventas, historial) usando su orderId como clave.
   final CacheOrdersService<String, Map<String, dynamic>> _ordersCache =
       CacheOrdersService(50, "orders_cache"); // Almacena hasta 50 órdenes individuales
   final ConnectivityService _connectivityService = ConnectivityService(); // Singleton instance
@@ -41,9 +43,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
   // Debido a que `initState()` no puede ser `async`, se usa `.then()` para manejar la ejecución del código después de que la tarea asíncrona haya terminado.
   void initState() {
     super.initState();
-      // Se usa `then` para encadenar acciones que se ejecutan después de que el Future de _initializeCache haya completado su ejecución.
+      // Se usa then para encadenar acciones que se ejecutan después de que el Future de _initializeCache haya completado su ejecución.
     _initializeCache().then((_) {
       _setupConnectivityListener();
+
+      // Cargar las órdenes desde el caché o usa fetch si no están en caché
       _loadOrdersWithCache("buying", _fetchBuyingOrders);
       _loadOrdersWithCache("history", _fetchHistoryOrders);
       _loadOrdersWithCache("selling", _fetchSellingOrders);
@@ -105,20 +109,29 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
  Future<void> _loadOrdersWithCache(
-    String cacheKey, Future<List<Map<String, dynamic>>> Function() fetchFunction) async {
+
+  //parámetro 1
+    String cacheKey, //indica el tipo de orden (buying, history, selling)
+  //parámetro 2 que trae función que devuelve lista de ordenes desde el servidor 
+  Future<List<Map<String, dynamic>>> Function() fetchFunction) async {
+
   // Verifica si las órdenes están en el caché
   final cachedOrders = <Map<String, dynamic>>[];
   print("Checking cache for $cacheKey orders...");
+
+  //recorre lista actual e intenta cargar ese id correspondiente desde el caché
   for (var order in buyingProducts) {
+    //Se intenta cargar las ordenes desde el caché
     final cachedOrder = _ordersCache.get(order['orderId']);
     if (cachedOrder != null) {
       print("Found cached order: ${order['orderId']}");
       cachedOrders.add(cachedOrder);
     }
   }
-
   if (cachedOrders.isNotEmpty) {
     print("Loaded $cacheKey orders from cache: ${cachedOrders.length} items");
+
+    //actualizar interfaz con las ordenes que se cargaron desde el caché
     setState(() {
       if (cacheKey == "buying") buyingProducts = cachedOrders;
       if (cacheKey == "history") historyProducts = cachedOrders;
@@ -126,11 +139,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
     });
     return;
   }
-
-  // Si no están en el caché, obtén los datos del servidor
+  // Si no están en el caché, se obtienen las ordenes desde el servidor
   print("Fetching $cacheKey orders from server...");
   final orders = await fetchFunction();
   for (var order in orders) {
+    //como no estaban en caché, se agregan
     print("Adding order to cache: ${order['orderId']}");
     await _ordersCache.put(order['orderId'], order); // Agrega cada orden al caché
   }
@@ -141,6 +154,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (cacheKey == "selling") sellingProducts = orders;
   });
 }
+
 
   Future<List<Map<String, dynamic>>> _fetchBuyingOrders() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -428,7 +442,10 @@ Widget build(BuildContext context) {
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: FutureBuilder<File?>(
+              //future es el resultado de la función _loadCachedImage
+              // que carga la imagen desde el caché o la descarga si no está en caché
               future: _loadCachedImage(product["image"]),
+              //función que construye el widget basado en el estado del Future (snapshot contiene estado actual)
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const CupertinoActivityIndicator();
@@ -561,6 +578,7 @@ Widget build(BuildContext context) {
     );
   }
 
+//Cache strategy sprint 3: Librería Flutter cache manager con DefaultCacheManager
 Future<File?> _loadCachedImage(String? imageUrl) async {
   if (imageUrl == null || imageUrl.isEmpty) {
     print("No image URL provided.");
@@ -568,7 +586,7 @@ Future<File?> _loadCachedImage(String? imageUrl) async {
   }
 
   try {
-    // Intenta obtener la imagen desde el caché primero
+    // Intenta obtener la imagen desde el caché primero (caching strategy: Librería Flutter cache manager)
     final file = await DefaultCacheManager().getSingleFile(imageUrl);
 
     if (file.existsSync()) {

@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
+//sprint 3 LRU
 class CacheOrdersService<K, V> {
   final int capacity; // Capacidad máxima del caché
-  final _cache = <K, V>{}; // Mapa para almacenar las órdenes individuales
-  final _usageOrder = <K>[]; // Lista para mantener el orden de uso
+  final _cache = <K, V>{}; // Mapa para almacenar las órdenes individuales, K identificador ÚNICO, V datos de las órdenes
+  final _usageOrder = <K>[]; // Lista para mantener el orden de uso de las claves en el caché (clave menos recientemente utilizada al principio)
   final String storageKey; // Clave para almacenamiento persistente
 
   CacheOrdersService(this.capacity, this.storageKey);
@@ -20,7 +21,7 @@ class CacheOrdersService<K, V> {
       _usageOrder.clear();
       decodedData.forEach((key, value) {
         // Verifica que cada valor sea un Map<String, dynamic>
-        if (value is Map<String, dynamic>) {
+        if (value is Map<String, dynamic>) { 
           _cache[key as K] = value as V;
           _usageOrder.add(key as K);
         } else {
@@ -35,7 +36,6 @@ class CacheOrdersService<K, V> {
     print("No cached data found in storage.");
   }
 }
-
   /// Guarda los datos actuales del caché en SharedPreferences
  Future<void> saveToStorage() async {
   final prefs = await SharedPreferences.getInstance();
@@ -48,17 +48,11 @@ class CacheOrdersService<K, V> {
   }
 }
 
-  /// Obtiene una orden del caché
-  V? get(K key) {
-    if (!_cache.containsKey(key)) return null;
-    _usageOrder.remove(key); // Elimina la clave de su posición actual
-    _usageOrder.add(key); // Agrega la clave al final (más recientemente utilizada)
-    print("Accessed key: $key. Usage order: $_usageOrder");
-    return _cache[key];
-  }
+// Flujo. Primer se agrega con put al caché
 
   /// Agrega una nueva orden al caché
   Future<void> put(K key, V value) async {
+  //verificar si la clave ya existe
   if (_cache.containsKey(key)) {
     _usageOrder.remove(key); // Elimina la clave de su posición actual
   } else if (_cache.length >= capacity) {
@@ -72,6 +66,15 @@ class CacheOrdersService<K, V> {
   print("Current usage order: $_usageOrder");
   await saveToStorage(); // Guarda los datos en almacenamiento persistente
 }
+  /// Obtiene una orden del caché
+  V? get(K key) {
+    if (!_cache.containsKey(key)) return null;
+    _usageOrder.remove(key); // Elimina la clave de su posición actual
+    _usageOrder.add(key); // Agrega la clave al final (más recientemente utilizada)
+    print("Accessed key: $key. Usage order: $_usageOrder");
+    return _cache[key];
+  }
+
 
   /// Limpia todo el caché
   Future<void> clear() async {

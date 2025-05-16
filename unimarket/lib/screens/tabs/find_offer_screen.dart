@@ -14,8 +14,10 @@ import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/location_preferences/distance_calculation.dart';
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:unimarket/services/screen_metrics_service.dart';
 import 'package:unimarket/data/hive_find_storage.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class FindAndOfferScreen extends StatefulWidget {
   const FindAndOfferScreen({Key? key}) : super(key: key);
@@ -34,9 +36,8 @@ class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   String? _userMajor; // Para almacenar el major del usuario
   bool _isLoading = true;
   bool _isConnected = true; // Variable para verificar la conectividad
-  // Removed unused field '_isConnected'
   final Connectivity _connectivity = Connectivity();
-  // Removed duplicate declaration of _connectivitySubscription
+
   final List<Map<String, String>> _wishlistItems = [
     {"title": "Wishlist Item 1", "subtitle": "Description 1"},
     {"title": "Wishlist Item 2", "subtitle": "Description 2"},
@@ -88,10 +89,13 @@ Future<void> _loadAllData() async {
     super.dispose();
   }
 
+
+  //CARGA DE FINDS
+
   Future<void> _loadFindsFromNetworkThenCache() async {
-  setState(() {
-    _isLoading = true; // Mostrar indicador de carga
-  });
+  //setState(() {
+    //_isLoading = true; // Mostrar indicador de carga
+  //});
 
   try {
     print("Fetching finds from server...");
@@ -131,122 +135,6 @@ Future<void> _loadAllData() async {
     });
   }
 }
-  
-
-
-
-
-Widget _buildFindsList() {
-  if (_finds.isEmpty) {
-    return Center(
-      child: Text(
-        "No finds available.",
-        style: GoogleFonts.inter(
-          fontSize: 14,
-          color: CupertinoColors.systemGrey,
-        ),
-      ),
-    );
-  }
-
-  return ListView.builder(
-    itemCount: _finds.length,
-    itemBuilder: (context, index) {
-      final find = _finds[index];
-      return GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            CupertinoPageRoute(
-              builder: (ctx) => FindsScreen(find: find),
-            ),
-          );
-        },
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: CupertinoColors.systemGrey6,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: AppColors.transparentGrey,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: find.image.isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          find.image,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => const Icon(
-                            CupertinoIcons.photo,
-                            color: CupertinoColors.white,
-                          ),
-                        ),
-                      )
-                    : const Icon(
-                        CupertinoIcons.photo,
-                        color: CupertinoColors.white,
-                      ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      find.title,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      find.description,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: CupertinoColors.systemGrey,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
-}
-  void _setupConnectivityListener() {
-    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> results) {
-      setState(() {
-        _isConnected = results.isNotEmpty && results.any((result) => result != ConnectivityResult.none);
-      });
-      
-    });}
-
- Future<void> _checkInitialConnectivity() async {
-  try {
-    final result = await _connectivity.checkConnectivity();
-    setState(() {
-      _isConnected = result != ConnectivityResult.none;
-    });
-  } catch (e) {
-    print("Error checking initial connectivity: $e");
-    setState(() {
-      _isConnected = false; // Asume que no hay conexión si ocurre un error
-    });
-  }
-}
 
 Future<void> _loadRecommendedFinds() async {
   final recommendationService = RecommendationService();
@@ -265,49 +153,11 @@ Future<void> _loadRecommendedFinds() async {
     });
   }
 }
-  Future<void> _loadRecommendedProducts() async {
-  final recommendationService = RecommendationService();
 
-  try {
-    print("Fetching recommended products...");
-    final recommendedProducts = await recommendationService.getRecommendedProducts();
-    setState(() {
-      _recommendedProducts = recommendedProducts;
-      _isLoading = false; // Cambiar el estado a false después de cargar los datos
-    });
-    print("Loaded recommended products: $_recommendedProducts");
-  } catch (e) {
-    print("Error loading recommended products: $e");
-    setState(() {
-      _isLoading = false; // Cambiar el estado a false incluso si ocurre un error
-    });
-  }
-
-}
-  // 2. Nuevo método para cargar el major del usuario y luego los finds
-  Future<void> _loadUserDataAndFinds() async {
-    try {
-      // Primero obtenemos el major del usuario
-      final major = await _findService.getCurrentUserMajor();
-      setState(() {
-        _userMajor = major;
-      });
-      
-      print("User major: $_userMajor");
-      
-      // Ahora cargamos los finds
-      _loadFinds();
-    } catch (e) {
-      print("Error loading user data: $e");
-      // Continuamos cargando los finds incluso si no pudimos obtener el major
-      _loadFinds();
-    }
-  }
-
-  Future<void> _loadFinds() async {
-  setState(() {
-    _isLoading = true;
-  });
+Future<void> _loadFinds() async {
+  //setState(() {
+    //_isLoading = true;
+  //});
 
   try {
     // Cargar todos los Finds
@@ -356,408 +206,61 @@ Future<void> _loadRecommendedFinds() async {
     });
   }
 }
-Future<List<FindModel>> getFindsByLocation() async {
+
+
+
+  
+  void _setupConnectivityListener() {
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      setState(() {
+        _isConnected = results.isNotEmpty && results.any((result) => result != ConnectivityResult.none);
+      });
+      
+    });}
+
+ Future<void> _checkInitialConnectivity() async {
   try {
-    // Obtener la ubicación actual usando el Singleton
-    //LocationService locationService = LocationService();
-    final locationService = LocationService();
-    final userPosition = await locationService.getCurrentLocation();
-
-    // Obtener el edificio más cercano
-    final nearestBuilding = await findNearestBuilding(userPosition);
-
-    if (nearestBuilding == null) {
-      print("No nearby buildings found.");
-      return []; // No hay edificios cercanos
-    }
-
-    print("Nearest building: ${nearestBuilding.name}, Labels: ${nearestBuilding.relatedLabels}");
-
-    // Obtener todos los elementos disponibles (finds)
-    final allFinds = await _findService.getFind();
-
-    // Filtrar los elementos cuyos labels coincidan con los del edificio más cercano
-    final filteredFinds = allFinds.where((find) {
-      return nearestBuilding.relatedLabels.any((label) => find.labels.contains(label));
-    }).toList();
-
-    print("Filtered finds: ${filteredFinds.map((f) => f.title).toList()}");
-
-    return filteredFinds;
+    final result = await _connectivity.checkConnectivity();
+    setState(() {
+      _isConnected = result != ConnectivityResult.none;
+    });
   } catch (e) {
-    print("Error in getFindsByLocation: $e");
-    return [];
+    print("Error checking initial connectivity: $e");
+    setState(() {
+      _isConnected = false; // Asume que no hay conexión si ocurre un error
+    });
   }
 }
 
-  Widget _buildRecommendedList() {
-  if (_recommendedProducts.isEmpty) {
-    return Center(
-      child: Text(
-        "No recommendations available.",
-        style: GoogleFonts.inter(
-          fontSize: 14,
-          color: CupertinoColors.systemGrey,
-        ),
-      ),
-    );
+Future<void> deleteHiveFiles() async {
+  try {
+    await Hive.deleteBoxFromDisk('pendingFinds');
+    await Hive.deleteBoxFromDisk('offline_finds');
+    print("Hive: Archivos de Hive eliminados del dispositivo.");
+  } catch (e) {
+    print("Error al eliminar los archivos de Hive: $e");
   }
-
-  return ListView.builder(
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    itemCount: _recommendedProducts.length,
-    itemBuilder: (context, index) {
-      final product = _recommendedProducts[index];
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: CupertinoColors.systemGrey6,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            // Imagen del producto
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: AppColors.transparentGrey,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: product.image.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        product.image,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => const Icon(
-                          CupertinoIcons.photo,
-                          color: CupertinoColors.white,
-                        ),
-                      ),
-                    )
-                  : const Icon(
-                      CupertinoIcons.photo,
-                      color: CupertinoColors.white,
-                    ),
-            ),
-            const SizedBox(width: 10),
-            // Texto del producto
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.name,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    "\$${product.price}",
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: CupertinoColors.systemGrey,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
-
-Widget _buildRecommendedFindsList() {
-  if (_recommendedFinds.isEmpty) {
-    return Center(
-      child: Text(
-        "No recommendations available.",
-        style: GoogleFonts.inter(
-          fontSize: 14,
-          color: CupertinoColors.systemGrey,
-        ),
-      ),
-    );
-  }
-
-  return ListView.builder(
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    itemCount: _recommendedFinds.length,
-    itemBuilder: (context, index) {
-      final findMap = _recommendedFinds[index];
-      final find = FindModel.fromMap(findMap); // Convertir Map<String, dynamic> a FindModel
-
-      return GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            CupertinoPageRoute(
-              builder: (ctx) => FindsScreen(find: find), // Navegar a FindsScreen
-            ),
-          );
-        },
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: CupertinoColors.systemGrey6,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              // Imagen del find
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: AppColors.transparentGrey,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-               child: find.image.isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          find.image,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => const Icon(
-                            CupertinoIcons.photo,
-                            color: CupertinoColors.white,
-                          ),
-                        ),
-                      )
-                    : const Icon(
-                        CupertinoIcons.photo,
-                        color: CupertinoColors.white,
-                      ),
-              ),
-              const SizedBox(width: 10),
-              // Texto del find
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      find.title,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      find.description,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: CupertinoColors.systemGrey,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
-}
-Widget _buildNearbyFindsList() {
-  if (_nearbyFinds.isEmpty) {
-    return Center(
-      child: Text(
-        "No nearby finds available.",
-        style: GoogleFonts.inter(
-          fontSize: 14,
-          color: CupertinoColors.systemGrey,
-        ),
-      ),
-    );
-  }
-
-  return ListView.builder(
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    itemCount: _nearbyFinds.length,
-    itemBuilder: (context, index) {
-      final find = _nearbyFinds[index];
-      return GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            CupertinoPageRoute(
-              builder: (ctx) => FindsScreen(find: find),
-            ),
-          );
-        },
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: CupertinoColors.systemGrey6,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: AppColors.transparentGrey,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: find.image.isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          find.image,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => const Icon(
-                            CupertinoIcons.photo,
-                            color: CupertinoColors.white,
-                          ),
-                        ),
-                      )
-                    : const Icon(
-                        CupertinoIcons.photo,
-                        color: CupertinoColors.white,
-                      ),
-              ),
-              const SizedBox(width: 10),
-              // Texto del find
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      find.title,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      find.description,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: CupertinoColors.systemGrey,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
-}
-  // 4. Nuevo método para construir la sección "From your major"
-  Widget _buildFromMajorSection() {
-  if (_majorFinds.isEmpty) {
-    return Center(
-      child: Text(
-        "No finds available for your major.",
-        style: GoogleFonts.inter(
-          fontSize: 14,
-          color: CupertinoColors.systemGrey,
-        ),
-      ),
-    );
-  }
-
-  return ListView.builder(
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    itemCount: _majorFinds.length,
-    itemBuilder: (ctx, index) {
-      final find = _majorFinds[index];
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: CupertinoColors.systemGrey6,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            // Imagen o icono por defecto
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: AppColors.transparentGrey,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: find.image.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        find.image,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => const Icon(
-                          CupertinoIcons.photo,
-                          color: CupertinoColors.white,
-                        ),
-                      ),
-                    )
-                  : const Icon(
-                      CupertinoIcons.photo,
-                      color: CupertinoColors.white,
-                    ),
-            ),
-            const SizedBox(width: 10),
-            // Texto
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    find.title,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    find.description,
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: CupertinoColors.systemGrey,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    },
-  );
 }
 
 Future<void> _clearHiveCache() async {
   try {
-    await HiveFindStorage.clearAllFinds(); // Limpia la caja de finds
-    print("Hive cache cleared successfully.");
+    // Llama al método que limpia ambas cajas de Hive
+    await HiveFindStorage.clearAllFinds();
+
+    print("Hive: Cajas 'pendingFinds' y 'offline_finds' limpiadas.");
+
+    // Limpia las listas en memoria
     setState(() {
-      _finds = []; // Limpia la lista de finds en la interfaz
+      _finds = [];
+      _recommendedFinds = [];
+      _nearbyFinds = [];
+      _majorFinds = [];
+      _recommendedProducts = [];
     });
+
+    print("Memoria local limpiada. Listo para guardar nuevos datos.");
   } catch (e) {
-    print("Error clearing Hive cache: $e");
+    print("Error al limpiar las cajas Hive: $e");
   }
 }
 
@@ -853,11 +356,6 @@ Widget build(BuildContext context) {
                                       _buildNearbyFindsList(),
 
                                       _buildSectionHeader(
-                                        title: "From your major",
-                                      ),
-                                      _buildFromMajorSection(),
-
-                                      _buildSectionHeader(
                                         title: "Most popular",
                                       ),
                                       _buildMostPopularList(),
@@ -870,26 +368,7 @@ Widget build(BuildContext context) {
                                   ),
                                 ),
                         ),
-                        // Botones en la parte inferior derecha
-                        Positioned(
-                          right: 20,
-                          bottom: 80, // Espaciado para no superponer los botones
-                          child: CupertinoButton(
-                            color: CupertinoColors.systemRed,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                            borderRadius: BorderRadius.circular(30),
-                            child: Text(
-                              "Clear Cache",
-                              style: GoogleFonts.inter(
-                                color: CupertinoColors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            onPressed: () {
-                              _clearHiveCache(); // Llama al método para limpiar el cache
-                            },
-                          ),
-                        ),
+                       
                         Positioned(
                           right: 20,
                           bottom: 20,
@@ -929,7 +408,246 @@ Widget build(BuildContext context) {
   );
 }
 
-// Este widget se mostrará cuando no haya ofertas para un find
+//ESTRUCTURA HASTA AQUÍ
+
+Future<List<FindModel>> getFindsByLocation() async {
+  try {
+    // Obtener la ubicación actual usando el Singleton
+    //LocationService locationService = LocationService();
+    final locationService = LocationService();
+    final userPosition = await locationService.getCurrentLocation();
+
+    // Obtener el edificio más cercano
+    final nearestBuilding = await findNearestBuilding(userPosition);
+
+    if (nearestBuilding == null) {
+      print("No nearby buildings found.");
+      return []; // No hay edificios cercanos
+    }
+
+    print("Nearest building: ${nearestBuilding.name}, Labels: ${nearestBuilding.relatedLabels}");
+
+    // Obtener todos los elementos disponibles (finds)
+    final allFinds = await _findService.getFind();
+
+    // Filtrar los elementos cuyos labels coincidan con los del edificio más cercano
+    final filteredFinds = allFinds.where((find) {
+      return nearestBuilding.relatedLabels.any((label) => find.labels.contains(label));
+    }).toList();
+
+    print("Filtered finds: ${filteredFinds.map((f) => f.title).toList()}");
+
+    return filteredFinds;
+  } catch (e) {
+    print("Error in getFindsByLocation: $e");
+    return [];
+  }
+}
+
+Widget _buildRecommendedFindsList() {
+  if (_recommendedFinds.isEmpty) {
+    return Center(
+      child: Text(
+        "No recommendations available.",
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      ),
+    );
+  }
+
+  return ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: _recommendedFinds.length,
+    itemBuilder: (context, index) {
+      final findMap = _recommendedFinds[index];
+      final find = FindModel.fromMap(findMap); // Convertir Map<String, dynamic> a FindModel
+
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (ctx) => FindsScreen(find: find), // Navegar a FindsScreen
+            ),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: CupertinoColors.systemGrey6,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              // Imagen del find
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: AppColors.transparentGrey,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+               child: find.image.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: CachedNetworkImage(
+                          imageUrl: find.image,
+                          placeholder: (context, url) => const Center(
+                            child: CupertinoActivityIndicator(),
+                          ),
+                          errorWidget: (context, url, error) => const Icon(
+                            CupertinoIcons.photo,
+                            color: CupertinoColors.white,
+                          ),
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : const Icon(
+                        CupertinoIcons.photo,
+                        color: CupertinoColors.white,
+                      ),
+              ),
+              const SizedBox(width: 10),
+              // Texto del find
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      find.title,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      find.description,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: CupertinoColors.systemGrey,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+Widget _buildNearbyFindsList() {
+  if (_nearbyFinds.isEmpty) {
+    return Center(
+      child: Text(
+        "No nearby finds available.",
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: CupertinoColors.systemGrey,
+        ),
+      ),
+    );
+  }
+
+  return ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: _nearbyFinds.length,
+    itemBuilder: (context, index) {
+      final find = _nearbyFinds[index];
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (ctx) => FindsScreen(find: find),
+            ),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: CupertinoColors.systemGrey6,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: AppColors.transparentGrey,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: find.image.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: CachedNetworkImage(
+                          imageUrl: find.image,
+                          placeholder: (context, url) => const Center(
+                            child: CupertinoActivityIndicator(),
+                          ),
+                          errorWidget: (context, url, error) => const Icon(
+                            CupertinoIcons.photo,
+                            color: CupertinoColors.white,
+                          ),
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : const Icon(
+                        CupertinoIcons.photo,
+                        color: CupertinoColors.white,
+                      ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      find.title,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      find.description,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: CupertinoColors.systemGrey,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+Future<void> verifyHiveCache() async {
+  final findBox = await Hive.openBox('pendingFinds');
+  final offlineBox = await Hive.openBox('offline_finds');
+
+  print("Finds cache size: ${findBox.length}");
+  print("Offline finds cache size: ${offlineBox.length}");
+}
+
+ // Este widget se mostrará cuando no haya ofertas para un find
 
 Widget _buildNoOffersWidget() {
   return Container(
@@ -1049,19 +767,24 @@ Widget _buildMostPopularList() {
                   ),
                   child: find.image.isNotEmpty
                       ? ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.network(
-                            find.image,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => const Icon(
-                              CupertinoIcons.photo,
-                              color: CupertinoColors.white,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                          child: CachedNetworkImage(
+                            imageUrl: find.image,
+                            placeholder: (context, url) => const Center(
+                              child: CupertinoActivityIndicator(),
                             ),
+                            errorWidget: (context, url, error) => const Icon(
+                              CupertinoIcons.photo,
+                              size: 40,
+                              color: CupertinoColors.systemGrey,
+                            ),
+                            fit: BoxFit.cover,
                           ),
                         )
                       : const Icon(
                           CupertinoIcons.photo,
-                          color: CupertinoColors.white,
+                          size: 40,
+                          color: CupertinoColors.systemGrey,
                         ),
                 );
               }
@@ -1099,20 +822,7 @@ Widget _buildMostPopularList() {
                 ],
               ),
             ),
-            // "Buy" button
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              color: AppColors.primaryBlue,
-              borderRadius: BorderRadius.circular(20),
-              onPressed: () => debugPrint("Buy ${item["title"]}"),
-              child: Text(
-                "Buy",
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: CupertinoColors.white,
-                ),
-              ),
-            ),
+            
           ],
         ),
       );
@@ -1203,6 +913,7 @@ Widget _buildSectionHeader({
     ),
   );
 }
+
 Widget _buildMajorCard(FindModel find, OfferModel? offer) {
   return Container(
     width: 160,
@@ -1225,14 +936,17 @@ Widget _buildMajorCard(FindModel find, OfferModel? offer) {
           child: find.image.isNotEmpty
               ? ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                  child: Image.network(
-                    find.image,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => const Icon(
+                  child: CachedNetworkImage(
+                    imageUrl: find.image,
+                    placeholder: (context, url) => const Center(
+                      child: CupertinoActivityIndicator(),
+                    ),
+                    errorWidget: (context, url, error) => const Icon(
                       CupertinoIcons.photo,
-                      size: 40, // Smaller icon
+                      size: 40,
                       color: CupertinoColors.systemGrey,
                     ),
+                    fit: BoxFit.cover,
                   ),
                 )
               : const Icon(
@@ -1589,6 +1303,8 @@ Widget _buildMajorCard(FindModel find, OfferModel? offer) {
     );
   }
 }
+
+
 
 Future<UniversityBuilding?> _getNearestBuilding() async {
   try {

@@ -871,6 +871,32 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
     await _firestore.collection('finds').doc(find.id).set(find.toMap());
   }
 
+  Future<void> cleanFirebaseData() async {
+  final firestore = FirebaseFirestore.instance;
+
+  try {
+    final querySnapshot = await firestore.collection('finds').get();
+
+    final Map<String, bool> uniqueTitles = {};
+
+    for (final doc in querySnapshot.docs) {
+      final data = doc.data();
+      final title = data['title']; // Usa el campo único de tus datos
+
+      if (uniqueTitles.containsKey(title)) {
+        await firestore.collection('finds').doc(doc.id).delete();
+        print("Deleted duplicate document with title: $title");
+      } else {
+        uniqueTitles[title] = true;
+      }
+    }
+
+    print("Firebase data cleaned successfully.");
+  } catch (e) {
+    print("Error cleaning Firebase data: $e");
+  }
+}
+
   Future<void> createOffer({
     required String findId,
     required String userName,
