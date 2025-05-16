@@ -69,14 +69,24 @@ class HiveFindStorage {
     print('HiveFindStorage: Deleted find with key $key');
   }
 
-  // Limpiar todos los "finds" locales
   static Future<void> clearAllFinds() async {
-    try {
-      final box = _findBox ??= await _openBoxIfNeeded(_findBoxName);
-      await box.clear();
-      print('HiveFindStorage: All finds cleared');
-    } catch (e) {
-      print('HiveFindStorage: Error clearing finds: $e');
-    }
+  try {
+    final findBox = _findBox ??= await _openBoxIfNeeded(_findBoxName);
+    final offlineBox = _offlineFindsBox ??= await _openBoxIfNeeded(_offlineFindsBoxName);
+
+    // Limpia la caja "findBox"
+    await findBox.clear();
+    print('HiveFindStorage: Cleared findBox. Current size: ${findBox.length}');
+
+    // Limpia la caja "offlineBox"
+    await offlineBox.clear();
+    print('HiveFindStorage: Cleared offlineBox. Current size: ${offlineBox.length}');
+
+    // Confirmación final
+    print('HiveFindStorage: All finds cleared from both boxes');
+  } catch (e) {
+    print('HiveFindStorage: Error clearing finds: $e');
   }
+}
+
 }
