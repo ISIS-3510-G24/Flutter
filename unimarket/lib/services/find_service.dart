@@ -1,6 +1,7 @@
 import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/models/find_model.dart';
 import 'package:unimarket/models/offer_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class FindService {
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
@@ -14,6 +15,15 @@ class FindService {
   Future<List<FindModel>> getFindsByMajor(String major) async {
     return await _firebaseDAO.getFindsByMajor(major);
   }
+
+  Future<bool> findExists(String title) async {
+  final querySnapshot = await FirebaseFirestore.instance
+      .collection('finds')
+      .where('title', isEqualTo: title)
+      .get();
+
+  return querySnapshot.docs.isNotEmpty;
+}
 
   // Get current user's major
   Future<String?> getCurrentUserMajor() async {
