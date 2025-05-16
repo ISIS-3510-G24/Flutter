@@ -157,7 +157,7 @@ void dispose() {
       final dbHelper = DatabaseHelper();
       await dbHelper.insertOffer({
         'findId': widget.findId,
-        'userId': 1, // Assuming a default user ID for now
+        'userId': _usernameController.text,
         'description': _descriptionController.text,
         'price': int.parse(_priceController.text),
         'image': _selectedImage?.path,
@@ -246,7 +246,8 @@ void dispose() {
                       children: [
                         CupertinoTextField(
                           controller: _usernameController,
-                          placeholder: "Username",
+                          placeholder: "Enter User ID",
+                          keyboardType: TextInputType.text, // Permitir texto
                         ),
                         const SizedBox(height: 16),
                         CupertinoTextField(

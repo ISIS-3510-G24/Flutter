@@ -46,6 +46,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
       // Se usa then para encadenar acciones que se ejecutan después de que el Future de _initializeCache haya completado su ejecución.
     _initializeCache().then((_) {
       _setupConnectivityListener();
+
+      // Cargar las órdenes desde el caché o usa fetch si no están en caché
       _loadOrdersWithCache("buying", _fetchBuyingOrders);
       _loadOrdersWithCache("history", _fetchHistoryOrders);
       _loadOrdersWithCache("selling", _fetchSellingOrders);
