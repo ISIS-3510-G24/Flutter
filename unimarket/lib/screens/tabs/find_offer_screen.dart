@@ -822,20 +822,7 @@ Widget _buildMostPopularList() {
                 ],
               ),
             ),
-            // "Buy" button
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              color: AppColors.primaryBlue,
-              borderRadius: BorderRadius.circular(20),
-              onPressed: () => debugPrint("Buy ${item["title"]}"),
-              child: Text(
-                "Buy",
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: CupertinoColors.white,
-                ),
-              ),
-            ),
+            
           ],
         ),
       );
