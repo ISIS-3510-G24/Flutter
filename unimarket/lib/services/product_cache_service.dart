@@ -1,6 +1,57 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:http/http.dart' as http;
 import 'package:unimarket/models/product_model.dart';
+
+// Custom HTTP client to limit concurrent requests
+class LoggingHttpClient extends http.BaseClient {
+  final http.Client _client = http.Client();
+  final int maxConcurrent;
+  final Set<Uri> _inProgress = {};
+  final List<_QueuedRequest> _queue = [];
+  
+  LoggingHttpClient({this.maxConcurrent = 4});
+  
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    if (_inProgress.length >= maxConcurrent) {
+      // Queue the request
+      final completer = Completer<http.StreamedResponse>();
+      _queue.add(_QueuedRequest(request, completer));
+      return completer.future;
+    }
+    
+    return _processSend(request);
+  }
+  
+  Future<http.StreamedResponse> _processSend(http.BaseRequest request) async {
+    _inProgress.add(request.url);
+    try {
+      return await _client.send(request);
+    } finally {
+      _inProgress.remove(request.url);
+      // Process next queued request if any
+      if (_queue.isNotEmpty) {
+        final next = _queue.removeAt(0);
+        next.completer.complete(_processSend(next.request));
+      }
+    }
+  }
+  
+  @override
+  void close() {
+    _client.close();
+    super.close();
+  }
+}
+
+class _QueuedRequest {
+  final http.BaseRequest request;
+  final Completer<http.StreamedResponse> completer;
+  
+  _QueuedRequest(this.request, this.completer);
+}
 
 class ProductCacheService {
   static final ProductCacheService _instance = ProductCacheService._internal();
@@ -11,7 +62,7 @@ class ProductCacheService {
   final CacheManager _filteredProductsCache = CacheManager(
     Config(
       'filteredProductsJsonCache',      // unique key
-      stalePeriod: Duration(days: 1),   // expires in 1 day
+      stalePeriod: const Duration(days: 1),   // expires in 1 day
       maxNrOfCacheObjects: 1,           // only store 1 file
     ),
   );
@@ -20,17 +71,20 @@ class ProductCacheService {
   final CacheManager _allProductsCache = CacheManager(
     Config(
       'allProductsJsonCache',          // unique key
-      stalePeriod: Duration(hours: 6), // expires sooner
+      stalePeriod: const Duration(hours: 6), // expires sooner
       maxNrOfCacheObjects: 20,         // store more objects for LRU
     ),
   );
   
-  // 3. Custom CacheManager for product images
+  // 3. Custom CacheManager for product images with optimized HTTP client
   static final CacheManager productImageCacheManager = CacheManager(
     Config(
       'productImagesCache',
-      stalePeriod: Duration(days: 7),   // images can be cached longer
-      maxNrOfCacheObjects: 200,         // store more images
+      stalePeriod: const Duration(days: 7),   // images can be cached longer
+      maxNrOfCacheObjects: 100,        // Reduced from 200 to save memory
+      fileService: HttpFileService(     // Add custom HTTP client
+        httpClient: LoggingHttpClient(maxConcurrent: 4), // Limit concurrent requests
+      ),
     ),
   );
 
@@ -39,16 +93,14 @@ class ProductCacheService {
     final jsonList = products.map((p) => p.toJson()).toList();
     final jsonString = jsonEncode(jsonList);
 
-    // Save JSON to cache
-    await _filteredProductsCache.putFile(
-      'filtered_products',               // internal key
-      utf8.encode(jsonString),           // JSON bytes
-      fileExtension: 'json',
-    );
+   await _filteredProductsCache.putFile(
+  'filtered_products',               
+  utf8.encode(jsonString),  // Eliminado "as List<int>"
+  fileExtension: 'json',
+);
 
-    // Pre-cache images
-    await Future.wait(products.where((p) => p.imageUrls.isNotEmpty)
-        .map((p) => _precacheImage(p.imageUrls.first)));
+    // Use improved precaching method
+    await _precacheImages(products);
   }
 
   // Load filtered products from cache
@@ -62,28 +114,23 @@ class ProductCacheService {
     return [];
   }
   
-  // NEW: Save all products to LRU cache
+  // Save all products to LRU cache
   Future<void> saveAllProducts(List<ProductModel> products) async {
     final jsonList = products.map((p) => p.toJson()).toList();
     final jsonString = jsonEncode(jsonList);
 
-    // Save JSON to LRU cache
-    await _allProductsCache.putFile(
-      'all_products',                   // internal key
-      utf8.encode(jsonString),          // JSON bytes
-      fileExtension: 'json',
-    );
+   await _allProductsCache.putFile(
+  'all_products',                   
+  utf8.encode(jsonString),  // Eliminado "as List<int>"
+  fileExtension: 'json',
+);
     
-    // Pre-cache first few product images to avoid overloading
-    final imagesToPreload = products
-        .where((p) => p.imageUrls.isNotEmpty)
-        .take(10)                      // Only preload first 10 images
-        .map((p) => p.imageUrls.first);
-        
-    await Future.wait(imagesToPreload.map(_precacheImage));
+    // Use improved precaching method with the first few images
+    final productsToPreload = products.take(10).toList();
+    await _precacheImages(productsToPreload);
   }
   
-  // NEW: Load all products from LRU cache
+  // Load all products from LRU cache
   Future<List<ProductModel>> loadAllProductsFromCache() async {
     final fileInfo = await _allProductsCache.getFileFromCache('all_products');
     if (fileInfo != null && await fileInfo.file.exists()) {
@@ -94,14 +141,54 @@ class ProductCacheService {
     return [];
   }
 
-  // Helper to precache an image
-  Future<void> _precacheImage(String? url) async {
-    if (url == null || url.isEmpty) return;
+  // Improved pre-cache with prioritization and batching
+  Future<void> _precacheImages(List<ProductModel> products) async {
+    // First filter for unique URLs to avoid duplicate requests
+    final uniqueUrls = <String>{};
+    final urlsToLoad = <String>[];
+    
+    for (final product in products) {
+      if (product.imageUrls.isNotEmpty) {
+        final url = product.imageUrls.first;
+        if (url.isNotEmpty && !uniqueUrls.contains(url)) {
+          uniqueUrls.add(url);
+          urlsToLoad.add(url);
+        }
+      }
+    }
+    
+    // Process in smaller batches to avoid memory spikes
+    for (int i = 0; i < urlsToLoad.length; i += 5) {
+      final end = (i + 5 < urlsToLoad.length) ? i + 5 : urlsToLoad.length;
+      final batch = urlsToLoad.sublist(i, end);
+      
+      await Future.wait(batch.map((url) => _precacheImage(url)));
+      // Add a small delay between batches
+      if (end < urlsToLoad.length) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+    }
+  }
+
+  // Updated precache method with file existence check
+  Future<void> _precacheImage(String url) async {
+    if (url.isEmpty) return;
+    
     try {
-      await productImageCacheManager.getSingleFile(url);
+      // Check if file already exists in cache before downloading
+      final fileInfo = await productImageCacheManager.getFileFromCache(url);
+      if (fileInfo != null) {
+        // Already cached
+        return;
+      }
+      
+      // Not in cache, download it
+      await productImageCacheManager.getSingleFile(url)
+          .timeout(const Duration(seconds: 5), onTimeout: () {
+        throw TimeoutException('Image download timed out');
+      });
     } catch (e) {
       print("Error precaching image $url: $e");
-      // If failed, we do nothing
     }
   }
   

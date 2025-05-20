@@ -31,29 +31,30 @@ class DatabaseHelper {
     final db = await database;
     return await db.delete('offers', where: 'id = ?', whereArgs: [id]);
   }
-
-  // Inicializa la base de datos y crea tablas si no existen
-  Future<Database> _initDatabase() async {
-    final dbPath = await getDatabasesPath(); // Ruta del directorio de bases de datos
-    return openDatabase(
-      join(dbPath, 'offers.db'), // Nombre y ubicación del archivo
-      onCreate: (db, version) async {
+// In database_helper.dart
+Future<Database> _initDatabase() async {
+  final dbPath = await getDatabasesPath(); // Ruta del directorio de bases de datos
+  return openDatabase(
+    join(dbPath, 'offers.db'), // Nombre y ubicación del archivo
+    onCreate: (db, version) async {
+      // Use transaction for better performance when creating multiple tables
+      await db.transaction((txn) async {
         // Crear tabla 'users'
-        await db.execute('''
+        await txn.execute('''
           CREATE TABLE users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL
           )
         ''');
         // Crear tabla 'finds'
-        await db.execute('''
+        await txn.execute('''
           CREATE TABLE finds (
             id TEXT PRIMARY KEY,
             description TEXT NOT NULL
           )
         ''');
         // Crear tabla 'offers' con claves foráneas a 'finds' y 'users'
-        await db.execute('''
+        await txn.execute('''
           CREATE TABLE offers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             findId TEXT NOT NULL,
@@ -65,10 +66,11 @@ class DatabaseHelper {
             FOREIGN KEY (userId) REFERENCES users (id)
           )
         ''');
-      },
-      version: 1,
-    );
-  }
+      });
+    },
+    version: 1,
+  );
+}
 
   // Inserta una nueva oferta en la tabla 'offers'
   Future<int> insertOffer(Map<String, dynamic> offer) async {

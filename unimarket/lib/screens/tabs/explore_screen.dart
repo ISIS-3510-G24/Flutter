@@ -256,7 +256,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
   }
   
   // Improved method to load all products
-  Future<void> _loadAllProducts() async {
+  Future<void> _loadAllProducts() async {   
     if (_isDisposed || !_hasInternetAccess) return;
     
     print("_loadAllProducts(): Starting to load all products");

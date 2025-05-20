@@ -178,7 +178,7 @@ class AlgoliaService {
   final Algolia _algolia = const Algolia.init(
     applicationId: 'BN577CB6P8',
     apiKey: 'dc1ff8ca6c391a652b422a4ef11c8fd3', // Solo búsqueda
-  );
+  ); 
 
   // Caché ArrayMap en memoria: capacidad máxima de 20 entradas.
   final ArrayMap<String, List<ProductModel>> _searchCache = ArrayMap(20);
