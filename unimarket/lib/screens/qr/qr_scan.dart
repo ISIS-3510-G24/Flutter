@@ -9,7 +9,7 @@ import 'package:http/http.dart' as http;
 class QrScan extends StatefulWidget {
   final Map<String, String> hashAndOrders;
 
-  const QrScan({Key? key, required this.hashAndOrders}) : super(key: key);
+  const QrScan({super.key, required this.hashAndOrders});
 
   @override
   State<QrScan> createState() => _QrScanState();

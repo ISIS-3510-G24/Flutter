@@ -254,7 +254,7 @@ class UploadProductScreenState extends State<UploadProductScreen> {
             // If measurements exist, append them to the description
             if (_measurementTexts.isNotEmpty) {
               String currentDescription = _descriptionController.text;
-              String measurementsText = "\n\nMeasurements:\n- " + _measurementTexts.join("\n- ");
+              String measurementsText = "\n\nMeasurements:\n- ${_measurementTexts.join("\n- ")}";
               
               // Only add if not already there
               if (!currentDescription.contains("Measurements:")) {
@@ -320,8 +320,8 @@ Future<void> _fetchAvailableMajors() async {
     debugPrint('✅ _fetchAvailableMajors: recibidos ${querySnapshot.docs.length} majors');
 
     // 3) Procesar resultado
-    final List<String> majors = ['No major']
-      ..addAll(querySnapshot.docs.map((d) => d.id));
+    final List<String> majors = ['No major', ...querySnapshot.docs.map((d) => d.id)]
+      ;
     debugPrint('📝 _fetchAvailableMajors: lista = $majors');
 
     if (!mounted) return;
@@ -532,10 +532,12 @@ Future<void> _submitForm() async {
   } catch (e) {
     _showErrorAlert('Error al procesar: $e');
   } finally {
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _isLoading = false;
       _isUploading = false;
     });
+    }
   }
 }
 

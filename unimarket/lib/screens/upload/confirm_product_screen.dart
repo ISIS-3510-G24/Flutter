@@ -15,7 +15,7 @@ import 'package:unimarket/data/firebase_dao.dart';
 class ConfirmProductScreen extends StatefulWidget {
   final String postType; // "find" o "offer"
 
-  const ConfirmProductScreen({Key? key, required this.postType}) : super(key: key);
+  const ConfirmProductScreen({super.key, required this.postType});
 
   @override
   State<ConfirmProductScreen> createState() => _ConfirmProductScreenState();
@@ -131,7 +131,7 @@ Future<void> _uploadOfflineFinds() async {
   @override
   void dispose() {
     _connectivitySubscription.cancel();
-    _checkingSubscription?.cancel(); // Verifica si está inicializado antes de cancelarlo
+    _checkingSubscription.cancel(); // Verifica si está inicializado antes de cancelarlo
     super.dispose();
   }
 
@@ -304,6 +304,7 @@ Future<void> _uploadOfflineFinds() async {
                               CupertinoButton(
                                 padding: EdgeInsets.zero,
                                 minSize: 0,
+                                onPressed: _handleRetryPressed,
                                 child: const Text(
                                   "Retry",
                                   style: TextStyle(
@@ -311,7 +312,6 @@ Future<void> _uploadOfflineFinds() async {
                                     color: CupertinoColors.activeBlue,
                                   ),
                                 ),
-                                onPressed: _handleRetryPressed,
                               ),
                           ],
                         ),

@@ -7,7 +7,7 @@ import 'package:unimarket/services/user_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
 class EditProfileScreen extends StatefulWidget {
-  const EditProfileScreen({Key? key}) : super(key: key);
+  const EditProfileScreen({super.key});
 
   @override
   _EditProfileScreenState createState() => _EditProfileScreenState();
@@ -126,6 +126,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ? const CupertinoActivityIndicator()
             : CupertinoButton(
                 padding: EdgeInsets.zero,
+                onPressed: _saveProfile,
                 child: Text(
                   "Save",
                   style: GoogleFonts.inter(
@@ -133,7 +134,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                onPressed: _saveProfile,
               ),
       ),
       child: SafeArea(

@@ -299,8 +299,8 @@ Widget build(BuildContext context) {
       ),
       trailing: CupertinoButton(
         padding: EdgeInsets.zero,
-        child: const Icon(CupertinoIcons.trash, color: AppColors.primaryBlue),
-        onPressed: _clearCache, // Llama al método para borrar el caché
+        onPressed: _clearCache,
+        child: const Icon(CupertinoIcons.trash, color: AppColors.primaryBlue), // Llama al método para borrar el caché
       ),
     ),
     child: Stack(
@@ -338,6 +338,7 @@ Widget build(BuildContext context) {
                           CupertinoButton(
                             padding: EdgeInsets.zero,
                             minSize: 0,
+                            onPressed: _handleRetryPressed,
                             child: Text(
                               "Retry",
                               style: GoogleFonts.inter(
@@ -345,7 +346,6 @@ Widget build(BuildContext context) {
                                 color: AppColors.primaryBlue,
                               ),
                             ),
-                            onPressed: _handleRetryPressed,
                           ),
                       ],
                     ),

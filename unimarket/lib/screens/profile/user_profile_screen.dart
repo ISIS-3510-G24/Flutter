@@ -457,7 +457,7 @@ class UserProfileScreenState extends State<UserProfileScreen> {
       ),
       child: Center(
         child: Text(
-          user?.displayName?.isNotEmpty == true
+          user?.displayName.isNotEmpty == true
               ? user!.displayName[0].toUpperCase()
               : "?",
           style: GoogleFonts.inter(
@@ -480,7 +480,7 @@ class UserProfileScreenState extends State<UserProfileScreen> {
     if (priceString.length > 6) {
       // For millions (7+ digits)
       // Add apostrophe after first digit
-      result = priceString[0] + "'";
+      result = "${priceString[0]}'";
       
       // Add the rest of the digits with thousands separator
       String remainingDigits = priceString.substring(1);

@@ -8,7 +8,7 @@ import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
 class QueuedProductsScreen extends StatefulWidget {
-  const QueuedProductsScreen({Key? key}) : super(key: key);
+  const QueuedProductsScreen({super.key});
 
   @override
   State<QueuedProductsScreen> createState() => _QueuedProductsScreenState();
@@ -403,10 +403,12 @@ Widget _loadLocalImage(String path) {
   String _ago(DateTime t) {
     final d = DateTime.now().difference(t);
     if (d.inDays > 0) return 'hace ${d.inDays} día${d.inDays == 1 ? '' : 's'}';
-    if (d.inHours > 0)
+    if (d.inHours > 0) {
       return 'hace ${d.inHours} hora${d.inHours == 1 ? '' : 's'}';
-    if (d.inMinutes > 0)
+    }
+    if (d.inMinutes > 0) {
       return 'hace ${d.inMinutes} minuto${d.inMinutes == 1 ? '' : 's'}';
+    }
     return 'justo ahora';
   }
 

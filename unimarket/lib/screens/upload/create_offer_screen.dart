@@ -10,7 +10,7 @@ import 'package:unimarket/data/database_helper.dart';
 class CreateOfferScreen extends StatefulWidget {
   final String findId;
 
-  const CreateOfferScreen({Key? key, required this.findId}) : super(key: key);
+  const CreateOfferScreen({super.key, required this.findId});
 
   @override
   State<CreateOfferScreen> createState() => _CreateOfferScreenState();
@@ -102,7 +102,7 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
   @override
 void dispose() {
   _connectivitySubscription.cancel();
-  _checkingSubscription?.cancel(); // Verifica si está inicializado antes de cancelarlo
+  _checkingSubscription.cancel(); // Verifica si está inicializado antes de cancelarlo
   super.dispose();
 }
 
@@ -226,6 +226,7 @@ void dispose() {
                           CupertinoButton(
                             padding: EdgeInsets.zero,
                             minSize: 0,
+                            onPressed: _handleRetryPressed,
                             child: const Text(
                               "Retry",
                               style: TextStyle(
@@ -233,7 +234,6 @@ void dispose() {
                                 color: CupertinoColors.activeBlue,
                               ),
                             ),
-                            onPressed: _handleRetryPressed,
                           ),
                       ],
                     ),

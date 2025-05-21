@@ -21,8 +21,7 @@ import 'package:unimarket/services/light_sensor_service.dart';
 
 class ProductCameraScreen extends StatefulWidget {
   final Function(File image, MeasurementData? measurementData) onImageCaptured;
-  const ProductCameraScreen({Key? key, required this.onImageCaptured})
-      : super(key: key);
+  const ProductCameraScreen({super.key, required this.onImageCaptured});
 
   @override
   _ProductCameraScreenState createState() => _ProductCameraScreenState();
@@ -32,19 +31,19 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
     with WidgetsBindingObserver {
   CameraController? _cameraController;
   ARKitController? _arkitController;
-  FirebaseStorageService _storageService = FirebaseStorageService();
+  final FirebaseStorageService _storageService = FirebaseStorageService();
   LightSensorService? _lightSensorService;
 
   // Handler para errores
   Widget Function(FlutterErrorDetails)? _oldErrorWidgetBuilder;
 
-  List<MeasurementPoint> _measurementPoints = [];
+  final List<MeasurementPoint> _measurementPoints = [];
   static const MethodChannel _channel =
       MethodChannel('your.package.name/file');
-  List<MeasurementLine> _measurementLines = [];
+  final List<MeasurementLine> _measurementLines = [];
 
-  bool _arkitFullyInitialized = false;
-  double _arkitCoverOpacity = 1.0;
+  final bool _arkitFullyInitialized = false;
+  final double _arkitCoverOpacity = 1.0;
 
   bool _isInitialized = false;
   String _initializingMode = "";
@@ -146,8 +145,9 @@ class _ProductCameraScreenState extends State<ProductCameraScreen>
     ErrorWidget.builder = (FlutterErrorDetails details) {
       final String errorStr = details.exceptionAsString();
       if (errorStr.contains("Disposed CameraController") ||
-          errorStr.contains("buildPreview() was called on a disposed CameraController"))
+          errorStr.contains("buildPreview() was called on a disposed CameraController")) {
         return Container();
+      }
       return _oldErrorWidgetBuilder!(details);
     };
   }
@@ -377,14 +377,18 @@ Future<void> _startLightMode() async {
       await _cameraController!.startImageStream((CameraImage image) {
         _processCameraImage(image);
       });
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _feedback = "Light sensor active";
       });
+      }
     } catch (e) {
       print("Error starting image stream: $e");
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _feedback = "Error activating light sensor";
       });
+      }
     }
   }
   
@@ -734,10 +738,14 @@ Future<void> _startLightMode() async {
     if (_isDisposed ||
         _lightSensorService == null ||
         _takingPicture ||
-        _isModeChanging) return;
+        _isModeChanging) {
+      return;
+    }
     final now = DateTime.now();
     if (_lastLightUpdate != null &&
-        now.difference(_lastLightUpdate!).inMilliseconds < 500) return;
+        now.difference(_lastLightUpdate!).inMilliseconds < 500) {
+      return;
+    }
     _lastLightUpdate = now;
     try {
       _lightSensorService!.processCameraImage(image);
@@ -761,8 +769,9 @@ Future<void> _startLightMode() async {
 
     _arkitController = controller;
     Future.delayed(Duration(milliseconds: 1000), () {
-      if (mounted && !_isDisposed && _arkitController != null)
+      if (mounted && !_isDisposed && _arkitController != null) {
         print("🔍 ARKit session initialized");
+      }
     });
     controller.onARTap = (List<ARKitTestResult> ar) {
       if (_isDisposed || _takingPicture || _isModeChanging) return;
@@ -776,7 +785,9 @@ Future<void> _startLightMode() async {
     if (_arkitController == null ||
         _isDisposed ||
         _takingPicture ||
-        _isModeChanging) return;
+        _isModeChanging) {
+      return;
+    }
     final position = Vector3(
       point.worldTransform.getColumn(3).x,
       point.worldTransform.getColumn(3).y,
@@ -947,16 +958,18 @@ Future<void> _startLightMode() async {
   Future<ui.Image> _getImageInfo(File imageFile) async {
     final Completer<ui.Image> completer = Completer<ui.Image>();
     try {
-      if (!await imageFile.exists())
+      if (!await imageFile.exists()) {
         throw Exception("Image file does not exist: ${imageFile.path}");
+      }
       final data = await imageFile.readAsBytes();
       if (data.isEmpty) throw Exception("Image data is empty");
       ui.decodeImageFromList(data, (ui.Image img) {
-        if (img.width == 0 || img.height == 0)
+        if (img.width == 0 || img.height == 0) {
           completer.completeError(Exception(
               "Invalid image dimensions: ${img.width}x${img.height}"));
-        else
+        } else {
           completer.complete(img);
+        }
       });
     } catch (e) {
 
@@ -998,8 +1011,9 @@ Future<void> _startLightMode() async {
       await Future.delayed(Duration(milliseconds: 500));
       if (_isDisposed ||
           _cameraController == null ||
-          !_cameraController!.value.isInitialized)
+          !_cameraController!.value.isInitialized) {
         throw Exception("Cámara no disponible");
+      }
       result = await _captureWithRetries();
       return result;
     } catch (e) {
@@ -1012,8 +1026,8 @@ Future<void> _startLightMode() async {
     if (_isDisposed) return false;
     try {
 
-      bool _isResetting = true;
-      Future<void> _safeReleaseCamera() async {
+      bool isResetting = true;
+      Future<void> safeReleaseCamera() async {
         try {
           if (_cameraController != null) {
             if (_cameraController!.value.isInitialized &&
@@ -1043,7 +1057,7 @@ Future<void> _startLightMode() async {
           _cameraController = null;
         }
       }
-      await _safeReleaseCamera();
+      await safeReleaseCamera();
       await Future.delayed(Duration(milliseconds: 800));
       if (_isDisposed) return false;
       List<CameraDescription> cameras = [];
@@ -1075,8 +1089,11 @@ Future<void> _startLightMode() async {
 
       } catch (e) {
 
-        if (cameras.isNotEmpty) backCamera = cameras.first;
-        else return false;
+        if (cameras.isNotEmpty) {
+          backCamera = cameras.first;
+        } else {
+          return false;
+        }
       }
       if (_isDisposed) return false;
       try {
@@ -1117,7 +1134,7 @@ Future<void> _startLightMode() async {
         } catch (e) {
 
           if (initAttempts < 2 && !_isDisposed) {
-            await _safeReleaseCamera();
+            await safeReleaseCamera();
             await Future.delayed(Duration(milliseconds: 500));
             if (!_isDisposed) {
               try {
@@ -1137,7 +1154,7 @@ Future<void> _startLightMode() async {
           }
         }
       }
-      _isResetting = false;
+      isResetting = false;
       return initSuccess &&
           _cameraController != null &&
           _cameraController!.value.isInitialized;
@@ -1254,8 +1271,11 @@ Future<void> _startLightMode() async {
     } else if (Platform.isIOS) {
       final String fixedPath = contentPath.replaceFirst('content://', '');
       final File originalFile = File(fixedPath);
-      if (await originalFile.exists()) return originalFile;
-      else throw Exception("Cannot access file from content URI on iOS");
+      if (await originalFile.exists()) {
+        return originalFile;
+      } else {
+        throw Exception("Cannot access file from content URI on iOS");
+      }
     } else {
       throw Exception("Unsupported platform");
     }
@@ -1335,8 +1355,9 @@ Future<void> _startLightMode() async {
           } else {
 
           }
-          if (!_isDisposed && _takingPicture && !_isCaptureFallbackActive)
+          if (!_isDisposed && _takingPicture && !_isCaptureFallbackActive) {
             await Future.delayed(Duration(milliseconds: 500 * attempts));
+          }
         }
       }
     } catch (e) {
@@ -1357,7 +1378,9 @@ Future<void> _startLightMode() async {
       await _safelyResetCamera();
       if (_isDisposed ||
           _cameraController == null ||
-          !_cameraController!.value.isInitialized) return null;
+          !_cameraController!.value.isInitialized) {
+        return null;
+      }
       final Directory tempDir = await getTemporaryDirectory();
       final String tempPath = path.join(
           tempDir.path, 'emergency_capture_${DateTime.now().millisecondsSinceEpoch}.jpg');
@@ -1369,7 +1392,7 @@ Future<void> _startLightMode() async {
             throw TimeoutException("Timeout en captura de emergencia");
           },
         );
-        if (result != null) print("✅ Captura de emergencia exitosa");
+        print("✅ Captura de emergencia exitosa");
       } catch (e) {
 
         try {
@@ -1395,7 +1418,9 @@ Future<void> _startLightMode() async {
         !_cameraController!.value.isInitialized ||
         _takingPicture ||
         _isLoading ||
-        _isDisposed) return;
+        _isDisposed) {
+      return;
+    }
     _activateCaptureTimeout();
     if (mounted && !_isDisposed) {
       setState(() {
@@ -1410,8 +1435,9 @@ Future<void> _startLightMode() async {
     final bool wasMeasurementMode = _measurementMode;
     try {
       await Future.delayed(Duration(milliseconds: 300));
-      if (wasMeasurementMode && mounted && !_isDisposed)
+      if (wasMeasurementMode && mounted && !_isDisposed) {
         _startCaptureProgressAnimation(1500);
+      }
       XFile? photo;
       if (wasMeasurementMode) {
         photo = await _captureInARMode();
@@ -1436,14 +1462,16 @@ Future<void> _startLightMode() async {
         final String filePath = path.join(appDir.path, fileName);
 
         final File sourceImage = await getFileFromPath(photo.path);
-        if (!await sourceImage.exists())
+        if (!await sourceImage.exists()) {
           throw Exception("El archivo de origen no existe: ${photo.path}");
+        }
         final File newFile = await sourceImage.copy(filePath).timeout(
             Duration(seconds: 5),
             onTimeout: () =>
                 throw TimeoutException("Timeout al guardar imagen"));
-        if (!await newFile.exists())
+        if (!await newFile.exists()) {
           throw Exception("Fallo al guardar imagen en $filePath");
+        }
 
         if (mounted && !_isDisposed) {
           setState(() {
@@ -1457,7 +1485,7 @@ Future<void> _startLightMode() async {
         }
       } catch (e) {
 
-        throw e;
+        rethrow;
       }
     } catch (e) {
 
@@ -1516,8 +1544,6 @@ Future<void> _startLightMode() async {
 
             }
           }
-        } catch (e) {
-
         } finally {
           _cameraController = null;
         }
@@ -1549,10 +1575,13 @@ Future<void> _startLightMode() async {
         );
       } catch (e) {
 
-        if (cameras.isNotEmpty) backCamera = cameras.first;
-        else return;
+        if (cameras.isNotEmpty) {
+          backCamera = cameras.first;
+        } else {
+          return;
+        }
       }
-      if (!_isDisposed && backCamera != null) {
+      if (!_isDisposed) {
         try {
           _cameraController = CameraController(
             backCamera,
@@ -1633,8 +1662,9 @@ Future<void> _startLightMode() async {
 
   Widget _buildCameraView() {
     if (_cameraController == null || !_cameraController!.value.isInitialized) {
-      if (_isLoading || _isModeChanging || _takingPicture)
+      if (_isLoading || _isModeChanging || _takingPicture) {
         return Center(child: CustomSpinner(size: 50));
+      }
       return Center(
         child: Container(
           padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
@@ -1665,8 +1695,8 @@ Future<void> _startLightMode() async {
               SizedBox(height: 20),
               CupertinoButton(
                 color: AppColors.primaryBlue,
-                child: Text("Retry"),
                 onPressed: _isLoading ? null : _startInitialization,
+                child: Text("Retry"),
               ),
             ],
           ),
@@ -2158,7 +2188,7 @@ Future<void> _startLightMode() async {
                                       ],
                                     ),
                                   ))
-                              .toList(),
+                              ,
                           if (_measurementLines.length > 3)
                             Text(
                               "... and ${_measurementLines.length - 3} more",
@@ -2389,7 +2419,7 @@ Future<void> _startLightMode() async {
 
 class CustomSpinner extends StatefulWidget {
   final double size;
-  const CustomSpinner({Key? key, this.size = 50.0}) : super(key: key);
+  const CustomSpinner({super.key, this.size = 50.0});
 
   @override
   _CustomSpinnerState createState() => _CustomSpinnerState();

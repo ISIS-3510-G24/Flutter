@@ -29,7 +29,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _hasError = false;
   String _errorMessage = "";
   List<ChatModel> _chats = [];
-  Map<String, UserModel?> _chatUsers = {};
+  final Map<String, UserModel?> _chatUsers = {};
   bool _isDisposed = false;
   StreamSubscription? _chatSubscription;
   Timer? _loadingTimer;
@@ -271,6 +271,7 @@ if (imageUrls.isNotEmpty) {
             color: AppColors.primaryBlue,
             borderRadius: BorderRadius.circular(30),
             padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
+            onPressed: _loadChats,
             child: Text(
               "Try Again",
               style: GoogleFonts.inter(
@@ -279,7 +280,6 @@ if (imageUrls.isNotEmpty) {
                 color: CupertinoColors.white,
               ),
             ),
-            onPressed: _loadChats,
           ),
         ],
       ),
