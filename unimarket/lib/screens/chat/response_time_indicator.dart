@@ -8,11 +8,11 @@ class ChatResponseTimeIndicator extends StatelessWidget {
   final String currentUserId;
 
   const ChatResponseTimeIndicator({
-    Key? key,
+    super.key,
     required this.lastMessageTime,
     required this.lastMessageSenderId,
     required this.currentUserId,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

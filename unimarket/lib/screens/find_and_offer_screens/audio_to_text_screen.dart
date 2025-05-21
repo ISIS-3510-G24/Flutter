@@ -5,7 +5,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 class AudioToTextScreen extends StatefulWidget {
   final Function(String) onTextGenerated;
 
-  const AudioToTextScreen({Key? key, required this.onTextGenerated}) : super(key: key);
+  const AudioToTextScreen({super.key, required this.onTextGenerated});
 
   @override
   _AudioToTextScreenState createState() => _AudioToTextScreenState();

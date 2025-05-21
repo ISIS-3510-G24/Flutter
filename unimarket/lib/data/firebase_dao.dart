@@ -735,7 +735,7 @@ Future<List<Map<String, dynamic>>> getAllMajors() async {
   try {
     final querySnapshot = await _firestore.collection('majors').get();
     return querySnapshot.docs.map((doc) {
-      final data = doc.data() as Map<String, dynamic>;
+      final data = doc.data();
       data['id'] = doc.id; // El ID del major
       return data;
     }).toList();
@@ -755,7 +755,7 @@ Future<List<Map<String, dynamic>>> getClassesForMajor(String majorId) async {
         .get();
     
     return querySnapshot.docs.map((doc) {
-      final data = doc.data() as Map<String, dynamic>;
+      final data = doc.data();
       data['id'] = doc.id; // El ID de la clase
       return data;
     }).toList();

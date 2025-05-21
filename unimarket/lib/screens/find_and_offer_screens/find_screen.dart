@@ -16,9 +16,9 @@ class FindsScreen extends StatefulWidget {
   final FindModel find;
 
   const FindsScreen({
-    Key? key,
+    super.key,
     required this.find,
-  }) : super(key: key);
+  });
 
   @override
   State<FindsScreen> createState() => _FindsScreenState();

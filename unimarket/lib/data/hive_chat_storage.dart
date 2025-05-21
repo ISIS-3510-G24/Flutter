@@ -87,7 +87,7 @@ class HiveChatStorage {
         print('HiveChatStorage: Error opening $boxName box (attempt $attempts): $e');
         
         if (attempts >= maxAttempts) {
-          throw e;
+          rethrow;
         }
         
         // Delete potentially corrupted box file and retry
