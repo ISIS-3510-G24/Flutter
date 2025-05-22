@@ -16,6 +16,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:unimarket/data/image_storage_service.dart';
 
 class UploadProductScreen extends StatefulWidget {
   const UploadProductScreen({super.key});
@@ -26,6 +27,7 @@ class UploadProductScreen extends StatefulWidget {
 
 class UploadProductScreenState extends State<UploadProductScreen> {
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
+  final ImageStorageService _imageStorage = ImageStorageService();
   String? _tempSelectedMajor;
   bool _isClassLoading = false;
   File? _productImage;
@@ -48,35 +50,32 @@ class UploadProductScreenState extends State<UploadProductScreen> {
     "Handcrafts","Fashion","Accessories","Sports","Wellness","Entertainment","Home","Decoration","Other"
   ];
   bool _isLoading = false;
-  bool _isUploading = false; // New flag to track upload state
+  bool _isUploading = false;
   List<String> _availableMajors = ["No major"];
   List<Map<String, dynamic>> _availableClasses = [];
   List<String> _availableClassNames = ["No class"];
 
-  // Added cancelable timer
   Timer? _uploadTimer;
 
   @override
   void initState() {
     super.initState();
     
-    // First establish default state to avoid blocking
-    _availableMajors = ["No major"];
+    // Initialize image storage
+    _imageStorage.initialize();
     
-    // Check connectivity immediately
+    _availableMajors = ["No major"];
     _checkConnectivityAndLoad();
     
-
-      // IMPORTANT: Add this timer to ensure loading state exits even if offline
-  Future.delayed(Duration(seconds: 3), () {
-    if (mounted && _isLoading) {
-      debugPrint('⚠️ Forced exit from loading state after timeout');
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  });
-    // Set up listener for connectivity changes
+    Future.delayed(Duration(seconds: 3), () {
+      if (mounted && _isLoading) {
+        debugPrint('⚠️ Forced exit from loading state after timeout');
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    });
+    
     _connectivityService.connectivityStream.listen((hasInternet) {
       if (mounted) {
         setState(() {
@@ -85,18 +84,14 @@ class UploadProductScreenState extends State<UploadProductScreen> {
       }
     });
     
-    // Set up listeners for local draft
     _titleController.addListener(_saveDraftLocally);
     _descriptionController.addListener(_saveDraftLocally);
     _priceController.addListener(_saveDraftLocally);
   }
 
-  // Improved connectivity check and initial load method
   Future<void> _checkConnectivityAndLoad() async {
-    // Load draft data first (works offline)
     await _loadDraftIfAny();
     
-    // Check connectivity
     final bool hasInternet = await _connectivityService.checkConnectivity();
     
     if (mounted) {
@@ -104,7 +99,6 @@ class UploadProductScreenState extends State<UploadProductScreen> {
         _isOffline = !hasInternet;
       });
       
-      // Only fetch from Firebase if we have internet
       if (hasInternet) {
         _fetchAvailableMajors();
       }
@@ -113,14 +107,12 @@ class UploadProductScreenState extends State<UploadProductScreen> {
 
   @override
   void dispose() {
-    // Cancel any active timers to prevent memory leaks
     _uploadTimer?.cancel();
     
     _titleController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
     
-    // Remove listeners to avoid calls to setState after dispose
     _titleController.removeListener(_saveDraftLocally);
     _descriptionController.removeListener(_saveDraftLocally);
     _priceController.removeListener(_saveDraftLocally);
@@ -128,12 +120,11 @@ class UploadProductScreenState extends State<UploadProductScreen> {
     super.dispose();
   }
 
-  // Helper to load any local draft from SharedPreferences
+  // MEJORADO: Cargar draft con mejor manejo de imágenes
   Future<void> _loadDraftIfAny() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       
-      // Attempt to read each piece of data
       final storedPath = prefs.getString('draft_image_path');
       final storedTitle = prefs.getString('draft_title') ?? '';
       final storedDesc = prefs.getString('draft_desc') ?? '';
@@ -142,16 +133,21 @@ class UploadProductScreenState extends State<UploadProductScreen> {
       final storedClass = prefs.getString('draft_class') ?? 'No class';
       final storedLabels = prefs.getStringList('draft_labels') ?? [];
       
-      // If we have an image path, set our _productImage from that
       File? loadedImage;
       if (storedPath != null && storedPath.isNotEmpty) {
         final tempFile = File(storedPath);
+        
+        // Verificar si la imagen existe
         if (await tempFile.exists()) {
           loadedImage = tempFile;
+          debugPrint('✅ Draft image loaded successfully: $storedPath');
+        } else {
+          debugPrint('⚠️ Draft image file not found: $storedPath');
+          // Limpiar la ruta inválida del draft
+          await prefs.remove('draft_image_path');
         }
       }
       
-      // Update state with loaded data
       if (mounted) {
         setState(() {
           if (loadedImage != null) {
@@ -166,22 +162,19 @@ class UploadProductScreenState extends State<UploadProductScreen> {
         });
       }
       
-      // If major != "No major", re-fetch classes
       if (_selectedMajor != "No major") {
         await _fetchClassesForMajor(_selectedMajor);
       }
     } catch (e) {
-      print("Error loading draft: $e");
-      // Continue without draft data if there's an error
+      debugPrint("Error loading draft: $e");
     }
   }
 
-  // Helper to save (or update) a draft in SharedPreferences
+  // MEJORADO: Guardar draft con mejor validación
   Future<void> _saveDraftLocally() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       
-      // Store form fields
       await prefs.setString('draft_title', _titleController.text.trim());
       await prefs.setString('draft_desc', _descriptionController.text.trim());
       await prefs.setString('draft_price', _priceController.text.trim());
@@ -189,53 +182,77 @@ class UploadProductScreenState extends State<UploadProductScreen> {
       await prefs.setString('draft_class', _selectedClass);
       await prefs.setStringList('draft_labels', _labels);
       
-      // Store image path if we have one
-      if (_productImage != null) {
+      // Solo guardar la ruta de imagen si existe y es válida
+      if (_productImage != null && await _productImage!.exists()) {
         await prefs.setString('draft_image_path', _productImage!.path);
+        debugPrint('💾 Draft saved with image: ${_productImage!.path}');
+      } else {
+        await prefs.remove('draft_image_path');
+        debugPrint('💾 Draft saved without image');
       }
     } catch (e) {
-      print("Error saving draft: $e");
-      // Continue even if saving fails
+      debugPrint("Error saving draft: $e");
     }
   }
 
-  // Clear all draft data after successful upload
+  // MEJORADO: Limpiar draft completamente
   Future<void> _clearDraft() async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.remove('draft_title');
-  await prefs.remove('draft_desc');
-  await prefs.remove('draft_price');
-  await prefs.remove('draft_major');
-  await prefs.remove('draft_class');
-  await prefs.remove('draft_labels');
-  await prefs.remove('draft_image_path');
-}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('draft_title');
+      await prefs.remove('draft_desc');
+      await prefs.remove('draft_price');
+      await prefs.remove('draft_major');
+      await prefs.remove('draft_class');
+      await prefs.remove('draft_labels');
+      await prefs.remove('draft_image_path');
+      
+      debugPrint('🧹 Draft cleared completely');
+    } catch (e) {
+      debugPrint("Error clearing draft: $e");
+    }
+  }
 
-  // Save image to the device's photo library (iOS camera roll)
   Future<void> _saveImageToGallery(File imageFile) async {
     try {
       final result = await ImageGallerySaver.saveFile(imageFile.path);
       if (result['isSuccess'] == true) {
-        print("Image saved to gallery: ${result['filePath']}");
+        debugPrint("Image saved to gallery: ${result['filePath']}");
       } else {
-        print("Failed to save image to gallery");
+        debugPrint("Failed to save image to gallery");
       }
     } catch (e) {
-      print("Error saving image to gallery: $e");
+      debugPrint("Error saving image to gallery: $e");
     }
   }
 
-  // Helper method to store the image file in the app's Documents directory
+  // MEJORADO: Guardar imagen en directorio temporal del draft
   Future<File> _saveImageLocally(File imageFile) async {
-    final directory = await getApplicationDocumentsDirectory();
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final localPath = p.join(directory.path, fileName);
-    return imageFile.copy(localPath);
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final draftDir = Directory('${directory.path}/draft_images');
+      
+      // Crear directorio si no existe
+      if (!await draftDir.exists()) {
+        await draftDir.create(recursive: true);
+      }
+      
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final localPath = p.join(draftDir.path, fileName);
+      final savedFile = await imageFile.copy(localPath);
+      
+      debugPrint('📸 Image saved to draft directory: $localPath');
+      return savedFile;
+    } catch (e) {
+      debugPrint('🚨 Error saving image locally: $e');
+      rethrow;
+    }
   }
 
-  // Handle image capture from camera screen
+  // MEJORADO: Manejar imagen capturada
   void _handleImageCaptured(File image, MeasurementData? measurementData) async {
     try {
+      // Guardar la imagen en el directorio temporal de draft
       final localImage = await _saveImageLocally(image);
       
       if (mounted) {
@@ -244,19 +261,16 @@ class UploadProductScreenState extends State<UploadProductScreen> {
           _imageUrl = null;
           _measurementData = measurementData;
           
-          // Convert measurements to text
           _measurementTexts = [];
           if (measurementData != null && measurementData.lines.isNotEmpty) {
             for (var line in measurementData.lines) {
               _measurementTexts.add(line.measurement);
             }
             
-            // If measurements exist, append them to the description
             if (_measurementTexts.isNotEmpty) {
               String currentDescription = _descriptionController.text;
               String measurementsText = "\n\nMeasurements:\n- " + _measurementTexts.join("\n- ");
               
-              // Only add if not already there
               if (!currentDescription.contains("Measurements:")) {
                 _descriptionController.text = currentDescription + measurementsText;
               }
@@ -265,10 +279,11 @@ class UploadProductScreenState extends State<UploadProductScreen> {
         });
       }
       
-      // Save draft whenever we get a new image
-      _saveDraftLocally();
+      // Guardar draft inmediatamente después de capturar imagen
+      await _saveDraftLocally();
+      debugPrint('✅ Image captured and draft saved');
     } catch (e) {
-      print("Error saving captured image: $e");
+      debugPrint("Error handling captured image: $e");
       _showErrorAlert('Error saving image: $e');
     }
   }
@@ -284,65 +299,60 @@ class UploadProductScreenState extends State<UploadProductScreen> {
       ),
     );
   }
-Future<void> _fetchAvailableMajors() async {
-  // Abortamos si el State ya no está montado
-  if (!mounted) {
-    debugPrint('🔍 _fetchAvailableMajors: widget ya desmontado, abortando');
-    return;
-  }
 
-  debugPrint('🔍 _fetchAvailableMajors: iniciando, marcando isLoading=true');
-  setState(() {
-    _isLoading = true;
-  });
+  Future<void> _fetchAvailableMajors() async {
+    if (!mounted) {
+      debugPrint('🔍 _fetchAvailableMajors: widget ya desmontado, abortando');
+      return;
+    }
 
-  try {
-    // 1) Chequeo de conectividad
-    final bool hasInternet = await _connectivityService.checkConnectivity();
-    debugPrint('🔌 _fetchAvailableMajors: conectividad = $hasInternet');
+    debugPrint('🔍 _fetchAvailableMajors: iniciando, marcando isLoading=true');
+    setState(() {
+      _isLoading = true;
+    });
 
-    if (!hasInternet) {
-      debugPrint('⚠️ _fetchAvailableMajors: sin internet, usando default');
+    try {
+      final bool hasInternet = await _connectivityService.checkConnectivity();
+      debugPrint('🔌 _fetchAvailableMajors: conectividad = $hasInternet');
+
+      if (!hasInternet) {
+        debugPrint('⚠️ _fetchAvailableMajors: sin internet, usando default');
+        if (!mounted) return;
+        setState(() {
+          _availableMajors = ['No major'];
+          _isLoading = false;
+        });
+        return;
+      }
+
+      debugPrint('📡 _fetchAvailableMajors: solicitando majors a Firestore');
+      final QuerySnapshot querySnapshot = await FirebaseFirestore.instance
+          .collection('majors')
+          .get()
+          .timeout(const Duration(seconds: 10));
+      debugPrint('✅ _fetchAvailableMajors: recibidos ${querySnapshot.docs.length} majors');
+
+      final List<String> majors = ['No major']
+        ..addAll(querySnapshot.docs.map((d) => d.id));
+      debugPrint('📝 _fetchAvailableMajors: lista = $majors');
+
+      if (!mounted) return;
+      setState(() {
+        _availableMajors = majors;
+        _isLoading = false;
+      });
+      debugPrint('✔️ _fetchAvailableMajors: estado actualizado');
+    } catch (e, st) {
+      debugPrint('🚨 _fetchAvailableMajors error: $e\n$st');
       if (!mounted) return;
       setState(() {
         _availableMajors = ['No major'];
         _isLoading = false;
       });
-      return;
+      _showBriefToast('No se pudieron cargar carreras. Usando default.');
     }
-
-    // 2) Llamada a Firestore con timeout
-    debugPrint('📡 _fetchAvailableMajors: solicitando majors a Firestore');
-    final QuerySnapshot querySnapshot = await FirebaseFirestore.instance
-        .collection('majors')
-        .get()
-        .timeout(const Duration(seconds: 10));
-    debugPrint('✅ _fetchAvailableMajors: recibidos ${querySnapshot.docs.length} majors');
-
-    // 3) Procesar resultado
-    final List<String> majors = ['No major']
-      ..addAll(querySnapshot.docs.map((d) => d.id));
-    debugPrint('📝 _fetchAvailableMajors: lista = $majors');
-
-    if (!mounted) return;
-    setState(() {
-      _availableMajors = majors;
-      _isLoading = false;
-    });
-    debugPrint('✔️ _fetchAvailableMajors: estado actualizado');
-  } catch (e, st) {
-    debugPrint('🚨 _fetchAvailableMajors error: $e\n$st');
-    if (!mounted) return;
-    setState(() {
-      _availableMajors = ['No major'];
-      _isLoading = false;
-    });
-    _showBriefToast('No se pudieron cargar carreras. Usando default.');
   }
-}
 
-
-  // Simple Cupertino-style toast or brief notification
   void _showBriefToast(String message) {
     showCupertinoDialog(
       context: context,
@@ -351,7 +361,6 @@ Future<void> _fetchAvailableMajors() async {
       ),
     );
 
-    // Automatically dismiss the dialog after 2 seconds
     Future.delayed(Duration(seconds: 2), () {
       if (Navigator.canPop(context)) {
         Navigator.pop(context);
@@ -359,7 +368,6 @@ Future<void> _fetchAvailableMajors() async {
     });
   }
 
-  // Fetch classes for the selected major
   Future<void> _fetchClassesForMajor(String majorId) async {
     if (majorId == "No major") {
       setState(() {
@@ -406,7 +414,6 @@ Future<void> _fetchAvailableMajors() async {
     }
   }
 
-  // Toggle label selection
   void _toggleLabel(String label) {
     setState(() {
       if (_labels.contains(label)) {
@@ -416,32 +423,7 @@ Future<void> _fetchAvailableMajors() async {
       }
     });
     
-    // Save draft whenever we toggle labels
     _saveDraftLocally();
-  }
-
-  // Save offline product to SharedPreferences
-  Future<void> _saveOfflineProduct(ProductModel product) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      
-      // Get the current list of offline products
-      List<String> offlineProducts = prefs.getStringList('offline_products') ?? [];
-      
-      // Convert the product to JSON
-      final productJson = jsonEncode(product.toJson());
-      
-      // Add to the list
-      offlineProducts.add(productJson);
-      
-      // Save the updated list
-      await prefs.setStringList('offline_products', offlineProducts);
-      print("Product saved offline: ${product.title}");
-    } catch (e) {
-      print("Error saving product offline: $e");
-      // At least save as draft
-      await _saveDraftLocally();
-    }
   }
 
   String? _getClassIdFromName(String className) {
@@ -454,252 +436,134 @@ Future<void> _fetchAvailableMajors() async {
     }
     return null;
   }
-Future<void> _submitForm() async {
-  // Validaciones
-  if (_titleController.text.trim().isEmpty) {
-    _showErrorAlert('Por favor ingresa un título');
-    return;
-  }
-  if (_descriptionController.text.trim().isEmpty) {
-    _showErrorAlert('Por favor ingresa una descripción');
-    return;
-  }
-  final price = double.tryParse(_priceController.text.trim());
-  if (price == null) {
-    _showErrorAlert('Por favor ingresa un precio válido');
-    return;
-  }
-  if (_productImage == null) {
-    _showErrorAlert('Por favor agrega al menos una imagen del producto');
-    return;
-  }
 
-  setState(() {
-    _isLoading = true;
-    _isUploading = true;
-  });
-
-  try {
-    // Mostrar diálogo de carga
-    showCupertinoDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return CupertinoAlertDialog(
-              title: const Text("Subiendo Producto"),
-              content: Column(
-                children: [
-                  const SizedBox(height: 20),
-                  const CupertinoActivityIndicator(radius: 15),
-                  const SizedBox(height: 20),
-                  Text(
-                    "Preparando información del producto...",
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: CupertinoColors.systemGrey,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    // Construcción del modelo
-    final now = DateTime.now();
-    final productModel = ProductModel(
-      id: null,
-      title: _titleController.text.trim(),
-      price: price,
-      description: _descriptionController.text.trim(),
-      classId: _selectedClass != "No class"
-          ? _getClassIdFromName(_selectedClass) ?? ''
-          : '',
-      createdAt: now,
-      imageUrls: [],
-      pendingImagePaths: [_productImage!.path],
-      labels: _labels,
-      majorID: _selectedMajor != "No major" ? _selectedMajor : '',
-      sellerID: _firebaseDAO.getCurrentUserId() ?? '',
-      status: 'Available',
-      updatedAt: now,
-    );
-
-    // Siempre encolamos el producto
-    final queueId = await _productService.createProduct(productModel);
-    
-    // Cerrar diálogo de carga
-    if (mounted && Navigator.canPop(context)) {
-      Navigator.of(context).pop();
-    }
-    
-    _showSuccessDialogOffline(
-      'Producto en cola',
-      'Se guardó y se subirá automáticamente.',
-    );
-    await _clearDraft();
-    
-  } catch (e) {
-    // Cerrar diálogo de carga en caso de error
-    if (mounted && Navigator.canPop(context)) {
-      Navigator.of(context).pop();
-    }
-    _showErrorAlert('Error al procesar: $e');
-  } finally {
-    if (mounted) setState(() {
-      _isLoading = false;
-      _isUploading = false;
-    });
-  }
-}
-
-  // Handle offline product saving
-  Future<void> _saveProductOffline() async {
-    final now = DateTime.now();
-    String? userId = _firebaseDAO.getCurrentUserId();
-    
-    // List of local image paths
-    List<String> localImagePaths = [];
-    if (_productImage != null) {
-      localImagePaths.add(_productImage!.path);
-    }
-    
-    // Prepare product data for the queue
-    ProductModel newProduct = ProductModel(
-      id: null,
-      title: _titleController.text.trim(),
-      price: double.parse(_priceController.text.trim()),
-      description: _descriptionController.text.trim(),
-      classId: _selectedClass != "No class" ? _getClassIdFromName(_selectedClass) ?? '' : '',
-      createdAt: now,
-      imageUrls: [],
-      pendingImagePaths: localImagePaths,
-      labels: _labels,
-      majorID: _selectedMajor != "No major" ? _selectedMajor : '',
-      sellerID: userId ?? '',
-      status: 'Available',
-      updatedAt: now,
-    );
-    
-    // Store in SharedPreferences for later sync
-    await _saveOfflineProduct(newProduct);
-  }
-
-
-Future<void> _uploadProductOnline() async {
-  final String filePath = _productImage!.path;
-  debugPrint('📁 Archivo a subir: $filePath');
-
-  // IMPORTANT CHANGE: Use _uploadImageWithRetries instead of direct call
-  String? downloadUrl = await _uploadImageWithRetries(filePath);
-  debugPrint('⬆️ uploadImageWithRetries result: $downloadUrl');
-
-  if (downloadUrl == null) {
-    debugPrint('⚠️ downloadUrl es null, deteniendo proceso.');
-    
-    // Check if we went offline during upload
-    final bool hasConnection = await _connectivityService.checkConnectivity();
-    if (!hasConnection) {
-      debugPrint('📵 Device went offline during upload, saving to queue');
-      setState(() => _isOffline = true);
-      await _saveProductOffline();
-      _showSuccessDialogOffline(
-        'Producto en cola',
-        'Tu producto se guardó localmente para subirlo más tarde.'
-      );
+  // MEJORADO: Submit form con mejor manejo de imágenes
+  Future<void> _submitForm() async {
+    // Validaciones
+    if (_titleController.text.trim().isEmpty) {
+      _showErrorAlert('Por favor ingresa un título');
       return;
     }
-    
-    _showErrorAlert('No se pudo subir la imagen. Intenta de nuevo.');
-    return;
+    if (_descriptionController.text.trim().isEmpty) {
+      _showErrorAlert('Por favor ingresa una descripción');
+      return;
+    }
+    final price = double.tryParse(_priceController.text.trim());
+    if (price == null) {
+      _showErrorAlert('Por favor ingresa un precio válido');
+      return;
+    }
+    if (_productImage == null) {
+      _showErrorAlert('Por favor agrega al menos una imagen del producto');
+      return;
+    }
+
+    // Verificar que la imagen existe antes de continuar
+    if (!await _productImage!.exists()) {
+      _showErrorAlert('Error: La imagen seleccionada no existe. Por favor toma una nueva foto.');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _isUploading = true;
+    });
+
+    try {
+      // Mostrar diálogo de carga
+      showCupertinoDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) {
+          return CupertinoAlertDialog(
+            title: const Text("Subiendo Producto"),
+            content: Column(
+              children: [
+                const SizedBox(height: 20),
+                const CupertinoActivityIndicator(radius: 15),
+                const SizedBox(height: 20),
+                Text(
+                  "Preparando información del producto...",
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: CupertinoColors.systemGrey,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      // Construcción del modelo
+      final now = DateTime.now();
+      final productModel = ProductModel(
+        id: null,
+        title: _titleController.text.trim(),
+        price: price,
+        description: _descriptionController.text.trim(),
+        classId: _selectedClass != "No class"
+            ? _getClassIdFromName(_selectedClass) ?? ''
+            : '',
+        createdAt: now,
+        imageUrls: [],
+        pendingImagePaths: [_productImage!.path], // Usar la ruta actual de la imagen
+        labels: _labels,
+        majorID: _selectedMajor != "No major" ? _selectedMajor : '',
+        sellerID: _firebaseDAO.getCurrentUserId() ?? '',
+        status: 'Available',
+        updatedAt: now,
+      );
+
+      debugPrint('📦 Creating product with image: ${_productImage!.path}');
+      debugPrint('🔍 Image exists: ${await _productImage!.exists()}');
+      
+      // Encolar el producto
+      final queueId = await _productService.createProduct(productModel);
+      
+      // Cerrar diálogo de carga
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+      
+      _showSuccessDialogOffline(
+        'Producto en cola',
+        'Se guardó y se subirá automáticamente.',
+      );
+      
+      // Limpiar todo después del éxito
+      await _clearDraft();
+      
+      // Limpiar el estado del formulario
+      if (mounted) {
+        setState(() {
+          _productImage = null;
+          _measurementData = null;
+          _measurementTexts = [];
+          _titleController.clear();
+          _descriptionController.clear();
+          _priceController.clear();
+          _selectedMajor = "No major";
+          _selectedClass = "No class";
+          _labels.clear();
+        });
+      }
+      
+    } catch (e) {
+      // Cerrar diálogo de carga en caso de error
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+      _showErrorAlert('Error al procesar: $e');
+    } finally {
+      if (mounted) setState(() {
+        _isLoading = false;
+        _isUploading = false;
+      });
+    }
   }
 
-  // Rest of your product creation code remains the same
-  debugPrint('📝 Preparando datos del producto con imageUrl');
-  final Map<String, dynamic> productData = {
-    'title':       _titleController.text.trim(),
-    'description': _descriptionController.text.trim(),
-    'price':       int.parse(_priceController.text.trim()),
-    'sellerID':    _firebaseDAO.getCurrentUserId(),
-    'status':      'Available',
-    'createdAt':   FieldValue.serverTimestamp(),
-    'updatedAt':   FieldValue.serverTimestamp(),
-    'labels':      _labels,
-    'imageUrls':   [downloadUrl],
-  };
-  if (_selectedMajor != 'No major') productData['majorID'] = _selectedMajor;
-  if (_selectedClass != 'No class') {
-    final cid = _getClassIdFromName(_selectedClass);
-    if (cid != null) productData['classID'] = cid;
-  }
-
-  String? productId;
-  try {
-    debugPrint('📡 Iniciando createProduct con timeout 10s');
-    productId = await _firebaseDAO
-      .createProduct(productData)
-      .timeout(const Duration(seconds: 10));
-    debugPrint('📡 createProduct result: $productId');
-  } on TimeoutException {
-    debugPrint('⏱️ TimeoutException en createProduct');
-    setState(() => _isOffline = true);
-  } catch (e, st) {
-    debugPrint('🚨 Error creando producto: $e\n$st');
-    _showErrorAlert('Error al crear el producto: $e');
-  }
-
-  if (productId != null) {
-    debugPrint('✅ Producto creado con ID: $productId');
-    _showSuccessAlert('¡Producto subido exitosamente!');
-    await _clearDraft();
-    _saveImageToGallery(_productImage!);
-  } else {
-    debugPrint('⚠️ productId es null, guardando offline');
-    await _saveProductOffline();
-    _showSuccessDialogOffline(
-      'Producto en cola',
-      'Tu producto se guardó localmente para subirlo más tarde.'
-    );
-  }
-}
-
-  // Dialog to offer saving offline when upload fails
-  void _showOfflineSaveDialog() {
-    showCupertinoDialog(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: Text('No Connection'),
-        content: Text('Could not create the product. Do you want to save it locally to upload later?'),
-        actions: [
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            child: Text('Cancel'),
-            onPressed: () {
-              Navigator.pop(context);
-            },
-          ),
-          CupertinoDialogAction(
-            child: Text('Save in Queue'),
-            onPressed: () {
-              Navigator.pop(context);
-              // Switch to offline mode and retry
-              setState(() {
-                _isOffline = true;
-              });
-              _submitForm();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Dialog for offline success
   void _showSuccessDialogOffline(String title, String message) {
     showCupertinoDialog(
       context: context,
@@ -744,7 +608,6 @@ Future<void> _uploadProductOnline() async {
     );
   }
 
-  // Show error alert
   void _showErrorAlert(String message) {
     showCupertinoDialog(
       context: context,
@@ -761,7 +624,6 @@ Future<void> _uploadProductOnline() async {
     );
   }
 
-  // Show success alert
   void _showSuccessAlert(String message) {
     showCupertinoDialog(
       context: context,
@@ -772,8 +634,8 @@ Future<void> _uploadProductOnline() async {
           CupertinoDialogAction(
             child: const Text('OK'),
             onPressed: () {
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Return to previous screen
+              Navigator.pop(context);
+              Navigator.pop(context);
             },
           ),
         ],
@@ -781,139 +643,11 @@ Future<void> _uploadProductOnline() async {
     );
   }
 
-
-
-Future<String?> _uploadImageWithRetries(String filePath) async {
-  bool dialogShown = false;
-  
-  try {
-    // Mostrar diálogo con mensaje inicial
-    dialogShown = true;
-    showCupertinoDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return CupertinoAlertDialog(
-              title: const Text("Subiendo Producto"),
-              content: Column(
-                children: [
-                  const SizedBox(height: 20),
-                  const CupertinoActivityIndicator(radius: 15),
-                  const SizedBox(height: 20),
-                  Text(
-                    "Verificando conexión a internet...",
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: CupertinoColors.systemGrey,
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                CupertinoDialogAction(
-                  isDestructiveAction: true,
-                  child: const Text("Cancelar"),
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                    dialogShown = false;
-                  },
-                ),
-              ],
-            );
-          },
-        );
-      },
+  void _navigateToQueueScreen() {
+    Navigator.of(context).push(
+      CupertinoPageRoute(builder: (_) => const QueuedProductsScreen()),
     );
-
-    // Actualizar mensaje para subida de imagen
-    if (dialogShown && mounted) {
-      showCupertinoDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext dialogContext) {
-          return StatefulBuilder(
-            builder: (context, setState) {
-              return CupertinoAlertDialog(
-                title: const Text("Subiendo Producto"),
-                content: Column(
-                  children: [
-                    const SizedBox(height: 20),
-                    const CupertinoActivityIndicator(radius: 15),
-                    const SizedBox(height: 20),
-                    Text(
-                      "Subiendo imágenes...",
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        color: CupertinoColors.systemGrey,
-                      ),
-                    ),
-                  ],
-                ),
-                actions: [
-                  CupertinoDialogAction(
-                    isDestructiveAction: true,
-                    child: const Text("Cancelar"),
-                    onPressed: () {
-                      Navigator.of(dialogContext).pop();
-                      dialogShown = false;
-                    },
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      );
-    }
-    
-    // Usar timeout para la subida
-    final String? result = await _firebaseDAO.uploadProductImage(filePath)
-        .timeout(const Duration(seconds: 15));
-    
-    // Cerrar diálogo
-    if (dialogShown && mounted && Navigator.canPop(context)) {
-      Navigator.of(context).pop();
-    }
-    
-    return result;
-  } on TimeoutException {
-    debugPrint("Upload timed out after 15 seconds");
-    // Cerrar diálogo en timeout
-    if (dialogShown && mounted && Navigator.canPop(context)) {
-      Navigator.of(context).pop();
-    }
-    return null;
-  } catch (e) {
-    debugPrint("Error uploading image: $e");
-    // Cerrar diálogo en error
-    if (dialogShown && mounted && Navigator.canPop(context)) {
-      Navigator.of(context).pop();
-    }
-    return null;
   }
-}
-
-void _navigateToQueueScreen() {
-  Navigator.of(context).push(
-    CupertinoPageRoute(builder: (_) => const QueuedProductsScreen()),
-  );
-}
-
-Widget _buildViewQueueButton() {
-  return Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(8),
-    child: CupertinoButton(
-      color: AppColors.primaryBlue,
-      onPressed: _navigateToQueueScreen,
-      child: const Text('Ver Cola'),
-    ),
-  );
-}
 
   @override
   Widget build(BuildContext context) {
@@ -1176,7 +910,6 @@ Widget _buildViewQueueButton() {
                                                 _fetchClassesForMajor(
                                                     selectedMajor);
                                                 Navigator.pop(context);
-                                                // Save draft after changing major
                                                 _saveDraftLocally();
                                               },
                                             ),
@@ -1305,7 +1038,6 @@ Widget _buildViewQueueButton() {
                                                             _availableClassNames[
                                                                 index];
                                                       });
-                                                      // Save draft after changing class
                                                       _saveDraftLocally();
                                                     },
                                                     children:
@@ -1397,39 +1129,40 @@ Widget _buildViewQueueButton() {
                           ),
                           const SizedBox(height: 32),
 
-    // Submit button
-    SizedBox(
-      width: double.infinity,
-      height: 50,
-      child: CupertinoButton(
-      padding: EdgeInsets.zero,
-      color: CupertinoColors.white,
-      borderRadius: BorderRadius.circular(8),
-      onPressed: _navigateToQueueScreen,
-      child: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: BoxDecoration(
-        border: Border.all(
-          color: AppColors.primaryBlue,
-          width: 2,
-        ),
-        borderRadius: BorderRadius.circular(8),
-        ),
-        alignment: Alignment.center,
-        child: const Text(
-        'Recent Uploads',
-        style: TextStyle(
-          color: AppColors.primaryBlue,
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-        ),
-        ),
-      ),
-      ),
-    ),
+                          // Recent uploads button
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: CupertinoButton(
+                              padding: EdgeInsets.zero,
+                              color: CupertinoColors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              onPressed: _navigateToQueueScreen,
+                              child: Container(
+                                width: double.infinity,
+                                height: double.infinity,
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: AppColors.primaryBlue,
+                                    width: 2,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                alignment: Alignment.center,
+                                child: const Text(
+                                  'Recent Uploads',
+                                  style: TextStyle(
+                                    color: AppColors.primaryBlue,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                           const SizedBox(height: 16),
 
+                          // Submit button
                           SizedBox(
                             width: double.infinity,
                             height: 50,

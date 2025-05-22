@@ -19,7 +19,8 @@ class OfflineQueueService {
   static final OfflineQueueService _instance = OfflineQueueService._internal();
   factory OfflineQueueService() => _instance;
   OfflineQueueService._internal();
-    final ImageStorageService _imageStorage = ImageStorageService(); 
+  
+  final ImageStorageService _imageStorage = ImageStorageService(); 
 
   // ---- Dependencias ----
   final ConnectivityService _connectivityService = ConnectivityService();
@@ -35,7 +36,7 @@ class OfflineQueueService {
 
   // ---- Constantes ----
   static const String _storageKey = 'offline_product_queue';
-  static const String _completedStorageKey = 'completed_product_history'; // NEW: separate storage for completed
+  static const String _completedStorageKey = 'completed_product_history';
   static const String _qrscanKey = 'product_delivery_queue';
   static const int _maxRetries = 3;
   static const Duration _retryDelay = Duration(minutes: 5);
@@ -65,6 +66,7 @@ class OfflineQueueService {
     try {
       // Initialize image storage service first
       await _imageStorage.initialize();
+      debugPrint('📸 ImageStorageService initialized');
       
       await _loadQueuedProducts();
       await _loadCompletedProducts();
@@ -95,7 +97,7 @@ class OfflineQueueService {
     }
   }
 
- void _onConnectivityChange(bool hasInternet) {
+  void _onConnectivityChange(bool hasInternet) {
     debugPrint('🔌 Connectivity change detected: $hasInternet');
     
     if (hasInternet) {
@@ -117,28 +119,26 @@ class OfflineQueueService {
     debugPrint('⏱️ Verification timer configured (every 15 min)');
   }
 
- 
-
   Future<void> _processIfOnline() async {
-  debugPrint('🔍 Checking connectivity to process queue...');
-  
-  // Check for pending items first
-  final pendingItems = _queuedProducts.where((qp) =>
-      qp.status == 'queued' || qp.status == 'failed').toList();
-  
-  if (pendingItems.isEmpty) {
-    debugPrint('ℹ️ No pending items to process');
-    return;
+    debugPrint('🔍 Checking connectivity to process queue...');
+    
+    // Check for pending items first
+    final pendingItems = _queuedProducts.where((qp) =>
+        qp.status == 'queued' || qp.status == 'failed').toList();
+    
+    if (pendingItems.isEmpty) {
+      debugPrint('ℹ️ No pending items to process');
+      return;
+    }
+    
+    if (await _connectivityService.checkConnectivity()) {
+      debugPrint('✅ Connection available, processing ${pendingItems.length} pending items');
+      processQueue();
+      processOrderQueue();
+    } else {
+      debugPrint('❌ No connection, ${pendingItems.length} items will wait for connectivity');
+    }
   }
-  
-  if (await _connectivityService.checkConnectivity()) {
-    debugPrint('✅ Connection available, processing ${pendingItems.length} pending items');
-    processQueue();
-    processOrderQueue();
-  } else {
-    debugPrint('❌ No connection, ${pendingItems.length} items will wait for connectivity');
-  }
-}
 
   // ---------------------------------------------------------------------------
   //  Load / Save to SharedPreferences
@@ -149,13 +149,22 @@ class OfflineQueueService {
       final raw = prefs.getStringList(_storageKey) ?? [];
 
       debugPrint('📂 Loading active queue from SharedPreferences (${raw.length} elements)');
-      _queuedProducts = raw
-          .map((s) => QueuedProductModel.fromJson(jsonDecode(s)))
-          .where((p) => p.status != 'completed') // Don't load completed here
-          .toList();
+      _queuedProducts = [];
+      
+      for (final jsonString in raw) {
+        try {
+          final queuedProduct = QueuedProductModel.fromJson(jsonDecode(jsonString));
+          // Only load if not completed
+          if (queuedProduct.status != 'completed') {
+            _queuedProducts.add(queuedProduct);
+          }
+        } catch (e) {
+          debugPrint('⚠️ Error parsing queued product: $e');
+        }
+      }
 
       _notify();
-      debugPrint('✅ Active queue loaded successfully');
+      debugPrint('✅ Active queue loaded successfully: ${_queuedProducts.length} items');
     } catch (e, st) {
       debugPrint('🚨 Error loading queue: $e\n$st');
       _queuedProducts = [];
@@ -163,19 +172,23 @@ class OfflineQueueService {
     }
   }
 
-  // NEW: Load completed products separately for permanent storage
+  // Load completed products separately for permanent storage
   Future<void> _loadCompletedProducts() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getStringList(_completedStorageKey) ?? [];
 
       debugPrint('📂 Loading completed products from SharedPreferences (${raw.length} elements)');
-      final completedProducts = raw
-          .map((s) => QueuedProductModel.fromJson(jsonDecode(s)))
-          .toList();
+      
+      for (final jsonString in raw) {
+        try {
+          final completedProduct = QueuedProductModel.fromJson(jsonDecode(jsonString));
+          _queuedProducts.add(completedProduct);
+        } catch (e) {
+          debugPrint('⚠️ Error parsing completed product: $e');
+        }
+      }
 
-      // Add completed products to main list
-      _queuedProducts.addAll(completedProducts);
       _notify();
       debugPrint('✅ Completed products loaded successfully');
     } catch (e, st) {
@@ -203,16 +216,60 @@ class OfflineQueueService {
     }
   }
 
-Future<String> addToQueue(ProductModel product) async {
+  void _notify() => _internalController.add(List.unmodifiable(_queuedProducts));
+
+  // NUEVO: Limpieza periódica de imágenes huérfanas (solo para productos eliminados)
+  Future<void> _periodicImageCleanup() async {
+    debugPrint('🧹 Starting periodic image cleanup (preserving completed products)');
+    
+    // Solo considerar como "referenciadas" las imágenes de productos activos (no eliminados)
+    final activeProducts = _queuedProducts.where((qp) => 
+        qp.status == 'queued' || qp.status == 'uploading' || qp.status == 'failed' || qp.status == 'completed'
+    ).toList();
+    
+    final referencedPaths = <String>[];
+    for (final qp in activeProducts) {
+      if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
+        referencedPaths.addAll(qp.product.pendingImagePaths!);
+      }
+    }
+    
+    debugPrint('🔗 Preserving ${referencedPaths.length} images from ${activeProducts.length} active products');
+    await _imageStorage.cleanupOrphanedImages(referencedPaths);
+  }
+
+  // MEJORADO: Agregar producto a la cola con mejor manejo de imágenes
+  Future<String> addToQueue(ProductModel product) async {
     final id = const Uuid().v4();
     debugPrint('➕ Adding product to queue: ${product.title}');
 
-    // Copy images to permanent storage
+    // CRÍTICO: Copiar imágenes a almacenamiento permanente
     List<String> permanentImagePaths = [];
     if (product.pendingImagePaths?.isNotEmpty ?? false) {
-      debugPrint('💾 Copying ${product.pendingImagePaths!.length} images to permanent storage');
-      permanentImagePaths = await _imageStorage.saveImagesToQueue(product.pendingImagePaths!);
-      debugPrint('✅ Saved ${permanentImagePaths.length} images permanently');
+      debugPrint('📸 Processing ${product.pendingImagePaths!.length} images for permanent storage');
+      
+      for (final tempPath in product.pendingImagePaths!) {
+        debugPrint('🔍 Checking temp image: $tempPath');
+        final tempFile = File(tempPath);
+        
+        if (await tempFile.exists()) {
+          final fileSize = await tempFile.length();
+          debugPrint('✅ Temp image exists: $tempPath (${(fileSize / 1024).toInt()} KB)');
+          
+          // Copiar a almacenamiento permanente
+          final permanentPath = await _imageStorage.saveImageToQueue(tempPath);
+          if (permanentPath != null) {
+            permanentImagePaths.add(permanentPath);
+            debugPrint('✅ Image saved permanently: $permanentPath');
+          } else {
+            debugPrint('❌ Failed to save image permanently: $tempPath');
+          }
+        } else {
+          debugPrint('❌ Temp image file not found: $tempPath');
+        }
+      }
+      
+      debugPrint('📦 Final permanent images: ${permanentImagePaths.length}/${product.pendingImagePaths!.length}');
     }
 
     // Create product with permanent image paths
@@ -225,7 +282,9 @@ Future<String> addToQueue(ProductModel product) async {
       product: updatedProduct,
       status: 'queued',
       queuedTime: DateTime.now(),
-      statusMessage: 'Product saved to queue with ${permanentImagePaths.length} images',
+      statusMessage: permanentImagePaths.isNotEmpty 
+          ? 'Product queued with ${permanentImagePaths.length} images'
+          : 'Product queued (no images)',
     );
     
     _queuedProducts.add(qp);
@@ -234,12 +293,12 @@ Future<String> addToQueue(ProductModel product) async {
     
     // AUTO-PROCESS if online
     _processIfOnline();
-    debugPrint('✅ Product added to queue: ${product.title}');
+    debugPrint('✅ Product added to queue: ${product.title} with ${permanentImagePaths.length} images');
 
     return id;
   }
 
-  // REPLACE your removeFromQueue method with this enhanced version:
+  // MEJORADO: Remover producto de la cola con limpieza de imágenes
   Future<void> removeFromQueue(String id) async {
     debugPrint('🗑️ Removing product from queue: $id');
     
@@ -266,22 +325,10 @@ Future<String> addToQueue(ProductModel product) async {
     debugPrint('✅ Product removed from queue: $id');
   }
 
-  // ADD this new method for cleaning up orphaned images:
   Future<void> _cleanupOrphanedImages() async {
-    debugPrint('🧹 Checking for orphaned images');
-    
-    // Collect all image paths referenced by queue items
-    final referencedPaths = <String>[];
-    for (final qp in _queuedProducts) {
-      if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
-        referencedPaths.addAll(qp.product.pendingImagePaths!);
-      }
-    }
-    
-    // Clean up orphaned images
-    await _imageStorage.cleanupOrphanedImages(referencedPaths);
+    // Solo hacer limpieza periódica, no en cada operación
+    await _periodicImageCleanup();
   }
-
 
   Future<void> retryQueuedUpload(String id) async {
     debugPrint('🔄 Retrying product upload: $id');
@@ -303,7 +350,7 @@ Future<String> addToQueue(ProductModel product) async {
     _processIfOnline();
   }
 
-  /// Procesa toda la cola (si no se está procesando ya).
+  /// CORREGIDO: Procesa toda la cola sin eliminar imágenes prematuramente
   Future<void> processQueue() async {
     if (_isProcessing) {
       debugPrint('⚠️ Processing already in progress, aborting');
@@ -346,32 +393,42 @@ Future<String> addToQueue(ProductModel product) async {
           final pendingPaths = qp.product.pendingImagePaths ?? [];
           
           debugPrint('🖼️ Uploading ${pendingPaths.length} images');
-          await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Uploading images...');
           
-          for (var i = 0; i < pendingPaths.length; i++) {
-            final local = pendingPaths[i];
-            final file = File(local);
-            if (!await file.exists()) {
-              debugPrint('⚠️ File not found: $local');
-              throw 'File not found: $local';
-            }
+          if (pendingPaths.isNotEmpty) {
+            await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Uploading images...');
             
-            String? url;
-            try {
-              await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Uploading image ${i + 1}/${pendingPaths.length}...');
-              url = await _firebaseDAO.uploadProductImage(local)
-                  .timeout(const Duration(seconds: 30));
-            } catch (e) {
-              debugPrint('⚠️ Error uploading image: $e');
-              throw 'Error uploading image: $e';
-            }
-            
-            if (url != null) {
-              uploaded.add(url);
-              debugPrint('✅ Image uploaded: $url');
-            } else {
-              debugPrint('⚠️ Null URL when uploading $local');
-              throw 'Error uploading $local: Null URL';
+            for (var i = 0; i < pendingPaths.length; i++) {
+              final local = pendingPaths[i];
+              final file = File(local);
+              
+              // Verificar que el archivo existe
+              if (!await file.exists()) {
+                debugPrint('⚠️ File not found: $local');
+                throw 'Image file not found: $local';
+              }
+              
+              // Verificar tamaño del archivo
+              final fileSize = await file.length();
+              debugPrint('📏 Uploading image ${i + 1}/${pendingPaths.length}: $local (${(fileSize / 1024).toInt()} KB)');
+              
+              String? url;
+              try {
+                await _updateStatus(qp.queueId, 'uploading', 
+                    statusMessage: 'Uploading image ${i + 1}/${pendingPaths.length}...');
+                url = await _firebaseDAO.uploadProductImage(local)
+                    .timeout(const Duration(seconds: 45));
+              } catch (e) {
+                debugPrint('⚠️ Error uploading image: $e');
+                throw 'Error uploading image ${i + 1}: $e';
+              }
+              
+              if (url != null && url.isNotEmpty) {
+                uploaded.add(url);
+                debugPrint('✅ Image ${i + 1} uploaded successfully: $url');
+              } else {
+                debugPrint('⚠️ Null/empty URL when uploading $local');
+                throw 'Error uploading image ${i + 1}: Received null/empty URL';
+              }
             }
           }
 
@@ -381,7 +438,7 @@ Future<String> addToQueue(ProductModel product) async {
           
           final updatedProduct = qp.product.copyWith(
             imageUrls: [...qp.product.imageUrls, ...uploaded],
-            pendingImagePaths: [],
+            pendingImagePaths: [], // Clear pending paths after successful upload
             updatedAt: DateTime.now(),
           );
           
@@ -391,19 +448,37 @@ Future<String> addToQueue(ProductModel product) async {
                 .timeout(const Duration(seconds: 20));
           } catch (e) {
             debugPrint('⚠️ Error creating product: $e');
-            throw 'Error creating product: $e';
+            throw 'Error creating product document: $e';
           }
           
-          if (newId == null) {
-            debugPrint('⚠️ Null ID when creating product');
-            throw 'createProduct returned null';
+          if (newId == null || newId.isEmpty) {
+            debugPrint('⚠️ Null/empty ID when creating product');
+            throw 'Product creation failed: received null/empty ID';
           }
 
-          debugPrint('✅ Product created: ${qp.product.title}');
-          await _updateStatus(qp.queueId, 'completed', statusMessage: 'Upload completed successfully!');
+          debugPrint('✅ Product created successfully: ${qp.product.title} (ID: $newId)');
+          
+          // CRÍTICO: Actualizar el producto con las URLs de red y mantener imágenes locales para historial
+          final completedProduct = updatedProduct.copyWith(
+            id: newId,
+            imageUrls: uploaded, // URLs de Firebase
+            // MANTENER pendingImagePaths para que se puedan mostrar en el historial
+            pendingImagePaths: qp.product.pendingImagePaths,
+          );
+          
+          // Actualizar el item de la cola con el producto completado
+          await _updateStatusWithProduct(qp.queueId, 'completed', completedProduct,
+              statusMessage: 'Upload completed successfully!');
+          
+          // NO eliminar las imágenes locales - mantenerlas para el historial
+          debugPrint('✅ Product completed and images preserved for history');
+          
+          // Solo limpiar imágenes huérfanas ocasionalmente (no en cada subida)
+          // Las imágenes de productos completados se mantienen para el historial
           
         } catch (e) {
           debugPrint('❌ Error processing product ${qp.product.title}: $e');
+          // NO eliminar imágenes en caso de error - mantenerlas para retry
           await _updateStatus(
             qp.queueId,
             'failed',
@@ -453,7 +528,95 @@ Future<String> addToQueue(ProductModel product) async {
     debugPrint('✅ Status updated for $queueId: $status');
   }
 
-  void _notify() => _internalController.add(List.unmodifiable(_queuedProducts));
+  // NUEVO: Método para actualizar status con producto actualizado
+  Future<void> _updateStatusWithProduct(String queueId, String status, ProductModel? updatedProduct, {String? error, String? statusMessage}) async {
+    final index = _queuedProducts.indexWhere((qp) => qp.queueId == queueId);
+    if (index == -1) {
+      debugPrint('⚠️ Product $queueId not found to update status');
+      return;
+    }
+
+    debugPrint('🔄 Updating status of $queueId to "$status"${error != null ? " (error: $error)" : ""}');
+    
+    var qp = _queuedProducts[index].copyWith(
+      status: status,
+      queuedTime: status == 'completed' ? DateTime.now() : _queuedProducts[index].queuedTime,
+      statusMessage: statusMessage,
+      // Actualizar el producto si se proporciona
+      product: updatedProduct ?? _queuedProducts[index].product,
+    );
+    
+    if (status == 'failed') {
+      qp = qp.copyWith(
+        retryCount: qp.retryCount + 1,
+        errorMessage: error,
+      );
+    }
+
+    _queuedProducts[index] = qp;
+    await _saveQueuedProducts();
+    _notify();
+    debugPrint('✅ Status updated for $queueId: $status');
+  }
+
+  // MEJORADO: Validar y limpiar rutas de imágenes
+  Future<void> _validateAndCleanupImagePaths() async {
+    debugPrint('🔍 Validating image paths in queue...');
+    bool hasChanges = false;
+    
+    for (int i = 0; i < _queuedProducts.length; i++) {
+      final qp = _queuedProducts[i];
+      final pendingPaths = qp.product.pendingImagePaths ?? [];
+      
+      if (pendingPaths.isNotEmpty) {
+        debugPrint('🔍 Validating ${pendingPaths.length} images for product: ${qp.product.title}');
+        
+        // Check which images still exist
+        final validPaths = <String>[];
+        
+        for (final path in pendingPaths) {
+          final exists = await _imageStorage.imageExists(path);
+          if (exists) {
+            validPaths.add(path);
+            debugPrint('✅ Image exists: $path');
+          } else {
+            debugPrint('❌ Image missing: $path');
+            hasChanges = true;
+          }
+        }
+        
+        // If some images are missing, update the product
+        if (validPaths.length != pendingPaths.length) {
+          final updatedProduct = qp.product.copyWith(
+            pendingImagePaths: validPaths.isEmpty ? null : validPaths,
+          );
+          
+          String statusMessage;
+          if (validPaths.isEmpty) {
+            statusMessage = 'No images available - upload may fail';
+          } else {
+            statusMessage = '${validPaths.length}/${pendingPaths.length} images available';
+          }
+          
+          _queuedProducts[i] = qp.copyWith(
+            product: updatedProduct,
+            statusMessage: statusMessage,
+          );
+          
+          debugPrint('⚠️ Updated product ${qp.queueId}: ${validPaths.length}/${pendingPaths.length} images valid');
+        }
+      }
+    }
+    
+    // Save changes if any paths were invalid
+    if (hasChanges) {
+      await _saveQueuedProducts();
+      _notify();
+      debugPrint('💾 Saved changes after image validation');
+    } else {
+      debugPrint('✅ All image paths validated successfully');
+    }
+  }
 
   // ---------------------------------------------------------------------------
   //  Limpieza
@@ -551,11 +714,11 @@ Future<String> addToQueue(ProductModel product) async {
     }
   }
 
-    Future<void> forceCleanupOrphanedImages() async {
+  Future<void> forceCleanupOrphanedImages() async {
     await _cleanupOrphanedImages();
   }
 
-   Future<Map<String, dynamic>> getStorageStats() async {
+  Future<Map<String, dynamic>> getStorageStats() async {
     final totalSize = await _imageStorage.getTotalQueueImagesSize();
     final referencedPaths = <String>[];
     
@@ -571,54 +734,6 @@ Future<String> addToQueue(ProductModel product) async {
       'totalSizeMB': (totalSize / (1024 * 1024)).toStringAsFixed(2),
       'queueDirectoryPath': _imageStorage.queueDirectoryPath,
     };
-  }
-
-Future<void> _validateAndCleanupImagePaths() async {
-    debugPrint('🔍 Validating image paths in queue...');
-    bool hasChanges = false;
-    
-    for (int i = 0; i < _queuedProducts.length; i++) {
-      final qp = _queuedProducts[i];
-      final pendingPaths = qp.product.pendingImagePaths ?? [];
-      
-      if (pendingPaths.isNotEmpty) {
-        // Check which images still exist using ImageStorageService
-        final validPaths = <String>[];
-        
-        for (final path in pendingPaths) {
-          if (await _imageStorage.imageExists(path)) {
-            validPaths.add(path);
-            debugPrint('✅ Image exists: $path');
-          } else {
-            debugPrint('❌ Image missing: $path');
-            hasChanges = true;
-          }
-        }
-        
-        // If some images are missing, update the product
-        if (validPaths.length != pendingPaths.length) {
-          final updatedProduct = qp.product.copyWith(
-            pendingImagePaths: validPaths.isEmpty ? null : validPaths,
-          );
-          
-          _queuedProducts[i] = qp.copyWith(
-            product: updatedProduct,
-            statusMessage: validPaths.isEmpty 
-                ? 'Images missing - product may fail to upload'
-                : '${validPaths.length}/${pendingPaths.length} images available',
-          );
-          
-          debugPrint('⚠️ Updated product ${qp.queueId}: ${validPaths.length}/${pendingPaths.length} images valid');
-        }
-      }
-    }
-    
-    // Save changes if any paths were invalid
-    if (hasChanges) {
-      await _saveQueuedProducts();
-      _notify();
-      debugPrint('💾 Saved changes after image validation');
-    }
   }
 
   Future<void> _updateOrderStatus(String id, String status, {String? error}) async {

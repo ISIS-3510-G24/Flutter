@@ -290,7 +290,7 @@ StreamBuilder<bool>(
   }
 
   //───────────────────────────────────────────────────────────────────────────
-  // SIMPLE CLEAN CARD
+  // IMPROVED CARD WITH BETTER IMAGE HANDLING
   //───────────────────────────────────────────────────────────────────────────
   Widget _buildCard(QueuedProductModel qp) {
     return Dismissible(
@@ -437,68 +437,30 @@ StreamBuilder<bool>(
     );
   }
 
+  // IMPROVED: Better thumbnail building with async loading
+  Widget _buildThumbnail(QueuedProductModel qp) {
+    return FutureBuilder<Widget>(
+      future: _buildThumbnailAsync(qp),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildImagePlaceholder(isLoading: true);
+        }
+        if (snapshot.hasError) {
+          debugPrint('🚨 Error building thumbnail: ${snapshot.error}');
+          return _buildImagePlaceholder(hasError: true);
+        }
+        return snapshot.data ?? _buildImagePlaceholder(hasError: true);
+      },
+    );
+  }
+
   Future<Widget> _buildThumbnailAsync(QueuedProductModel qp) async {
     try {
-      // Check permanent storage images first (queue images)
-      if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
-        final imagePath = qp.product.pendingImagePaths!.first;
-        final file = File(imagePath);
-        
-        debugPrint('🖼️ Checking queue image: $imagePath');
-        
-        // Check if the permanent image file exists
-        if (await file.exists()) {
-          final fileSize = await file.length();
-          debugPrint('✅ Queue image exists: $imagePath (${(fileSize / 1024).toInt()} KB)');
-          
-          return Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: CupertinoColors.systemBlue.withOpacity(0.3), 
-                width: 2
-              ),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              children: [
-                Image.file(
-                  file,
-                  fit: BoxFit.cover,
-                  width: 60,
-                  height: 60,
-                  errorBuilder: (_, __, ___) => _buildImagePlaceholder(hasError: true),
-                ),
-                // Show local image indicator
-                Positioned(
-                  top: 2,
-                  right: 2,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: CupertinoColors.systemBlue,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      CupertinoIcons.device_phone_portrait,
-                      color: CupertinoColors.white,
-                      size: 8,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        } else {
-          debugPrint('❌ Queue image missing: $imagePath');
-        }
-      }
+      debugPrint('🖼️ Building thumbnail for: ${qp.product.title} (Status: ${qp.status})');
       
-      // Fallback to network images if available
-      if (qp.product.imageUrls.isNotEmpty) {
-        debugPrint('🌐 Using network image: ${qp.product.imageUrls.first}');
+      // Para productos completados, priorizar imágenes de red
+      if (qp.status == 'completed' && qp.product.imageUrls.isNotEmpty) {
+        debugPrint('✅ Using network image for completed product: ${qp.product.imageUrls.first}');
         return Container(
           width: 60,
           height: 60,
@@ -517,9 +479,18 @@ StreamBuilder<bool>(
                 fit: BoxFit.cover,
                 width: 60,
                 height: 60,
-                errorBuilder: (_, __, ___) => _buildImagePlaceholder(hasError: true),
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return const Center(
+                    child: CupertinoActivityIndicator(radius: 8),
+                  );
+                },
+                errorBuilder: (_, __, ___) {
+                  debugPrint('❌ Error loading network image, falling back to local');
+                  return _buildLocalImageFallback(qp);
+                },
               ),
-              // Show network image indicator
+              // Show completed status indicator
               Positioned(
                 top: 2,
                 right: 2,
@@ -530,7 +501,7 @@ StreamBuilder<bool>(
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
-                    CupertinoIcons.cloud,
+                    CupertinoIcons.checkmark_circle_fill,
                     color: CupertinoColors.white,
                     size: 8,
                   ),
@@ -539,6 +510,71 @@ StreamBuilder<bool>(
             ],
           ),
         );
+      }
+      
+      // Para productos no completados, usar imágenes locales
+      if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
+        final imagePath = qp.product.pendingImagePaths!.first;
+        final file = File(imagePath);
+        
+        debugPrint('🔍 Checking local image: $imagePath');
+        
+        if (await file.exists()) {
+          final fileSize = await file.length();
+          debugPrint('✅ Local image exists: $imagePath (${(fileSize / 1024).toInt()} KB)');
+          
+          return Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _getStatusColor(qp.status).withOpacity(0.3), 
+                width: 2
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                Image.file(
+                  file,
+                  fit: BoxFit.cover,
+                  width: 60,
+                  height: 60,
+                  errorBuilder: (_, __, ___) {
+                    debugPrint('❌ Error loading local image: $imagePath');
+                    return _buildImagePlaceholder(hasError: true);
+                  },
+                ),
+                // Show status indicator
+                Positioned(
+                  top: 2,
+                  right: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: _getStatusColor(qp.status),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      _getStatusIcon(qp.status),
+                      color: CupertinoColors.white,
+                      size: 8,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        } else {
+          debugPrint('❌ Local image missing: $imagePath');
+        }
+      }
+      
+      // Fallback para productos completados sin red: usar imágenes de red
+      if (qp.product.imageUrls.isNotEmpty) {
+        debugPrint('🌐 Using network image fallback: ${qp.product.imageUrls.first}');
+        return _buildNetworkImageWidget(qp.product.imageUrls.first);
       }
       
       // No images available
@@ -550,16 +586,62 @@ StreamBuilder<bool>(
     }
   }
 
-  Widget _buildThumbnail(QueuedProductModel qp) {
-    return FutureBuilder<Widget>(
-      future: _buildThumbnailAsync(qp),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return _buildImagePlaceholder(isLoading: true);
-        }
-        return snapshot.data ?? _buildImagePlaceholder(hasError: true);
-      },
+  Widget _buildLocalImageFallback(QueuedProductModel qp) {
+    if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
+      final imagePath = qp.product.pendingImagePaths!.first;
+      return Image.file(
+        File(imagePath),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildImagePlaceholder(hasError: true),
+      );
+    }
+    return _buildImagePlaceholder(hasError: true);
+  }
+
+  Widget _buildNetworkImageWidget(String imageUrl) {
+    return Container(
+      width: 60,
+      height: 60,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: CupertinoColors.systemGreen.withOpacity(0.3), 
+          width: 2
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        width: 60,
+        height: 60,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return const Center(child: CupertinoActivityIndicator(radius: 8));
+        },
+        errorBuilder: (_, __, ___) => _buildImagePlaceholder(hasError: true),
+      ),
     );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'queued': return CupertinoColors.systemOrange;
+      case 'uploading': return AppColors.primaryBlue;
+      case 'failed': return CupertinoColors.systemRed;
+      case 'completed': return CupertinoColors.systemGreen;
+      default: return CupertinoColors.systemGrey;
+    }
+  }
+
+  IconData _getStatusIcon(String status) {
+    switch (status) {
+      case 'queued': return CupertinoIcons.clock;
+      case 'uploading': return CupertinoIcons.cloud_upload;
+      case 'failed': return CupertinoIcons.exclamationmark_circle;
+      case 'completed': return CupertinoIcons.checkmark_circle;
+      default: return CupertinoIcons.question_circle;
+    }
   }
 
   Widget _buildImagePlaceholder({bool isLoading = false, bool hasError = false}) {
@@ -589,18 +671,11 @@ StreamBuilder<bool>(
     );
   }
 
-  Widget _buildImageFallback(QueuedProductModel qp) {
-    if (qp.product.imageUrls.isNotEmpty) {
-      return Image.network(
-        qp.product.imageUrls.first,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
-      );
-    }
-    return _buildImagePlaceholder();
-  }
-
   Widget _buildProductInfo(QueuedProductModel qp) {
+    // Count images from different sources
+    final queueImageCount = qp.product.pendingImagePaths?.length ?? 0;
+    final networkImageCount = qp.product.imageUrls.length;
+    
     return GestureDetector(
       onLongPress: () => _showImageDebugInfo(qp), // Long press for debug info
       child: Column(
@@ -628,8 +703,8 @@ StreamBuilder<bool>(
                 ),
               ),
               const SizedBox(width: 8),
-              // Show image count indicator
-              if ((qp.product.pendingImagePaths?.length ?? 0) > 0)
+              // Show queue images count
+              if (queueImageCount > 0)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
@@ -637,7 +712,7 @@ StreamBuilder<bool>(
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '📱 ${qp.product.pendingImagePaths!.length}',
+                    '📱 $queueImageCount',
                     style: GoogleFonts.inter(
                       fontSize: 10,
                       color: CupertinoColors.systemBlue,
@@ -645,7 +720,8 @@ StreamBuilder<bool>(
                     ),
                   ),
                 ),
-              if (qp.product.imageUrls.isNotEmpty) ...[
+              // Show network images count
+              if (networkImageCount > 0) ...[
                 const SizedBox(width: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -654,10 +730,29 @@ StreamBuilder<bool>(
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '☁️ ${qp.product.imageUrls.length}',
+                    '☁️ $networkImageCount',
                     style: GoogleFonts.inter(
                       fontSize: 10,
                       color: CupertinoColors.systemGreen,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+              // Show if no images
+              if (queueImageCount == 0 && networkImageCount == 0) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemRed.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '❌ No images',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: CupertinoColors.systemRed,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -808,6 +903,9 @@ StreamBuilder<bool>(
   }
 
   void _showImageDebugInfo(QueuedProductModel qp) {
+    final queueImageCount = qp.product.pendingImagePaths?.length ?? 0;
+    final networkImageCount = qp.product.imageUrls.length;
+    
     showCupertinoDialog(
       context: context,
       builder: (_) => CupertinoAlertDialog(
@@ -816,22 +914,31 @@ StreamBuilder<bool>(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Status: ${qp.status}'),
+            Text('Status: ${qp.status}', style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Text('Queue Images: ${qp.product.pendingImagePaths?.length ?? 0}'),
+            Text('Queue Images: $queueImageCount'),
             if (qp.product.pendingImagePaths?.isNotEmpty ?? false) ...[
               const SizedBox(height: 4),
               ...qp.product.pendingImagePaths!.take(3).map((path) => 
                 Text('• ${path.split('/').last}', style: const TextStyle(fontSize: 12))
               ),
+              if (queueImageCount > 3) 
+                Text('• ... and ${queueImageCount - 3} more', style: const TextStyle(fontSize: 12)),
             ],
             const SizedBox(height: 8),
-            Text('Network Images: ${qp.product.imageUrls.length}'),
+            Text('Network Images: $networkImageCount'),
             if (qp.product.imageUrls.isNotEmpty) ...[
               const SizedBox(height: 4),
               ...qp.product.imageUrls.take(2).map((url) => 
                 Text('• ${url.split('/').last}', style: const TextStyle(fontSize: 12))
               ),
+              if (networkImageCount > 2) 
+                Text('• ... and ${networkImageCount - 2} more', style: const TextStyle(fontSize: 12)),
+            ],
+            if (queueImageCount == 0 && networkImageCount == 0) ...[
+              const SizedBox(height: 8),
+              Text('⚠️ No images available!', 
+                style: TextStyle(color: CupertinoColors.systemRed, fontWeight: FontWeight.bold)),
             ],
           ],
         ),
