@@ -456,170 +456,192 @@ StreamBuilder<bool>(
 
   Future<Widget> _buildThumbnailAsync(QueuedProductModel qp) async {
     try {
-      debugPrint('🖼️ Building thumbnail for: ${qp.product.title} (Status: ${qp.status})');
+      debugPrint('🖼️ ═══ DEBUGGING THUMBNAIL FOR: ${qp.product.title} ═══');
+      debugPrint('📊 Status: ${qp.status}');
+      debugPrint('📱 Local images count: ${qp.product.pendingImagePaths?.length ?? 0}');
+      debugPrint('☁️ Network images count: ${qp.product.imageUrls.length}');
       
-      // Para productos completados, priorizar imágenes de red
-      if (qp.status == 'completed' && qp.product.imageUrls.isNotEmpty) {
-        debugPrint('✅ Using network image for completed product: ${qp.product.imageUrls.first}');
-        return Container(
-          width: 60,
-          height: 60,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: CupertinoColors.systemGreen.withOpacity(0.3), 
-              width: 2
-            ),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            children: [
-              Image.network(
-                qp.product.imageUrls.first,
-                fit: BoxFit.cover,
-                width: 60,
-                height: 60,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return const Center(
-                    child: CupertinoActivityIndicator(radius: 8),
-                  );
-                },
-                errorBuilder: (_, __, ___) {
-                  debugPrint('❌ Error loading network image, falling back to local');
-                  return _buildLocalImageFallback(qp);
-                },
-              ),
-              // Show completed status indicator
-              Positioned(
-                top: 2,
-                right: 2,
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: CupertinoColors.systemGreen,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    CupertinoIcons.checkmark_circle_fill,
-                    color: CupertinoColors.white,
-                    size: 8,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
+      if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
+        debugPrint('📂 Local image paths:');
+        for (int i = 0; i < qp.product.pendingImagePaths!.length; i++) {
+          debugPrint('  [$i]: ${qp.product.pendingImagePaths![i]}');
+        }
       }
       
-      // Para productos no completados, usar imágenes locales
+      if (qp.product.imageUrls.isNotEmpty) {
+        debugPrint('🌐 Network image URLs:');
+        for (int i = 0; i < qp.product.imageUrls.length; i++) {
+          debugPrint('  [$i]: ${qp.product.imageUrls[i]}');
+        }
+      }
+      
+      // Verificar conectividad una sola vez al inicio
+      final hasInternet = await _net.checkConnectivity();
+      debugPrint('🔌 Internet connectivity: $hasInternet');
+      
+      // PRIORIDAD 1: SIEMPRE verificar imágenes locales primero (disponibles offline)
       if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
         final imagePath = qp.product.pendingImagePaths!.first;
         final file = File(imagePath);
         
-        debugPrint('🔍 Checking local image: $imagePath');
+        debugPrint('🔍 ═══ CHECKING LOCAL IMAGE ═══');
+        debugPrint('📁 Path: $imagePath');
         
-        if (await file.exists()) {
-          final fileSize = await file.length();
-          debugPrint('✅ Local image exists: $imagePath (${(fileSize / 1024).toInt()} KB)');
-          
-          return Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _getStatusColor(qp.status).withOpacity(0.3), 
-                width: 2
-              ),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              children: [
-                Image.file(
-                  file,
-                  fit: BoxFit.cover,
-                  width: 60,
-                  height: 60,
-                  errorBuilder: (_, __, ___) {
-                    debugPrint('❌ Error loading local image: $imagePath');
-                    return _buildImagePlaceholder(hasError: true);
-                  },
+        final exists = await file.exists();
+        debugPrint('❓ File exists: $exists');
+        
+        if (exists) {
+          try {
+            final fileSize = await file.length();
+            debugPrint('📏 File size: ${(fileSize / 1024).toInt()} KB');
+            
+            // Verificar permisos de lectura
+            final bytes = await file.readAsBytes();
+            debugPrint('✅ Successfully read ${bytes.length} bytes from file');
+            
+            debugPrint('🎯 RETURNING LOCAL IMAGE WIDGET');
+            return Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _getStatusColor(qp.status).withOpacity(0.3), 
+                  width: 2
                 ),
-                // Show status indicator
-                Positioned(
-                  top: 2,
-                  right: 2,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: _getStatusColor(qp.status),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      _getStatusIcon(qp.status),
-                      color: CupertinoColors.white,
-                      size: 8,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  Image.file(
+                    file,
+                    fit: BoxFit.cover,
+                    width: 60,
+                    height: 60,
+                    errorBuilder: (context, error, stackTrace) {
+                      debugPrint('❌ ERROR LOADING LOCAL IMAGE: $error');
+                      debugPrint('📋 Stack trace: $stackTrace');
+                      return _buildImagePlaceholder(hasError: true, isOffline: !hasInternet);
+                    },
+                  ),
+                  // Show status indicator
+                  Positioned(
+                    top: 2,
+                    right: 2,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(qp.status),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        qp.status == 'completed' 
+                            ? CupertinoIcons.checkmark_circle_fill
+                            : CupertinoIcons.device_phone_portrait,
+                        color: CupertinoColors.white,
+                        size: 8,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          );
+                ],
+              ),
+            );
+          } catch (e) {
+            debugPrint('❌ ERROR READING FILE: $e');
+          }
         } else {
-          debugPrint('❌ Local image missing: $imagePath');
+          debugPrint('❌ LOCAL IMAGE FILE DOES NOT EXIST: $imagePath');
+          
+          // Verificar si el directorio padre existe
+          final parentDir = file.parent;
+          final parentExists = await parentDir.exists();
+          debugPrint('📁 Parent directory exists: $parentExists');
+          debugPrint('📂 Parent directory path: ${parentDir.path}');
+          
+          if (parentExists) {
+            try {
+              final dirContents = await parentDir.list().toList();
+              debugPrint('📋 Directory contents (${dirContents.length} items):');
+              for (final item in dirContents.take(10)) {
+                debugPrint('  - ${item.path}');
+              }
+            } catch (e) {
+              debugPrint('❌ Error listing directory: $e');
+            }
+          }
         }
+      } else {
+        debugPrint('⚠️ NO LOCAL IMAGE PATHS AVAILABLE');
       }
       
-      // Fallback para productos completados sin red: usar imágenes de red
-      if (qp.product.imageUrls.isNotEmpty) {
-        debugPrint('🌐 Using network image fallback: ${qp.product.imageUrls.first}');
-        return _buildNetworkImageWidget(qp.product.imageUrls.first);
+      // PRIORIDAD 2: Solo si no hay imagen local Y hay internet, intentar imagen de red
+      if (qp.product.imageUrls.isNotEmpty && hasInternet) {
+        debugPrint('🌐 ═══ USING NETWORK IMAGE ═══');
+        debugPrint('🔗 URL: ${qp.product.imageUrls.first}');
+        return _buildNetworkImageWidget(qp.product.imageUrls.first, qp.status);
       }
       
-      // No images available
-      debugPrint('❌ No images available for product: ${qp.product.title}');
+      // No images available o no hay internet
+      if (qp.product.imageUrls.isNotEmpty && !hasInternet) {
+        debugPrint('⚠️ HAS NETWORK IMAGES BUT NO INTERNET');
+        return _buildImagePlaceholder(hasError: false, isOffline: true);
+      }
+      
+      debugPrint('❌ NO IMAGES AVAILABLE AT ALL');
       return _buildImagePlaceholder(hasError: true);
+      
     } catch (e) {
-      debugPrint('🚨 Error building thumbnail: $e');
+      debugPrint('🚨 EXCEPTION IN _buildThumbnailAsync: $e');
       return _buildImagePlaceholder(hasError: true);
     }
   }
 
-  Widget _buildLocalImageFallback(QueuedProductModel qp) {
-    if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
-      final imagePath = qp.product.pendingImagePaths!.first;
-      return Image.file(
-        File(imagePath),
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildImagePlaceholder(hasError: true),
-      );
-    }
-    return _buildImagePlaceholder(hasError: true);
-  }
-
-  Widget _buildNetworkImageWidget(String imageUrl) {
+  Widget _buildNetworkImageWidget(String imageUrl, String status) {
     return Container(
       width: 60,
       height: 60,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: CupertinoColors.systemGreen.withOpacity(0.3), 
+          color: _getStatusColor(status).withOpacity(0.3), 
           width: 2
         ),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Image.network(
-        imageUrl,
-        fit: BoxFit.cover,
-        width: 60,
-        height: 60,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return const Center(child: CupertinoActivityIndicator(radius: 8));
-        },
-        errorBuilder: (_, __, ___) => _buildImagePlaceholder(hasError: true),
+      child: Stack(
+        children: [
+          Image.network(
+            imageUrl,
+            fit: BoxFit.cover,
+            width: 60,
+            height: 60,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return const Center(child: CupertinoActivityIndicator(radius: 8));
+            },
+            errorBuilder: (_, __, ___) {
+              debugPrint('❌ Network image failed: $imageUrl');
+              return _buildImagePlaceholder(hasError: true);
+            },
+          ),
+          // Show network indicator
+          Positioned(
+            top: 2,
+            right: 2,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: _getStatusColor(status),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                CupertinoIcons.cloud,
+                color: CupertinoColors.white,
+                size: 8,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -644,29 +666,64 @@ StreamBuilder<bool>(
     }
   }
 
-  Widget _buildImagePlaceholder({bool isLoading = false, bool hasError = false}) {
+  Widget _buildImagePlaceholder({bool isLoading = false, bool hasError = false, bool isOffline = false}) {
+    IconData icon;
+    Color color;
+    
+    if (isOffline) {
+      icon = CupertinoIcons.wifi_slash;
+      color = CupertinoColors.systemOrange;
+    } else if (hasError) {
+      icon = CupertinoIcons.exclamationmark_triangle;
+      color = CupertinoColors.systemRed;
+    } else {
+      icon = CupertinoIcons.photo;
+      color = CupertinoColors.systemGrey3;
+    }
+    
     return Container(
       width: 60,
       height: 60,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        color: hasError 
-            ? CupertinoColors.systemRed.withOpacity(0.1)
-            : CupertinoColors.systemGrey6,
-        border: hasError
-            ? Border.all(color: CupertinoColors.systemRed.withOpacity(0.3), width: 1)
-            : null,
+        color: isOffline 
+            ? CupertinoColors.systemOrange.withOpacity(0.1)
+            : hasError 
+                ? CupertinoColors.systemRed.withOpacity(0.1)
+                : CupertinoColors.systemGrey6,
+        border: Border.all(
+          color: isOffline 
+              ? CupertinoColors.systemOrange.withOpacity(0.3)
+              : hasError
+                  ? CupertinoColors.systemRed.withOpacity(0.3)
+                  : CupertinoColors.systemGrey4,
+          width: 1
+        ),
       ),
       child: isLoading
           ? const Center(
               child: CupertinoActivityIndicator(radius: 8),
             )
-          : Icon(
-              hasError ? CupertinoIcons.exclamationmark_triangle : CupertinoIcons.photo,
-              color: hasError 
-                  ? CupertinoColors.systemRed
-                  : CupertinoColors.systemGrey3,
-              size: hasError ? 20 : 24,
+          : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  color: color,
+                  size: hasError || isOffline ? 20 : 24,
+                ),
+                if (isOffline) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Offline',
+                    style: TextStyle(
+                      fontSize: 8,
+                      color: color,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ],
             ),
     );
   }
