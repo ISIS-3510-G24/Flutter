@@ -510,10 +510,6 @@ Future<void> _submitForm() async {
       },
     );
 
-    // Chequeo de conectividad
-    final hasInternet = await _connectivityService.checkConnectivity();
-    if (mounted) setState(() => _isOffline = !hasInternet);
-
     // Construcción del modelo
     final now = DateTime.now();
     final productModel = ProductModel(
@@ -534,42 +530,20 @@ Future<void> _submitForm() async {
       updatedAt: now,
     );
 
-    if (_isOffline) {
-      // Cerrar diálogo de carga
-      if (mounted && Navigator.canPop(context)) {
-        Navigator.of(context).pop();
-      }
-      
-      // OFFLINE: encolar
-      final queueId = await _productService.createProduct(productModel);
-      _showSuccessDialogOffline(
-        'Producto en cola',
-        'Se guardó y se subirá cuando estés online.',
-      );
-      await _clearDraft();
-      return;
-    } else {
-      // ONLINE: intentar subir
-      final resultId = await _productService.createProduct(productModel);
-      
-      // Cerrar diálogo de carga
-      if (mounted && Navigator.canPop(context)) {
-        Navigator.of(context).pop();
-      }
-      
-      if (resultId != null) {
-        _showSuccessAlert('¡Producto subido exitosamente!');
-        await _clearDraft();
-      } else {
-        // Si retorna null, encolamos
-        final queueId = await _productService.createProduct(productModel);
-        _showSuccessDialogOffline(
-          'Guardado en cola',
-          'No se pudo subir inmediatamente. Se guardó para subirlo más tarde.',
-        );
-        await _clearDraft();
-      }
+    // Siempre encolamos el producto
+    final queueId = await _productService.createProduct(productModel);
+    
+    // Cerrar diálogo de carga
+    if (mounted && Navigator.canPop(context)) {
+      Navigator.of(context).pop();
     }
+    
+    _showSuccessDialogOffline(
+      'Producto en cola',
+      'Se guardó y se subirá automáticamente.',
+    );
+    await _clearDraft();
+    
   } catch (e) {
     // Cerrar diálogo de carga en caso de error
     if (mounted && Navigator.canPop(context)) {

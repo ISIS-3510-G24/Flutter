@@ -437,35 +437,155 @@ StreamBuilder<bool>(
     );
   }
 
-  Widget _buildThumbnail(QueuedProductModel qp) {
-    Widget imageWidget;
-
-    // Try local images first, then network
-    if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
-      imageWidget = Image.file(
-        File(qp.product.pendingImagePaths!.first),
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildImageFallback(qp),
-      );
-    } else if (qp.product.imageUrls.isNotEmpty) {
-      imageWidget = Image.network(
-        qp.product.imageUrls.first,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
-      );
-    } else {
-      imageWidget = _buildImagePlaceholder();
+  Future<Widget> _buildThumbnailAsync(QueuedProductModel qp) async {
+    try {
+      // Check permanent storage images first (queue images)
+      if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
+        final imagePath = qp.product.pendingImagePaths!.first;
+        final file = File(imagePath);
+        
+        debugPrint('🖼️ Checking queue image: $imagePath');
+        
+        // Check if the permanent image file exists
+        if (await file.exists()) {
+          final fileSize = await file.length();
+          debugPrint('✅ Queue image exists: $imagePath (${(fileSize / 1024).toInt()} KB)');
+          
+          return Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: CupertinoColors.systemBlue.withOpacity(0.3), 
+                width: 2
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                Image.file(
+                  file,
+                  fit: BoxFit.cover,
+                  width: 60,
+                  height: 60,
+                  errorBuilder: (_, __, ___) => _buildImagePlaceholder(hasError: true),
+                ),
+                // Show local image indicator
+                Positioned(
+                  top: 2,
+                  right: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.systemBlue,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      CupertinoIcons.device_phone_portrait,
+                      color: CupertinoColors.white,
+                      size: 8,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        } else {
+          debugPrint('❌ Queue image missing: $imagePath');
+        }
+      }
+      
+      // Fallback to network images if available
+      if (qp.product.imageUrls.isNotEmpty) {
+        debugPrint('🌐 Using network image: ${qp.product.imageUrls.first}');
+        return Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: CupertinoColors.systemGreen.withOpacity(0.3), 
+              width: 2
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              Image.network(
+                qp.product.imageUrls.first,
+                fit: BoxFit.cover,
+                width: 60,
+                height: 60,
+                errorBuilder: (_, __, ___) => _buildImagePlaceholder(hasError: true),
+              ),
+              // Show network image indicator
+              Positioned(
+                top: 2,
+                right: 2,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemGreen,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.cloud,
+                    color: CupertinoColors.white,
+                    size: 8,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+      
+      // No images available
+      debugPrint('❌ No images available for product: ${qp.product.title}');
+      return _buildImagePlaceholder(hasError: true);
+    } catch (e) {
+      debugPrint('🚨 Error building thumbnail: $e');
+      return _buildImagePlaceholder(hasError: true);
     }
+  }
 
+  Widget _buildThumbnail(QueuedProductModel qp) {
+    return FutureBuilder<Widget>(
+      future: _buildThumbnailAsync(qp),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildImagePlaceholder(isLoading: true);
+        }
+        return snapshot.data ?? _buildImagePlaceholder(hasError: true);
+      },
+    );
+  }
+
+  Widget _buildImagePlaceholder({bool isLoading = false, bool hasError = false}) {
     return Container(
       width: 60,
       height: 60,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        color: CupertinoColors.systemGrey6,
+        color: hasError 
+            ? CupertinoColors.systemRed.withOpacity(0.1)
+            : CupertinoColors.systemGrey6,
+        border: hasError
+            ? Border.all(color: CupertinoColors.systemRed.withOpacity(0.3), width: 1)
+            : null,
       ),
-      clipBehavior: Clip.antiAlias,
-      child: imageWidget,
+      child: isLoading
+          ? const Center(
+              child: CupertinoActivityIndicator(radius: 8),
+            )
+          : Icon(
+              hasError ? CupertinoIcons.exclamationmark_triangle : CupertinoIcons.photo,
+              color: hasError 
+                  ? CupertinoColors.systemRed
+                  : CupertinoColors.systemGrey3,
+              size: hasError ? 20 : 24,
+            ),
     );
   }
 
@@ -480,51 +600,83 @@ StreamBuilder<bool>(
     return _buildImagePlaceholder();
   }
 
-  Widget _buildImagePlaceholder() {
-    return Container(
-      color: CupertinoColors.systemGrey6,
-      child: const Icon(
-        CupertinoIcons.photo,
-        color: CupertinoColors.systemGrey3,
-        size: 24,
-      ),
-    );
-  }
-
   Widget _buildProductInfo(QueuedProductModel qp) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          qp.product.title,
-          style: GoogleFonts.inter(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: CupertinoColors.label,
+    return GestureDetector(
+      onLongPress: () => _showImageDebugInfo(qp), // Long press for debug info
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            qp.product.title,
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: CupertinoColors.label,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '\$${qp.product.price.toStringAsFixed(2)}',
-          style: GoogleFonts.inter(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppColors.primaryBlue,
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Text(
+                '\$${qp.product.price.toStringAsFixed(2)}',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primaryBlue,
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Show image count indicator
+              if ((qp.product.pendingImagePaths?.length ?? 0) > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemBlue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '📱 ${qp.product.pendingImagePaths!.length}',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: CupertinoColors.systemBlue,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              if (qp.product.imageUrls.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemGreen.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '☁️ ${qp.product.imageUrls.length}',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: CupertinoColors.systemGreen,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          qp.product.description,
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            color: CupertinoColors.systemGrey,
+          const SizedBox(height: 4),
+          Text(
+            qp.product.description,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: CupertinoColors.systemGrey,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -645,6 +797,44 @@ StreamBuilder<bool>(
       builder: (_) => CupertinoAlertDialog(
         title: const Text('No Internet'),
         content: const Text('Please check your connection and try again.'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showImageDebugInfo(QueuedProductModel qp) {
+    showCupertinoDialog(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: Text('Image Info: ${qp.product.title}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Status: ${qp.status}'),
+            const SizedBox(height: 8),
+            Text('Queue Images: ${qp.product.pendingImagePaths?.length ?? 0}'),
+            if (qp.product.pendingImagePaths?.isNotEmpty ?? false) ...[
+              const SizedBox(height: 4),
+              ...qp.product.pendingImagePaths!.take(3).map((path) => 
+                Text('• ${path.split('/').last}', style: const TextStyle(fontSize: 12))
+              ),
+            ],
+            const SizedBox(height: 8),
+            Text('Network Images: ${qp.product.imageUrls.length}'),
+            if (qp.product.imageUrls.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              ...qp.product.imageUrls.take(2).map((url) => 
+                Text('• ${url.split('/').last}', style: const TextStyle(fontSize: 12))
+              ),
+            ],
+          ],
+        ),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),

@@ -150,27 +150,9 @@ class ProductService {
 
   /// Create new product, with offline fallback
   Future<String?> createProduct(ProductModel product) async {
-    final online = await _connectivityService.checkConnectivity();
-    if (!online) {
-      debugPrint('Offline: queueing creation for ${product.title}');
-      return addToQueue(product);
-    }
-    try {
-      final urls = await _uploadPendingImages(
-        product.pendingImagePaths, product.imageUrls
-      );
-      final data = product.copyWith(
-        imageUrls: urls,
-        pendingImagePaths: [],
-        updatedAt: DateTime.now()
-      ).toMap();
-      final id = await _firebaseDAO.createProduct(data);
-      debugPrint('Product created online with ID: $id');
-      return id;
-    } catch (e) {
-      debugPrint('Online create failed, queueing: $e');
-      return addToQueue(product);
-    }
+    // Siempre encolamos el producto
+    debugPrint('Queueing product: ${product.title}');
+    return addToQueue(product);
   }
 
   // --- Image handling helpers ---

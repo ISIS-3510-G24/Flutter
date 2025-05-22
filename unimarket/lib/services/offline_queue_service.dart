@@ -1,3 +1,4 @@
+import 'package:unimarket/data/image_storage_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -18,6 +19,7 @@ class OfflineQueueService {
   static final OfflineQueueService _instance = OfflineQueueService._internal();
   factory OfflineQueueService() => _instance;
   OfflineQueueService._internal();
+    final ImageStorageService _imageStorage = ImageStorageService(); 
 
   // ---- Dependencias ----
   final ConnectivityService _connectivityService = ConnectivityService();
@@ -58,36 +60,40 @@ class OfflineQueueService {
 
   int get pendingCount => pendingProducts.length;
 
-  // ---------------------------------------------------------------------------
-  // Inicialización
-Future<void> initialize() async {
-  debugPrint('🔧 Initializing OfflineQueueService');
-  try {
-    await _loadQueuedProducts();
-    await _loadCompletedProducts();
-    await _loadOrders();
-    
-    // NEW: Validate image paths after loading
-    await _validateAndCleanupImagePaths();
-    
-    debugPrint('📦 Loaded ${_queuedProducts.length} products in queue');
-    
-    _connectivitySubscription?.cancel();
-    _connectivitySubscription = _connectivityService.connectivityStream.listen(_onConnectivityChange);
-    debugPrint('🔌 Connectivity listener configured');
-    
-    _setupPeriodicCheck();
-    debugPrint('⏰ Periodic check configured');
-    
-    _processIfOnline();
-    
-    debugPrint('✅ OfflineQueueService initialized correctly');
-  } catch (e, st) {
-    debugPrint('🚨 Error initializing OfflineQueueService: $e\n$st');
-    _queuedProducts = [];
-    _notify();
+  Future<void> initialize() async {
+    debugPrint('🔧 Initializing OfflineQueueService');
+    try {
+      // Initialize image storage service first
+      await _imageStorage.initialize();
+      
+      await _loadQueuedProducts();
+      await _loadCompletedProducts();
+      await _loadOrders();
+      
+      // Validate image paths after loading
+      await _validateAndCleanupImagePaths();
+      
+      // Clean up orphaned images
+      await _cleanupOrphanedImages();
+      
+      debugPrint('📦 Loaded ${_queuedProducts.length} products in queue');
+      
+      _connectivitySubscription?.cancel();
+      _connectivitySubscription = _connectivityService.connectivityStream.listen(_onConnectivityChange);
+      debugPrint('🔌 Connectivity listener configured');
+      
+      _setupPeriodicCheck();
+      debugPrint('⏰ Periodic check configured');
+      
+      _processIfOnline();
+      
+      debugPrint('✅ OfflineQueueService initialized correctly');
+    } catch (e, st) {
+      debugPrint('🚨 Error initializing OfflineQueueService: $e\n$st');
+      _queuedProducts = [];
+      _notify();
+    }
   }
-}
 
  void _onConnectivityChange(bool hasInternet) {
     debugPrint('🔌 Connectivity change detected: $hasInternet');
@@ -197,20 +203,31 @@ Future<void> initialize() async {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  //  API pública
-  // ---------------------------------------------------------------------------
-  Future<String> addToQueue(ProductModel product) async {
+Future<String> addToQueue(ProductModel product) async {
     final id = const Uuid().v4();
     debugPrint('➕ Adding product to queue: ${product.title}');
 
+    // Copy images to permanent storage
+    List<String> permanentImagePaths = [];
+    if (product.pendingImagePaths?.isNotEmpty ?? false) {
+      debugPrint('💾 Copying ${product.pendingImagePaths!.length} images to permanent storage');
+      permanentImagePaths = await _imageStorage.saveImagesToQueue(product.pendingImagePaths!);
+      debugPrint('✅ Saved ${permanentImagePaths.length} images permanently');
+    }
+
+    // Create product with permanent image paths
+    final updatedProduct = product.copyWith(
+      pendingImagePaths: permanentImagePaths.isNotEmpty ? permanentImagePaths : null,
+    );
+
     final qp = QueuedProductModel(
       queueId: id,
-      product: product,
+      product: updatedProduct,
       status: 'queued',
       queuedTime: DateTime.now(),
-      statusMessage: 'Product saved to queue',
+      statusMessage: 'Product saved to queue with ${permanentImagePaths.length} images',
     );
+    
     _queuedProducts.add(qp);
     await _saveQueuedProducts();
     _notify();
@@ -222,13 +239,49 @@ Future<void> initialize() async {
     return id;
   }
 
+  // REPLACE your removeFromQueue method with this enhanced version:
   Future<void> removeFromQueue(String id) async {
     debugPrint('🗑️ Removing product from queue: $id');
-    _queuedProducts.removeWhere((p) => p.queueId == id);
+    
+    // Find the product to get its images
+    final productIndex = _queuedProducts.indexWhere((p) => p.queueId == id);
+    if (productIndex != -1) {
+      final product = _queuedProducts[productIndex];
+      
+      // Delete associated images from permanent storage
+      if (product.product.pendingImagePaths?.isNotEmpty ?? false) {
+        debugPrint('🗑️ Deleting ${product.product.pendingImagePaths!.length} images from storage');
+        await _imageStorage.deleteImages(product.product.pendingImagePaths!);
+      }
+      
+      // Remove from queue
+      _queuedProducts.removeAt(productIndex);
+    } else {
+      // Fallback: remove by ID if not found by index
+      _queuedProducts.removeWhere((p) => p.queueId == id);
+    }
+    
     await _saveQueuedProducts();
     _notify();
     debugPrint('✅ Product removed from queue: $id');
   }
+
+  // ADD this new method for cleaning up orphaned images:
+  Future<void> _cleanupOrphanedImages() async {
+    debugPrint('🧹 Checking for orphaned images');
+    
+    // Collect all image paths referenced by queue items
+    final referencedPaths = <String>[];
+    for (final qp in _queuedProducts) {
+      if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
+        referencedPaths.addAll(qp.product.pendingImagePaths!);
+      }
+    }
+    
+    // Clean up orphaned images
+    await _imageStorage.cleanupOrphanedImages(referencedPaths);
+  }
+
 
   Future<void> retryQueuedUpload(String id) async {
     debugPrint('🔄 Retrying product upload: $id');
@@ -498,54 +551,75 @@ Future<void> initialize() async {
     }
   }
 
-Future<void> _validateAndCleanupImagePaths() async {
-  debugPrint('🔍 Validating image paths in queue...');
-  bool hasChanges = false;
-  
-  for (int i = 0; i < _queuedProducts.length; i++) {
-    final qp = _queuedProducts[i];
-    final pendingPaths = qp.product.pendingImagePaths ?? [];
+    Future<void> forceCleanupOrphanedImages() async {
+    await _cleanupOrphanedImages();
+  }
+
+   Future<Map<String, dynamic>> getStorageStats() async {
+    final totalSize = await _imageStorage.getTotalQueueImagesSize();
+    final referencedPaths = <String>[];
     
-    if (pendingPaths.isNotEmpty) {
-      // Check which images still exist
-      final validPaths = <String>[];
-      
-      for (final path in pendingPaths) {
-        final file = File(path);
-        if (await file.exists()) {
-          validPaths.add(path);
-          debugPrint('✅ Image exists: $path');
-        } else {
-          debugPrint('❌ Image missing: $path');
-          hasChanges = true;
-        }
-      }
-      
-      // If some images are missing, update the product
-      if (validPaths.length != pendingPaths.length) {
-        final updatedProduct = qp.product.copyWith(
-          pendingImagePaths: validPaths.isEmpty ? null : validPaths,
-        );
-        
-        _queuedProducts[i] = qp.copyWith(
-          product: updatedProduct,
-          statusMessage: validPaths.isEmpty 
-              ? 'Images missing - product may fail to upload'
-              : 'Some images missing',
-        );
-        
-        debugPrint('⚠️ Updated product ${qp.queueId}: ${validPaths.length}/${pendingPaths.length} images valid');
+    for (final qp in _queuedProducts) {
+      if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
+        referencedPaths.addAll(qp.product.pendingImagePaths!);
       }
     }
+    
+    return {
+      'totalImages': referencedPaths.length,
+      'totalSizeBytes': totalSize,
+      'totalSizeMB': (totalSize / (1024 * 1024)).toStringAsFixed(2),
+      'queueDirectoryPath': _imageStorage.queueDirectoryPath,
+    };
   }
-  
-  // Save changes if any paths were invalid
-  if (hasChanges) {
-    await _saveQueuedProducts();
-    _notify();
-    debugPrint('💾 Saved changes after image validation');
+
+Future<void> _validateAndCleanupImagePaths() async {
+    debugPrint('🔍 Validating image paths in queue...');
+    bool hasChanges = false;
+    
+    for (int i = 0; i < _queuedProducts.length; i++) {
+      final qp = _queuedProducts[i];
+      final pendingPaths = qp.product.pendingImagePaths ?? [];
+      
+      if (pendingPaths.isNotEmpty) {
+        // Check which images still exist using ImageStorageService
+        final validPaths = <String>[];
+        
+        for (final path in pendingPaths) {
+          if (await _imageStorage.imageExists(path)) {
+            validPaths.add(path);
+            debugPrint('✅ Image exists: $path');
+          } else {
+            debugPrint('❌ Image missing: $path');
+            hasChanges = true;
+          }
+        }
+        
+        // If some images are missing, update the product
+        if (validPaths.length != pendingPaths.length) {
+          final updatedProduct = qp.product.copyWith(
+            pendingImagePaths: validPaths.isEmpty ? null : validPaths,
+          );
+          
+          _queuedProducts[i] = qp.copyWith(
+            product: updatedProduct,
+            statusMessage: validPaths.isEmpty 
+                ? 'Images missing - product may fail to upload'
+                : '${validPaths.length}/${pendingPaths.length} images available',
+          );
+          
+          debugPrint('⚠️ Updated product ${qp.queueId}: ${validPaths.length}/${pendingPaths.length} images valid');
+        }
+      }
+    }
+    
+    // Save changes if any paths were invalid
+    if (hasChanges) {
+      await _saveQueuedProducts();
+      _notify();
+      debugPrint('💾 Saved changes after image validation');
+    }
   }
-}
 
   Future<void> _updateOrderStatus(String id, String status, {String? error}) async {
     final index = _queuedOrders.indexWhere((o) => o.queueId == id);
