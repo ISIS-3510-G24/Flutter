@@ -336,30 +336,36 @@ class _OrdersScreenState extends State<OrdersScreen> {
               _selectedTab = newIndex;
             });
           },
-          children: {
-            0: _buildTabItem("History", 0),
-            1: _buildTabItem("Buying", 1),
-            2: _buildTabItem("Selling", 2),
+          children: const {
+            0: Text(
+              "History",
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.normal,
+                color: AppColors.primaryBlue,
+              ),
+            ),
+            1: Text(
+              "Buying",
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.normal,
+                color: AppColors.primaryBlue,
+              ),
+            ),
+            2: Text(
+              "Selling",
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.normal,
+                color: AppColors.primaryBlue,
+              ),
+            ),
           },
           selectedColor: AppColors.primaryBlue, // Color del botón seleccionado
           borderColor: AppColors.primaryBlue, // Borde azul para que se vea como antes
           unselectedColor: CupertinoColors.white, // Fondo blanco para los botones no seleccionados
           pressedColor: CupertinoColors.systemGrey4.withOpacity(0.2), // Color al presionar
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTabItem(String title, int index) {
-    final bool isSelected = _selectedTab == index;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
-      child: Text(
-        title,
-        style: GoogleFonts.inter(
-          fontSize: 14,
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          color: isSelected ? CupertinoColors.white : AppColors.primaryBlue, // Ajuste de color
         ),
       ),
     );
