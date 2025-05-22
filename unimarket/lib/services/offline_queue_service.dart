@@ -33,10 +33,10 @@ class OfflineQueueService {
 
   // ---- Constantes ----
   static const String _storageKey = 'offline_product_queue';
+  static const String _completedStorageKey = 'completed_product_history'; // NEW: separate storage for completed
   static const String _qrscanKey = 'product_delivery_queue';
   static const int _maxRetries = 3;
-  static const Duration _connectionTimeout = Duration(seconds: 10);
-  static const Duration _uploadTimeout = Duration(seconds: 20);
+  static const Duration _retryDelay = Duration(minutes: 5);
 
   // ---- **** Stream **** ----
   final _internalController =
@@ -52,7 +52,7 @@ class OfflineQueueService {
   List<QueuedProductModel> get queuedProducts =>
       List.unmodifiable(_queuedProducts);
 
-  // Get only pending products (queued or failed)
+  // Get only pending products (queued or failed) 
   List<QueuedProductModel> get pendingProducts =>
       _queuedProducts.where((p) => p.status == 'queued' || p.status == 'failed').toList();
 
@@ -60,95 +60,64 @@ class OfflineQueueService {
 
   // ---------------------------------------------------------------------------
   // Inicialización
-  // ---------------------------------------------------------------------------
-  Future<void> initialize() async {
-    debugPrint('🔧 Initializing OfflineQueueService');
-    try {
-      await _loadQueuedProducts();
-      await _loadOrders();
-      debugPrint('📦 Loaded ${_queuedProducts.length} products in queue');
-      
-      // Immediate cleanup of old completed items
-      await _cleanupCompletedItems();
-      
-      _connectivitySubscription?.cancel();
-      _connectivitySubscription = _connectivityService.connectivityStream.listen(_onConnectivityChange);
-      debugPrint('🔌 Connectivity listener configured');
-      
-      _setupPeriodicCheck();
-      debugPrint('⏰ Periodic check configured');
-      
-      // Only process if we have reliable connection
-      _processIfOnlineReliable();
-      
-      debugPrint('✅ OfflineQueueService initialized correctly');
-    } catch (e, st) {
-      debugPrint('🚨 Error initializing OfflineQueueService: $e\n$st');
-      _queuedProducts = [];
-      _notify();
-    }
+Future<void> initialize() async {
+  debugPrint('🔧 Initializing OfflineQueueService');
+  try {
+    await _loadQueuedProducts();
+    await _loadCompletedProducts();
+    await _loadOrders();
+    
+    // NEW: Validate image paths after loading
+    await _validateAndCleanupImagePaths();
+    
+    debugPrint('📦 Loaded ${_queuedProducts.length} products in queue');
+    
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = _connectivityService.connectivityStream.listen(_onConnectivityChange);
+    debugPrint('🔌 Connectivity listener configured');
+    
+    _setupPeriodicCheck();
+    debugPrint('⏰ Periodic check configured');
+    
+    _processIfOnline();
+    
+    debugPrint('✅ OfflineQueueService initialized correctly');
+  } catch (e, st) {
+    debugPrint('🚨 Error initializing OfflineQueueService: $e\n$st');
+    _queuedProducts = [];
+    _notify();
   }
-
+}
   void _setupPeriodicCheck() {
     _processingTimer?.cancel();
     _processingTimer =
-        Timer.periodic(const Duration(minutes: 10), (_) => _processIfOnlineReliable());
-    debugPrint('⏱️ Verification timer configured (every 10 min)');
+        Timer.periodic(const Duration(minutes: 15), (_) => _processIfOnline());
+    debugPrint('⏱️ Verification timer configured (every 15 min)');
   }
 
   void _onConnectivityChange(bool hasInternet) {
     debugPrint('🔌 Connectivity change detected: $hasInternet');
     
     if (hasInternet) {
-      // Wait longer to ensure stable connection
-      Future.delayed(const Duration(seconds: 5), () async {
-        if (await _isConnectionReliable()) {
-          debugPrint('🔌 Stable connection confirmed, processing queue...');
+      // AUTOMATIC UPLOAD when internet returns
+      Future.delayed(const Duration(seconds: 2), () async {
+        if (await _connectivityService.checkConnectivity()) {
+          debugPrint('🔌 Connection confirmed, AUTO-PROCESSING queue...');
           processQueue();
           processOrderQueue();
-        } else {
-          debugPrint('🔌 Connection not stable enough for upload');
         }
       });
     }
   }
 
-  // Better connection reliability check
-  Future<bool> _isConnectionReliable() async {
-    try {
-      debugPrint('🔍 Testing connection reliability...');
-      
-      // First check basic connectivity
-      if (!await _connectivityService.checkConnectivity()) {
-        debugPrint('❌ Basic connectivity check failed');
-        return false;
-      }
-
-      // Test actual network access with timeout
-      final result = await InternetAddress.lookup('google.com')
-          .timeout(_connectionTimeout);
-      
-      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
-        debugPrint('✅ Connection is reliable');
-        return true;
-      } else {
-        debugPrint('❌ DNS lookup failed');
-        return false;
-      }
-    } catch (e) {
-      debugPrint('❌ Connection test failed: $e');
-      return false;
-    }
-  }
-
-  Future<void> _processIfOnlineReliable() async {
-    debugPrint('🔍 Checking reliable connectivity for processing...');
-    if (await _isConnectionReliable()) {
-      debugPrint('✅ Reliable connection available, processing queue');
+  Future<void> _processIfOnline() async {
+    debugPrint('🔍 Checking connectivity to process queue...');
+    if (await _connectivityService.checkConnectivity()) {
+      debugPrint('✅ Connection available, processing queue');
       processQueue();
       processOrderQueue();
     } else {
-      debugPrint('❌ No reliable connection, skipping upload');
+      debugPrint('❌ No connection, queue will not be processed now');
     }
   }
 
@@ -160,17 +129,14 @@ class OfflineQueueService {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getStringList(_storageKey) ?? [];
 
-      debugPrint('📂 Loading queue from SharedPreferences (${raw.length} elements)');
+      debugPrint('📂 Loading active queue from SharedPreferences (${raw.length} elements)');
       _queuedProducts = raw
           .map((s) => QueuedProductModel.fromJson(jsonDecode(s)))
+          .where((p) => p.status != 'completed') // Don't load completed here
           .toList();
 
-      _queuedProducts.forEach((p) => 
-        debugPrint('Loaded from storage - Product ${p.queueId}: ${p.status} (${p.queuedTime})')
-      );
-
       _notify();
-      debugPrint('✅ Queue loaded successfully from persistent storage');
+      debugPrint('✅ Active queue loaded successfully');
     } catch (e, st) {
       debugPrint('🚨 Error loading queue: $e\n$st');
       _queuedProducts = [];
@@ -178,19 +144,48 @@ class OfflineQueueService {
     }
   }
 
+  // NEW: Load completed products separately for permanent storage
+  Future<void> _loadCompletedProducts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getStringList(_completedStorageKey) ?? [];
+
+      debugPrint('📂 Loading completed products from SharedPreferences (${raw.length} elements)');
+      final completedProducts = raw
+          .map((s) => QueuedProductModel.fromJson(jsonDecode(s)))
+          .toList();
+
+      // Add completed products to main list
+      _queuedProducts.addAll(completedProducts);
+      _notify();
+      debugPrint('✅ Completed products loaded successfully');
+    } catch (e, st) {
+      debugPrint('🚨 Error loading completed products: $e\n$st');
+    }
+  }
+
   Future<void> _saveQueuedProducts() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = _queuedProducts.map((p) => jsonEncode(p.toJson())).toList();
-      await prefs.setStringList(_storageKey, raw);
-      debugPrint('💾 Queue saved to SharedPreferences (${raw.length} elements)');
+      
+      // Save active queue (non-completed)
+      final activeProducts = _queuedProducts.where((p) => p.status != 'completed').toList();
+      final activeRaw = activeProducts.map((p) => jsonEncode(p.toJson())).toList();
+      await prefs.setStringList(_storageKey, activeRaw);
+      
+      // Save completed products separately for permanent storage
+      final completedProducts = _queuedProducts.where((p) => p.status == 'completed').toList();
+      final completedRaw = completedProducts.map((p) => jsonEncode(p.toJson())).toList();
+      await prefs.setStringList(_completedStorageKey, completedRaw);
+      
+      debugPrint('💾 Queue saved: ${activeRaw.length} active, ${completedRaw.length} completed');
     } catch (e) {
       debugPrint('🚨 Error saving queue: $e');
     }
   }
 
   // ---------------------------------------------------------------------------
-  //  Public API
+  //  API pública
   // ---------------------------------------------------------------------------
   Future<String> addToQueue(ProductModel product) async {
     final id = const Uuid().v4();
@@ -203,16 +198,13 @@ class OfflineQueueService {
       queuedTime: DateTime.now(),
       statusMessage: 'Product saved to queue',
     );
-    
     _queuedProducts.add(qp);
     await _saveQueuedProducts();
     _notify();
     
+    // AUTO-PROCESS if online
+    _processIfOnline();
     debugPrint('✅ Product added to queue: ${product.title}');
-
-    // Only try to process if we have a reliable connection
-    // Don't block the UI waiting for this
-    _processIfOnlineReliable();
 
     return id;
   }
@@ -236,17 +228,16 @@ class OfflineQueueService {
     _queuedProducts[idx] = _queuedProducts[idx].copyWith(
       status: 'queued',
       errorMessage: null,
-      statusMessage: 'Queued for retry...',
+      statusMessage: 'Retrying upload...',
     );
 
     await _saveQueuedProducts();
     _notify();
     debugPrint('✅ Product marked for retry: $id');
-    
-    // Only try to process if connection is reliable
-    _processIfOnlineReliable();
+    _processIfOnline();
   }
 
+  /// Procesa toda la cola (si no se está procesando ya).
   Future<void> processQueue() async {
     if (_isProcessing) {
       debugPrint('⚠️ Processing already in progress, aborting');
@@ -257,13 +248,14 @@ class OfflineQueueService {
     _isProcessing = true;
 
     try {
-      // Double-check connection reliability before processing
-      if (!await _isConnectionReliable()) {
-        debugPrint('📵 No reliable connection, aborting processing');
+      // Verificar conectividad primero
+      if (!await _connectivityService.checkConnectivity()) {
+        debugPrint('📵 No connection, aborting processing');
         _isProcessing = false;
         return;
       }
 
+      // Obtener productos para subir
       final toUpload = _queuedProducts.where((qp) =>
               qp.status == 'queued' ||
               (qp.status == 'failed' && qp.retryCount < _maxRetries))
@@ -277,19 +269,13 @@ class OfflineQueueService {
         return;
       }
 
+      // Procesar cada producto
       for (final qp in toUpload) {
         debugPrint('⬆️ Processing product: ${qp.product.title}');
-        
-        // Re-check connection before each upload
-        if (!await _isConnectionReliable()) {
-          debugPrint('⚠️ Lost connection during processing');
-          break;
-        }
-
         await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Preparing upload...');
 
         try {
-          // Upload images with shorter timeout and better error handling
+          // ------------------- 1. subir imágenes -------------------
           final uploaded = <String>[];
           final pendingPaths = qp.product.pendingImagePaths ?? [];
           
@@ -299,39 +285,31 @@ class OfflineQueueService {
           for (var i = 0; i < pendingPaths.length; i++) {
             final local = pendingPaths[i];
             final file = File(local);
-            
             if (!await file.exists()) {
               debugPrint('⚠️ File not found: $local');
-              throw 'Image file not found';
-            }
-            
-            // Check connection before each image upload
-            if (!await _isConnectionReliable()) {
-              throw 'Connection lost during upload';
+              throw 'File not found: $local';
             }
             
             String? url;
             try {
-              await _updateStatus(qp.queueId, 'uploading', 
-                statusMessage: 'Uploading image ${i + 1} of ${pendingPaths.length}...');
-                
+              await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Uploading image ${i + 1}/${pendingPaths.length}...');
               url = await _firebaseDAO.uploadProductImage(local)
-                  .timeout(_uploadTimeout);
-                  
+                  .timeout(const Duration(seconds: 30));
             } catch (e) {
               debugPrint('⚠️ Error uploading image: $e');
-              throw 'Failed to upload image: ${e.toString()}';
+              throw 'Error uploading image: $e';
             }
             
-            if (url != null && url.isNotEmpty) {
+            if (url != null) {
               uploaded.add(url);
               debugPrint('✅ Image uploaded: $url');
             } else {
-              throw 'Image upload returned empty URL';
+              debugPrint('⚠️ Null URL when uploading $local');
+              throw 'Error uploading $local: Null URL';
             }
           }
 
-          // Create product document
+          // ------------------- 2. crear documento -------------------
           debugPrint('📄 Creating product document');
           await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Saving product...');
           
@@ -344,42 +322,27 @@ class OfflineQueueService {
           String? newId;
           try {
             newId = await _firebaseDAO.createProduct(updatedProduct.toMap())
-                .timeout(_uploadTimeout);
+                .timeout(const Duration(seconds: 20));
           } catch (e) {
             debugPrint('⚠️ Error creating product: $e');
-            throw 'Failed to save product: ${e.toString()}';
+            throw 'Error creating product: $e';
           }
           
-          if (newId == null || newId.isEmpty) {
-            throw 'Product creation returned empty ID';
+          if (newId == null) {
+            debugPrint('⚠️ Null ID when creating product');
+            throw 'createProduct returned null';
           }
 
-          debugPrint('✅ Product created successfully: ${qp.product.title}');
-          await _updateStatus(qp.queueId, 'completed', statusMessage: 'Upload completed!');
-          
-          // Auto-cleanup completed item after a short delay
-          Future.delayed(const Duration(seconds: 3), () async {
-            await _removeCompletedItem(qp.queueId);
-          });
+          debugPrint('✅ Product created: ${qp.product.title}');
+          await _updateStatus(qp.queueId, 'completed', statusMessage: 'Upload completed successfully!');
           
         } catch (e) {
           debugPrint('❌ Error processing product ${qp.product.title}: $e');
-          String errorMessage = e.toString();
-          
-          // Simplify error messages for user
-          if (errorMessage.contains('TimeoutException')) {
-            errorMessage = 'Upload timeout - check connection';
-          } else if (errorMessage.contains('Connection lost')) {
-            errorMessage = 'Connection lost during upload';
-          } else if (errorMessage.contains('unavailable')) {
-            errorMessage = 'Service temporarily unavailable';
-          }
-          
           await _updateStatus(
             qp.queueId,
             'failed',
-            error: errorMessage,
-            statusMessage: 'Upload failed - tap to retry'
+            error: e.toString(),
+            statusMessage: 'Upload failed. Tap to retry.'
           );
         }
       }
@@ -393,12 +356,8 @@ class OfflineQueueService {
     }
   }
 
-  Future<void> removeCompletedItems() async {
-    await _cleanupCompletedItems();
-  }
-
   // ---------------------------------------------------------------------------
-  //  Private helpers
+  //  Auxiliares privados
   // ---------------------------------------------------------------------------
   Future<void> _updateStatus(String queueId, String status, {String? error, String? statusMessage}) async {
     final index = _queuedProducts.indexWhere((qp) => qp.queueId == queueId);
@@ -430,40 +389,8 @@ class OfflineQueueService {
 
   void _notify() => _internalController.add(List.unmodifiable(_queuedProducts));
 
-  // Remove a specific completed item
-  Future<void> _removeCompletedItem(String queueId) async {
-    final index = _queuedProducts.indexWhere((p) => p.queueId == queueId && p.status == 'completed');
-    if (index != -1) {
-      _queuedProducts.removeAt(index);
-      await _saveQueuedProducts();
-      _notify();
-      debugPrint('🧹 Removed completed item: $queueId');
-    }
-  }
-
-  // Cleanup old completed items
-  Future<void> _cleanupCompletedItems() async {
-    debugPrint('🧹 Cleaning up completed items');
-    
-    final now = DateTime.now();
-    final initialCount = _queuedProducts.length;
-    
-    // Remove completed items older than 30 minutes
-    _queuedProducts.removeWhere((p) => 
-      p.status == 'completed' && 
-      now.difference(p.queuedTime).inMinutes >= 30
-    );
-    
-    final removedCount = initialCount - _queuedProducts.length;
-    if (removedCount > 0) {
-      await _saveQueuedProducts();
-      _notify();
-      debugPrint('🧹 Removed $removedCount completed items');
-    }
-  }
-
   // ---------------------------------------------------------------------------
-  //  Cleanup
+  //  Limpieza
   // ---------------------------------------------------------------------------
   void dispose() {
     debugPrint('🧹 Cleaning up OfflineQueueService resources');
@@ -502,7 +429,7 @@ class OfflineQueueService {
     
     await _saveOrders();
     _notifyOrders();
-    _processIfOnlineReliable();
+    _processIfOnline();
     return id;
   }
 
@@ -524,7 +451,7 @@ class OfflineQueueService {
   void _notifyOrders() => _orderController.add(List.unmodifiable(_queuedOrders));
 
   Future<void> processOrderQueue() async {
-    if (_isProcessingOrders || !await _isConnectionReliable()) {
+    if (_isProcessingOrders || !await _connectivityService.checkConnectivity()) {
       return;
     }
     
@@ -542,7 +469,7 @@ class OfflineQueueService {
           await _firebaseDAO.updateOrderStatus(
             order.orderID, 
             'Delivered'
-          ).timeout(_uploadTimeout);
+          ).timeout(const Duration(seconds: 20));
           
           await _updateOrderStatus(order.queueId, 'completed');
         } catch (e) {
@@ -557,6 +484,55 @@ class OfflineQueueService {
       _isProcessingOrders = false;
     }
   }
+
+Future<void> _validateAndCleanupImagePaths() async {
+  debugPrint('🔍 Validating image paths in queue...');
+  bool hasChanges = false;
+  
+  for (int i = 0; i < _queuedProducts.length; i++) {
+    final qp = _queuedProducts[i];
+    final pendingPaths = qp.product.pendingImagePaths ?? [];
+    
+    if (pendingPaths.isNotEmpty) {
+      // Check which images still exist
+      final validPaths = <String>[];
+      
+      for (final path in pendingPaths) {
+        final file = File(path);
+        if (await file.exists()) {
+          validPaths.add(path);
+          debugPrint('✅ Image exists: $path');
+        } else {
+          debugPrint('❌ Image missing: $path');
+          hasChanges = true;
+        }
+      }
+      
+      // If some images are missing, update the product
+      if (validPaths.length != pendingPaths.length) {
+        final updatedProduct = qp.product.copyWith(
+          pendingImagePaths: validPaths.isEmpty ? null : validPaths,
+        );
+        
+        _queuedProducts[i] = qp.copyWith(
+          product: updatedProduct,
+          statusMessage: validPaths.isEmpty 
+              ? 'Images missing - product may fail to upload'
+              : 'Some images missing',
+        );
+        
+        debugPrint('⚠️ Updated product ${qp.queueId}: ${validPaths.length}/${pendingPaths.length} images valid');
+      }
+    }
+  }
+  
+  // Save changes if any paths were invalid
+  if (hasChanges) {
+    await _saveQueuedProducts();
+    _notify();
+    debugPrint('💾 Saved changes after image validation');
+  }
+}
 
   Future<void> _updateOrderStatus(String id, String status, {String? error}) async {
     final index = _queuedOrders.indexWhere((o) => o.queueId == id);

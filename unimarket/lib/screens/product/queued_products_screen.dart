@@ -1,13 +1,77 @@
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'package:unimarket/models/queued_product_model.dart';
 import 'package:unimarket/services/product_service.dart';
 import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
+
+// Import the upload progress overlay functions
+void showUploadProgress(BuildContext context, {required String message}) {
+  showCupertinoDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => Container(
+      color: CupertinoColors.black.withOpacity(0.6),
+      child: Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 40),
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: CupertinoColors.systemBackground,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryBlue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: const Icon(
+                  CupertinoIcons.cloud_upload_fill,
+                  color: AppColors.primaryBlue,
+                  size: 30,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Uploading',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: CupertinoColors.secondaryLabel,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              const CupertinoActivityIndicator(
+                color: AppColors.primaryBlue,
+                radius: 12,
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+void hideUploadProgress(BuildContext context) {
+  Navigator.of(context, rootNavigator: true).pop();
+}
 
 class QueuedProductsScreen extends StatefulWidget {
   const QueuedProductsScreen({Key? key}) : super(key: key);
@@ -21,7 +85,7 @@ class _QueuedProductsScreenState extends State<QueuedProductsScreen> {
   final ConnectivityService _net     = ConnectivityService();
 
   //───────────────────────────────────────────────────────────────────────────
-  // REUSABLE BANNER
+  // CLEAN BANNER
   //───────────────────────────────────────────────────────────────────────────
   Widget _banner({
     required IconData icon,
@@ -31,23 +95,29 @@ class _QueuedProductsScreenState extends State<QueuedProductsScreen> {
     required VoidCallback onTap,
   }) =>
       Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-        color: color.withOpacity(.1),
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(.3), width: 1),
+        ),
         child: Row(children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(width: 8),
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(text,
-                style: GoogleFonts.inter(fontSize: 14, color: color)),
+                style: GoogleFonts.inter(fontSize: 14, color: color, fontWeight: FontWeight.w500)),
           ),
           CupertinoButton(
-            padding: EdgeInsets.zero,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             minSize: 0,
+            color: color,
+            borderRadius: BorderRadius.circular(8),
             onPressed: onTap,
             child: Text(button,
                 style: GoogleFonts.inter(
-                    fontWeight: FontWeight.bold, color: color)),
+                    fontSize: 13, fontWeight: FontWeight.w600, color: CupertinoColors.white)),
           )
         ]),
       );
@@ -57,27 +127,31 @@ class _QueuedProductsScreenState extends State<QueuedProductsScreen> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: Text('Products in Queue',
+        middle: Text('Upload Queue',
             style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
         trailing: StreamBuilder<bool>(
           stream: _net.connectivityStream,
           initialData: _net.hasInternetAccess,
           builder: (_, snap) {
             final ok = snap.data ?? false;
-            return Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(ok ? CupertinoIcons.wifi : CupertinoIcons.wifi_slash,
-                  size: 18,
-                  color: ok
-                      ? CupertinoColors.activeGreen
-                      : CupertinoColors.systemRed),
-              const SizedBox(width: 6),
-              Text(ok ? 'Online' : 'Offline',
-                  style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: ok
-                          ? CupertinoColors.activeGreen
-                          : CupertinoColors.systemRed)),
-            ]);
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: ok ? CupertinoColors.systemGreen.withOpacity(.1) : CupertinoColors.systemRed.withOpacity(.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(ok ? CupertinoIcons.wifi : CupertinoIcons.wifi_slash,
+                    size: 14,
+                    color: ok ? CupertinoColors.systemGreen : CupertinoColors.systemRed),
+                const SizedBox(width: 4),
+                Text(ok ? 'Online' : 'Offline',
+                    style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: ok ? CupertinoColors.systemGreen : CupertinoColors.systemRed)),
+              ]),
+            );
           },
         ),
       ),
@@ -92,44 +166,54 @@ class _QueuedProductsScreenState extends State<QueuedProductsScreen> {
                 final online = s.data ?? false;
 
                 if (online && !_net.isChecking) {
-                  // Use the snapshot and count only queued/failed
                   final pending = _product.queuedProductsSnapshot
-                      .where((p) =>
-                          p.status == 'queued' || p.status == 'failed')
+                      .where((p) => p.status == 'queued' || p.status == 'failed')
                       .length;
                   return pending == 0
                       ? const SizedBox.shrink()
                       : _banner(
-                          icon: CupertinoIcons.arrow_up_circle,
+                          icon: CupertinoIcons.cloud_upload,
                           color: AppColors.primaryBlue,
-                          text:
-                              'You are connected. Sync $pending pending product${pending == 1 ? '' : 's'}?',
-                          button: 'Sync',
-                          onTap: _product.processQueue,
+                          text: '$pending product${pending == 1 ? '' : 's'} ready to upload',
+                          button: 'Upload Now',
+                          onTap: () async {
+                            showUploadProgress(context, message: 'Starting upload...');
+                            try {
+                              await _product.processQueue();
+                              // Small delay to show completion
+                              await Future.delayed(const Duration(milliseconds: 500));
+                            } finally {
+                              hideUploadProgress(context);
+                            }
+                          },
                         );
                 }
 
                 if (!online) {
-                  return _banner(
+                  final hasItems = _product.queuedProductsSnapshot
+                      .where((p) => p.status == 'queued' || p.status == 'failed')
+                      .isNotEmpty;
+                  
+                  return hasItems ? _banner(
                     icon: CupertinoIcons.wifi_slash,
-                    color: CupertinoColors.systemYellow,
-                    text:
-                        'You are offline. Products will upload when connection returns.',
-                    button: 'Check',
-                    onTap: _net.checkConnectivity,
-                  );
+                    color: CupertinoColors.systemOrange,
+                    text: 'No internet. Products will upload automatically when connected.',
+                    button: 'Retry',
+                    onTap: () => _net.checkConnectivity(),
+                  ) : const SizedBox.shrink();
                 }
 
-                // checking connection
                 return Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                      vertical: 10, horizontal: 16),
-                  color: CupertinoColors.systemGrey.withOpacity(.1),
+                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemGrey6,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: Row(children: [
-                    const CupertinoActivityIndicator(radius: 8),
-                    const SizedBox(width: 8),
-                    Text('Checking connection…',
+                    const CupertinoActivityIndicator(radius: 10),
+                    const SizedBox(width: 12),
+                    Text('Checking connection...',
                         style: GoogleFonts.inter(
                             fontSize: 14, color: CupertinoColors.systemGrey))
                   ]),
@@ -137,87 +221,45 @@ class _QueuedProductsScreenState extends State<QueuedProductsScreen> {
               },
             ),
 
+            const SizedBox(height: 8),
+
             Expanded(
-            child: StreamBuilder<List<QueuedProductModel>>(
-              stream: _product.queuedProductsStream,
-              initialData: _product.queuedProductsSnapshot,
-              builder: (_, snap) {
-                final rawList = snap.data ?? [];
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CupertinoActivityIndicator());
-                }
-                if (rawList.isEmpty) return const _EmptyState();
-
-                // Sort products by priority: uploading -> queued -> failed -> completed
-                final list = [...rawList];
-                list.sort((a, b) {
-                  final statusPriority = {
-                    'uploading': 0,
-                    'queued': 1, 
-                    'failed': 2,
-                    'completed': 3,
-                  };
-                  final priorityA = statusPriority[a.status] ?? 4;
-                  final priorityB = statusPriority[b.status] ?? 4;
-                  
-                  if (priorityA != priorityB) {
-                    return priorityA.compareTo(priorityB);
+              child: StreamBuilder<List<QueuedProductModel>>(
+                stream: _product.queuedProductsStream,
+                initialData: _product.queuedProductsSnapshot,
+                builder: (_, snap) {
+                  final rawList = snap.data ?? [];
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CupertinoActivityIndicator());
                   }
-                  // Same status, sort by time (newest first)
-                  return b.queuedTime.compareTo(a.queuedTime);
-                });
+                  if (rawList.isEmpty) return const _EmptyState();
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: list.length,
-                  itemBuilder: (_, i) => Dismissible(
-                    key: Key(list[i].queueId),
-                    direction: list[i].status == 'completed' 
-                        ? DismissDirection.endToStart 
-                        : DismissDirection.endToStart,
-                    background: Container(
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 20),
-                      decoration: BoxDecoration(
-                        color: CupertinoColors.systemRed,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        CupertinoIcons.delete,
-                        color: CupertinoColors.white,
-                      ),
-                    ),
-                    confirmDismiss: (direction) async {
-                      return await showCupertinoDialog(
-                        context: context,
-                        builder: (context) => CupertinoAlertDialog(
-                          title: Text(list[i].status == 'completed' ? 'Remove from history?' : 'Delete product?'),
-                          content: Text(list[i].status == 'completed' 
-                              ? 'Remove "${list[i].product.title}" from upload history?'
-                              : 'Are you sure you want to delete "${list[i].product.title}" from the queue?'),
-                          actions: [
-                            CupertinoDialogAction(
-                              isDestructiveAction: true,
-                              onPressed: () => Navigator.pop(context, true),
-                              child: Text(list[i].status == 'completed' ? 'Remove' : 'Delete'),
-                            ),
-                            CupertinoDialogAction(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    onDismissed: (direction) {
-                      _product.removeFromQueue(list[i].queueId);
-                    },
-                    child: _card(list[i]),
-                  ),
-                );
-              },
+                  // Sort: uploading -> queued -> failed -> completed (newest first)
+                  final list = [...rawList];
+                  list.sort((a, b) {
+                    final statusPriority = {
+                      'uploading': 0,
+                      'queued': 1,
+                      'failed': 2,
+                      'completed': 3,
+                    };
+                    final priorityA = statusPriority[a.status] ?? 4;
+                    final priorityB = statusPriority[b.status] ?? 4;
+                    
+                    if (priorityA != priorityB) {
+                      return priorityA.compareTo(priorityB);
+                    }
+                    return b.queuedTime.compareTo(a.queuedTime);
+                  });
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: list.length,
+                    itemBuilder: (_, i) => _buildCard(list[i]),
+                  );
+                },
+              ),
             ),
-          ),
           ],
         ),
       ),
@@ -225,14 +267,76 @@ class _QueuedProductsScreenState extends State<QueuedProductsScreen> {
   }
 
   //───────────────────────────────────────────────────────────────────────────
-  // CARD
+  // SIMPLE CLEAN CARD
   //───────────────────────────────────────────────────────────────────────────
-  Widget _card(QueuedProductModel qp) {
+  Widget _buildCard(QueuedProductModel qp) {
+    return Dismissible(
+      key: Key(qp.queueId),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: CupertinoColors.systemRed,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(CupertinoIcons.delete, color: CupertinoColors.white, size: 24),
+            const SizedBox(height: 4),
+            Text('Remove', 
+              style: GoogleFonts.inter(color: CupertinoColors.white, fontSize: 12, fontWeight: FontWeight.w600)
+            ),
+          ],
+        ),
+      ),
+      confirmDismiss: (direction) => _confirmRemove(qp),
+      onDismissed: (direction) => _product.removeFromQueue(qp.queueId),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: CupertinoColors.systemGrey.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            // Header with status
+            _buildHeader(qp),
+            
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  _buildThumbnail(qp),
+                  const SizedBox(width: 16),
+                  Expanded(child: _buildProductInfo(qp)),
+                ],
+              ),
+            ),
+            
+            // Actions
+            if (qp.status == 'failed') _buildFailedActions(qp),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(QueuedProductModel qp) {
     Color color;
     IconData icon;
     String label;
-    Widget? trailingWidget;
-    Color? backgroundColor;
+    Widget? trailing;
 
     switch (qp.status) {
       case 'queued':
@@ -242,22 +346,19 @@ class _QueuedProductsScreenState extends State<QueuedProductsScreen> {
         break;
       case 'uploading':
         color = AppColors.primaryBlue;
-        icon = CupertinoIcons.arrow_up_circle_fill;
+        icon = CupertinoIcons.cloud_upload;
         label = 'Uploading';
-        backgroundColor = AppColors.primaryBlue.withOpacity(0.05);
-        trailingWidget = const CupertinoActivityIndicator(radius: 8);
+        trailing = const CupertinoActivityIndicator(radius: 8);
         break;
       case 'failed':
         color = CupertinoColors.systemRed;
-        icon = CupertinoIcons.exclamationmark_circle_fill;
+        icon = CupertinoIcons.exclamationmark_circle;
         label = 'Failed';
-        backgroundColor = CupertinoColors.systemRed.withOpacity(0.05);
         break;
       case 'completed':
         color = CupertinoColors.systemGreen;
-        icon = CupertinoIcons.checkmark_circle_fill;
+        icon = CupertinoIcons.checkmark_circle;
         label = 'Uploaded';
-        backgroundColor = CupertinoColors.systemGreen.withOpacity(0.05);
         break;
       default:
         color = CupertinoColors.systemGrey;
@@ -266,204 +367,46 @@ class _QueuedProductsScreenState extends State<QueuedProductsScreen> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: backgroundColor ?? CupertinoColors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: qp.status == 'uploading' 
-            ? Border.all(color: AppColors.primaryBlue.withOpacity(0.3), width: 1)
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey4.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2)
-          ),
-        ],
+        color: color.withOpacity(0.1),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      child: Column(
+      child: Row(
         children: [
-          // Header with better spacing
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: color.withOpacity(.08),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-              border: Border(bottom: BorderSide(color: color.withOpacity(.2), width: 0.5)),
-            ),
-            child: Row(
-              children: [
-                Icon(icon, color: color, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        label,
-                        style: GoogleFonts.inter(
-                          color: color,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      if (qp.statusMessage != null && qp.statusMessage!.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            qp.statusMessage!,
-                            style: GoogleFonts.inter(
-                              color: color.withOpacity(0.8),
-                              fontSize: 11,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                if (trailingWidget != null)
-                  trailingWidget
-                else
-                  Text(
-                    _ago(qp.queuedTime),
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: CupertinoColors.systemGrey,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-              ],
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
             ),
           ),
-
-          // Body with better layout
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _thumb(qp),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        qp.product.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          height: 1.3,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '\${qp.product.price.toStringAsFixed(2)}',
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primaryBlue
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        qp.product.description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: CupertinoColors.systemGrey,
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
-                  ),
+          if (qp.statusMessage != null && qp.statusMessage!.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                qp.statusMessage!,
+                style: GoogleFonts.inter(
+                  color: color.withOpacity(0.8),
+                  fontSize: 12,
                 ),
-              ],
-            ),
-          ),
-
-          // Error message with better styling
-          if (qp.status == 'failed' && qp.errorMessage != null)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: CupertinoColors.systemRed.withOpacity(.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: CupertinoColors.systemRed.withOpacity(.2), width: 0.5),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    CupertinoIcons.exclamationmark_triangle,
-                    color: CupertinoColors.systemRed,
-                    size: 16
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      qp.errorMessage!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: CupertinoColors.systemRed
-                      ),
-                    ),
-                  ),
-                ],
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-
-          // Action buttons
-          if (qp.status == 'failed' || qp.status == 'queued')
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  CupertinoButton(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    minSize: 0,
-                    onPressed: () => _confirmRemove(qp),
-                    child: Text(
-                      'Remove',
-                      style: GoogleFonts.inter(
-                        color: CupertinoColors.systemRed,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (qp.status == 'failed')
-                    CupertinoButton(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                      minSize: 0,
-                      color: AppColors.primaryBlue,
-                      borderRadius: BorderRadius.circular(8),
-                      onPressed: () async {
-                        if (await _checkInternetAccess()) {
-                          await _product.retryQueuedUpload(qp.queueId);
-                        } else {
-                          _showNoInternetDialog();
-                        }
-                      },
-                      child: Text(
-                        'Retry',
-                        style: GoogleFonts.inter(
-                          color: CupertinoColors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                ],
+          ] else
+            const Spacer(),
+          if (trailing != null)
+            trailing
+          else
+            Text(
+              _formatTime(qp.queuedTime),
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: CupertinoColors.systemGrey2,
+                fontWeight: FontWeight.w500,
               ),
             ),
         ],
@@ -471,142 +414,214 @@ class _QueuedProductsScreenState extends State<QueuedProductsScreen> {
     );
   }
 
-  Widget _thumb(QueuedProductModel qp) {
-    // For completed products, prioritize uploaded URLs
-    if (qp.status == 'completed' && qp.product.imageUrls.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.network(
-          qp.product.imageUrls.first,
-          width: 70,
-          height: 70,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _tryLocalImage(qp);
-          },
-        ),
-      );
-    }
-    
-    // For pending/uploading products, try local images first
+  Widget _buildThumbnail(QueuedProductModel qp) {
+    Widget imageWidget;
+
+    // Try local images first, then network
     if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.file(
-          File(qp.product.pendingImagePaths!.first),
-          width: 70,
-          height: 70,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _tryNetworkImage(qp);
-          },
-        ),
+      imageWidget = Image.file(
+        File(qp.product.pendingImagePaths!.first),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildImageFallback(qp),
       );
-    }
-    
-    // Fallback to network images
-    return _tryNetworkImage(qp);
-  }
-
-  Widget _tryLocalImage(QueuedProductModel qp) {
-    if (qp.product.pendingImagePaths?.isNotEmpty ?? false) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.file(
-          File(qp.product.pendingImagePaths!.first),
-          width: 70,
-          height: 70,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _placeholder();
-          },
-        ),
+    } else if (qp.product.imageUrls.isNotEmpty) {
+      imageWidget = Image.network(
+        qp.product.imageUrls.first,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
       );
+    } else {
+      imageWidget = _buildImagePlaceholder();
     }
-    return _placeholder();
-  }
 
-  Widget _tryNetworkImage(QueuedProductModel qp) {
-    if (qp.product.imageUrls.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.network(
-          qp.product.imageUrls.first,
-          width: 70,
-          height: 70,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _placeholder();
-          },
-        ),
-      );
-    }
-    return _placeholder();
-  }
-
-  Widget _placeholder() {
     return Container(
-      width: 70,
-      height: 70,
+      width: 60,
+      height: 60,
       decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey5,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
+        color: CupertinoColors.systemGrey6,
       ),
+      clipBehavior: Clip.antiAlias,
+      child: imageWidget,
+    );
+  }
+
+  Widget _buildImageFallback(QueuedProductModel qp) {
+    if (qp.product.imageUrls.isNotEmpty) {
+      return Image.network(
+        qp.product.imageUrls.first,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
+      );
+    }
+    return _buildImagePlaceholder();
+  }
+
+  Widget _buildImagePlaceholder() {
+    return Container(
+      color: CupertinoColors.systemGrey6,
       child: const Icon(
         CupertinoIcons.photo,
-        color: CupertinoColors.systemGrey,
+        color: CupertinoColors.systemGrey3,
         size: 24,
       ),
     );
   }
 
-  // util
-  String _ago(DateTime t) {
-    final d = DateTime.now().difference(t);
-    if (d.inDays > 0) return '${d.inDays} day${d.inDays == 1 ? '' : 's'} ago';
-    if (d.inHours > 0)
-      return '${d.inHours} hour${d.inHours == 1 ? '' : 's'} ago';
-    if (d.inMinutes > 0)
-      return '${d.inMinutes} minute${d.inMinutes == 1 ? '' : 's'} ago';
-    return 'just now';
+  Widget _buildProductInfo(QueuedProductModel qp) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          qp.product.title,
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: CupertinoColors.label,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '\$${qp.product.price.toStringAsFixed(2)}',
+          style: GoogleFonts.inter(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.primaryBlue,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          qp.product.description,
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            color: CupertinoColors.systemGrey,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
   }
 
-  // confirmation
-  void _confirmRemove(QueuedProductModel qp) {
-    showCupertinoDialog(
-      context: context,
-      builder: (_) => CupertinoAlertDialog(
-        title: const Text('Delete product?'),
-        content: Text('Delete "${qp.product.title}" from queue?'),
-        actions: [
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () {
-              Navigator.pop(context);
-              _product.removeFromQueue(qp.queueId);
-            },
-            child: const Text('Delete'),
-          ),
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+  Widget _buildFailedActions(QueuedProductModel qp) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemRed.withOpacity(0.05),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (qp.errorMessage != null) ...[
+            Row(
+              children: [
+                const Icon(CupertinoIcons.exclamationmark_triangle, 
+                  color: CupertinoColors.systemRed, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    qp.errorMessage!,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: CupertinoColors.systemRed,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              CupertinoButton(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                minSize: 0,
+                color: AppColors.primaryBlue,
+                borderRadius: BorderRadius.circular(8),
+                onPressed: () async {
+                  if (await _checkConnection()) {
+                    showUploadProgress(context, message: 'Retrying upload...');
+                    try {
+                      await _product.retryQueuedUpload(qp.queueId);
+                      // Small delay to show the retry started
+                      await Future.delayed(const Duration(milliseconds: 800));
+                    } catch (e) {
+                      // Error will be shown in the queue card
+                    } finally {
+                      hideUploadProgress(context);
+                    }
+                  }
+                },
+                child: Text(
+                  'Retry Upload',
+                  style: GoogleFonts.inter(
+                    color: CupertinoColors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Future<bool> _checkInternetAccess() async {
-    final connectivityResult = await Connectivity().checkConnectivity();
-    return connectivityResult != ConnectivityResult.none;
+  String _formatTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+    
+    if (diff.inDays > 0) return '${diff.inDays}d ago';
+    if (diff.inHours > 0) return '${diff.inHours}h ago';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
+    return 'now';
+  }
+
+  Future<bool> _confirmRemove(QueuedProductModel qp) async {
+    return await showCupertinoDialog<bool>(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text(qp.status == 'completed' ? 'Remove from history?' : 'Delete from queue?'),
+        content: Text(qp.status == 'completed' 
+            ? 'Remove "${qp.product.title}" from upload history?'
+            : 'Delete "${qp.product.title}" from upload queue?'),
+        actions: [
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(qp.status == 'completed' ? 'Remove' : 'Delete'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  Future<bool> _checkConnection() async {
+    final result = await Connectivity().checkConnectivity();
+    if (result == ConnectivityResult.none) {
+      _showNoInternetDialog();
+      return false;
+    }
+    return true;
   }
 
   void _showNoInternetDialog() {
     showCupertinoDialog(
       context: context,
       builder: (_) => CupertinoAlertDialog(
-        title: const Text('No Internet Connection'),
-        content: const Text('Please check your internet connection and try again.'),
+        title: const Text('No Internet'),
+        content: const Text('Please check your connection and try again.'),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
@@ -626,17 +641,41 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const Icon(CupertinoIcons.clock,
-              size: 48, color: CupertinoColors.systemGrey),
-          const SizedBox(height: 16),
-          Text('No products in queue',
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: CupertinoColors.systemGrey6,
+                borderRadius: BorderRadius.circular(40),
+              ),
+              child: const Icon(
+                CupertinoIcons.cloud_upload,
+                size: 40,
+                color: CupertinoColors.systemGrey3,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Upload queue is empty',
               style: GoogleFonts.inter(
-                  fontSize: 16, color: CupertinoColors.systemGrey)),
-          const SizedBox(height: 8),
-          Text('Products saved offline will appear here',
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: CupertinoColors.label,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Products you save offline will appear here',
               style: GoogleFonts.inter(
-                  fontSize: 14, color: CupertinoColors.systemGrey)),
-        ]),
+                fontSize: 14,
+                color: CupertinoColors.systemGrey,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       );
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart'; // Añadido para usar Badge
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:unimarket/models/queued_product_model.dart';
 import 'package:unimarket/screens/product/product_upload_screen.dart';
 import 'package:unimarket/screens/product/queued_products_screen.dart';
 import 'package:unimarket/widgets/buttons/floating_action_button_factory.dart';
@@ -612,39 +613,55 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
                 
                 // NUEVO: Banner de Productos en Cola (visible solo cuando no hay banner de conexión)
                 if (_queuedProductsCount > 0 && !isOffline && !_isCheckingConnectivity)
-                  GestureDetector(
-                    onTap: _navigateToQueuedProducts,
-                    child: Container(
-                      width: double.infinity,
-                      color: AppColors.primaryBlue.withOpacity(0.2),
-                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                      child: Row(
-                        children: [
-                          Icon(
-                            CupertinoIcons.clock,
-                            size: 16, 
-                            color: AppColors.primaryBlue,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              "$_queuedProductsCount ${_queuedProductsCount == 1 ? 'product' : 'products'} pending upload",
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: AppColors.primaryBlue,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          Icon(
-                            CupertinoIcons.chevron_right,
-                            size: 14,
-                            color: AppColors.primaryBlue,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  StreamBuilder<List<QueuedProductModel>>(
+  stream: _productService.queuedProductsStream,
+  builder: (context, snapshot) {
+    final queuedProducts = snapshot.data ?? [];
+    
+    // Use same filtering logic as QueuedProductIndicator
+    final pendingProducts = queuedProducts.where((item) => 
+      item.status == 'queued' || item.status == 'failed').toList();
+    
+    // Only show banner if there are pending products AND we're online
+    if (pendingProducts.isEmpty || isOffline || _isCheckingConnectivity) {
+      return SizedBox.shrink();
+    }
+    
+    return GestureDetector(
+      onTap: _navigateToQueuedProducts,
+      child: Container(
+        width: double.infinity,
+        color: AppColors.primaryBlue.withOpacity(0.2),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        child: Row(
+          children: [
+            Icon(
+              CupertinoIcons.clock,
+              size: 16, 
+              color: AppColors.primaryBlue,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                "${pendingProducts.length} ${pendingProducts.length == 1 ? 'product' : 'products'} pending upload",
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: AppColors.primaryBlue,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Icon(
+              CupertinoIcons.chevron_right,
+              size: 14,
+              color: AppColors.primaryBlue,
+            ),
+          ],
+        ),
+      ),
+    );
+  },
+),
                   
                 Expanded(
                   child: CustomScrollView(
