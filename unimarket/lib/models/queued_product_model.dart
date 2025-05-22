@@ -1,6 +1,6 @@
 import 'package:unimarket/models/product_model.dart';
 
-/// Elemento que viaja en la cola offline – persistido en Hive/SharedPrefs
+/// Elemento que viaja en la cola offline – persistido en Hive/SharedPrefs
 class QueuedProductModel {
   final String       queueId;
   final ProductModel product;
@@ -8,6 +8,7 @@ class QueuedProductModel {
   final DateTime     queuedTime;
   final String?      errorMessage;
   final int          retryCount;
+  final String?      statusMessage; // Nuevo campo para mensajes de estado
 
   QueuedProductModel({
     required this.queueId,
@@ -16,6 +17,7 @@ class QueuedProductModel {
     required this.queuedTime,
     this.errorMessage,
     this.retryCount = 0,
+    this.statusMessage,
   });
 
   // ── (De)serialización ────────────────────────────────────────────────────
@@ -26,6 +28,7 @@ class QueuedProductModel {
         'queuedTime'  : queuedTime.toIso8601String(),
         'errorMessage': errorMessage,
         'retryCount'  : retryCount,
+        'statusMessage': statusMessage,
       };
 
   factory QueuedProductModel.fromJson(Map<String, dynamic> json) =>
@@ -36,6 +39,7 @@ class QueuedProductModel {
         queuedTime  : DateTime.parse(json['queuedTime']),
         errorMessage: json['errorMessage'],
         retryCount  : json['retryCount'] ?? 0,
+        statusMessage: json['statusMessage'],
       );
 
   // ── copia segura ─────────────────────────────────────────────────────────
@@ -46,6 +50,7 @@ class QueuedProductModel {
     DateTime?     queuedTime,
     String?       errorMessage,
     int?          retryCount,
+    String?       statusMessage,
   }) =>
       QueuedProductModel(
         queueId     : queueId     ?? this.queueId,
@@ -54,5 +59,6 @@ class QueuedProductModel {
         queuedTime  : queuedTime  ?? this.queuedTime,
         errorMessage: errorMessage ?? this.errorMessage,
         retryCount  : retryCount  ?? this.retryCount,
+        statusMessage: statusMessage ?? this.statusMessage,
       );
 }

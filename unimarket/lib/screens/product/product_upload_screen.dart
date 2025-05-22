@@ -457,20 +457,20 @@ Future<void> _fetchAvailableMajors() async {
 Future<void> _submitForm() async {
   // Validaciones
   if (_titleController.text.trim().isEmpty) {
-    _showErrorAlert('Please enter a title');
+    _showErrorAlert('Por favor ingresa un título');
     return;
   }
   if (_descriptionController.text.trim().isEmpty) {
-    _showErrorAlert('Please enter a description');
+    _showErrorAlert('Por favor ingresa una descripción');
     return;
   }
   final price = double.tryParse(_priceController.text.trim());
   if (price == null) {
-    _showErrorAlert('Please enter a valid price');
+    _showErrorAlert('Por favor ingresa un precio válido');
     return;
   }
   if (_productImage == null) {
-    _showErrorAlert('Please add at least one product image');
+    _showErrorAlert('Por favor agrega al menos una imagen del producto');
     return;
   }
 
@@ -480,6 +480,36 @@ Future<void> _submitForm() async {
   });
 
   try {
+    // Mostrar diálogo de carga
+    showCupertinoDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return CupertinoAlertDialog(
+              title: const Text("Subiendo Producto"),
+              content: Column(
+                children: [
+                  const SizedBox(height: 20),
+                  const CupertinoActivityIndicator(radius: 15),
+                  const SizedBox(height: 20),
+                  Text(
+                    "Preparando información del producto...",
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: CupertinoColors.systemGrey,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
     // Chequeo de conectividad
     final hasInternet = await _connectivityService.checkConnectivity();
     if (mounted) setState(() => _isOffline = !hasInternet);
@@ -505,17 +535,28 @@ Future<void> _submitForm() async {
     );
 
     if (_isOffline) {
+      // Cerrar diálogo de carga
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+      
       // OFFLINE: encolar
       final queueId = await _productService.createProduct(productModel);
       _showSuccessDialogOffline(
         'Producto en cola',
-        'Se guardó con ID $queueId y se subirá cuando estés online.',
+        'Se guardó y se subirá cuando estés online.',
       );
       await _clearDraft();
       return;
     } else {
       // ONLINE: intentar subir
       final resultId = await _productService.createProduct(productModel);
+      
+      // Cerrar diálogo de carga
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+      
       if (resultId != null) {
         _showSuccessAlert('¡Producto subido exitosamente!');
         await _clearDraft();
@@ -524,12 +565,16 @@ Future<void> _submitForm() async {
         final queueId = await _productService.createProduct(productModel);
         _showSuccessDialogOffline(
           'Guardado en cola',
-          'No se subió inmediatamente; se encoló con ID $queueId.',
+          'No se pudo subir inmediatamente. Se guardó para subirlo más tarde.',
         );
         await _clearDraft();
       }
     }
   } catch (e) {
+    // Cerrar diálogo de carga en caso de error
+    if (mounted && Navigator.canPop(context)) {
+      Navigator.of(context).pop();
+    }
     _showErrorAlert('Error al procesar: $e');
   } finally {
     if (mounted) setState(() {
@@ -768,41 +813,94 @@ Future<String?> _uploadImageWithRetries(String filePath) async {
   bool dialogShown = false;
   
   try {
-    // Show dialog
+    // Mostrar diálogo con mensaje inicial
     dialogShown = true;
     showCupertinoDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
-        return CupertinoAlertDialog(
-          title: Text("Uploading Image"),
-          content: Column(
-            children: [
-              SizedBox(height: 10),
-              CupertinoActivityIndicator(),
-              SizedBox(height: 10),
-              Text("Please wait while the image is being uploaded."),
-            ],
-          ),
-          actions: [
-            CupertinoDialogAction(
-              isDestructiveAction: true,
-              child: Text("Cancel"),
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                dialogShown = false;
-              },
-            ),
-          ],
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return CupertinoAlertDialog(
+              title: const Text("Subiendo Producto"),
+              content: Column(
+                children: [
+                  const SizedBox(height: 20),
+                  const CupertinoActivityIndicator(radius: 15),
+                  const SizedBox(height: 20),
+                  Text(
+                    "Verificando conexión a internet...",
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: CupertinoColors.systemGrey,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                CupertinoDialogAction(
+                  isDestructiveAction: true,
+                  child: const Text("Cancelar"),
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    dialogShown = false;
+                  },
+                ),
+              ],
+            );
+          },
         );
       },
     );
+
+    // Actualizar mensaje para subida de imagen
+    if (dialogShown && mounted) {
+      showCupertinoDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setState) {
+              return CupertinoAlertDialog(
+                title: const Text("Subiendo Producto"),
+                content: Column(
+                  children: [
+                    const SizedBox(height: 20),
+                    const CupertinoActivityIndicator(radius: 15),
+                    const SizedBox(height: 20),
+                    Text(
+                      "Subiendo imágenes...",
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: CupertinoColors.systemGrey,
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  CupertinoDialogAction(
+                    isDestructiveAction: true,
+                    child: const Text("Cancelar"),
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                      dialogShown = false;
+                    },
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    }
     
-    // Use a timeout for the upload
+    // Usar timeout para la subida
     final String? result = await _firebaseDAO.uploadProductImage(filePath)
         .timeout(const Duration(seconds: 15));
     
-    // Close dialog
+    // Cerrar diálogo
     if (dialogShown && mounted && Navigator.canPop(context)) {
       Navigator.of(context).pop();
     }
@@ -810,14 +908,14 @@ Future<String?> _uploadImageWithRetries(String filePath) async {
     return result;
   } on TimeoutException {
     debugPrint("Upload timed out after 15 seconds");
-    // Close dialog on timeout
+    // Cerrar diálogo en timeout
     if (dialogShown && mounted && Navigator.canPop(context)) {
       Navigator.of(context).pop();
     }
     return null;
   } catch (e) {
     debugPrint("Error uploading image: $e");
-    // Close dialog on error
+    // Cerrar diálogo en error
     if (dialogShown && mounted && Navigator.canPop(context)) {
       Navigator.of(context).pop();
     }

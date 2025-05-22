@@ -505,18 +505,18 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
               ),
             
             // NUEVO: Botón para ver la cola de productos
-            if (_queuedProductsCount > 0)
-              Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: GestureDetector(
-                  onTap: _navigateToQueuedProducts,
-                  child: Stack(
-                    children: [
-                      Icon(
-                        CupertinoIcons.clock,
-                        size: 24,
-                        color: AppColors.primaryBlue,
-                      ),
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: GestureDetector(
+                onTap: _navigateToQueuedProducts,
+                child: Stack(
+                  children: [
+                    Icon(
+                      CupertinoIcons.clock,
+                      size: 24,
+                      color: AppColors.primaryBlue,
+                    ),
+                    if (_queuedProductsCount > 0)
                       Positioned(
                         top: 0,
                         right: 0,
@@ -541,10 +541,10 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                  ],
                 ),
               ),
+            ),
             
             // Ícono de búsqueda
             CupertinoButton(

@@ -69,6 +69,9 @@ class OfflineQueueService {
       await _loadOrders();
       debugPrint('📦 Cargados ${_queuedProducts.length} productos en la cola');
       
+      // Forzar limpieza inicial
+      await forceCleanup();
+      
       // Cancelar suscripciones anteriores para evitar duplicados
       _connectivitySubscription?.cancel();
       
@@ -139,8 +142,13 @@ class OfflineQueueService {
           .map((s) => QueuedProductModel.fromJson(jsonDecode(s)))
           .toList();
 
+      // Debug: mostrar todos los productos cargados
+      _queuedProducts.forEach((p) => 
+        debugPrint('Loaded from storage - Product ${p.queueId}: ${p.status} (${p.queuedTime})')
+      );
+
       _notify(); // primer disparo para quien ya está escuchando
-      debugPrint('✅ Cola cargada exitosamente');
+      debugPrint('✅ Cola cargada exitosamente desde almacenamiento persistente');
     } catch (e, st) {
       debugPrint('🚨 Error al cargar la cola: $e\n$st');
       _queuedProducts = [];
@@ -154,6 +162,11 @@ class OfflineQueueService {
       final raw = _queuedProducts.map((p) => jsonEncode(p.toJson())).toList();
       await prefs.setStringList(_storageKey, raw);
       debugPrint('💾 Cola guardada en SharedPreferences (${raw.length} elementos)');
+      
+      // Debug: mostrar todos los productos guardados
+      _queuedProducts.forEach((p) => 
+        debugPrint('Saved to storage - Product ${p.queueId}: ${p.status} (${p.queuedTime})')
+      );
     } catch (e) {
       debugPrint('🚨 Error al guardar la cola: $e');
     }
@@ -164,49 +177,49 @@ class OfflineQueueService {
   // ---------------------------------------------------------------------------
   Future<String> addToQueue(ProductModel product) async {
     final id = const Uuid().v4();
-    debugPrint('➕ Añadiendo producto a la cola: ${product.title} (ID: $id)');
+    debugPrint('➕ Adding product to queue: ${product.title}');
 
-    _queuedProducts.add(
-      QueuedProductModel(
-        queueId: id,
-        product: product,
-        status: 'queued',
-        queuedTime: DateTime.now(),
-      ),
+    final qp = QueuedProductModel(
+      queueId: id,
+      product: product,
+      status: 'queued',
+      queuedTime: DateTime.now(),
+      statusMessage: 'Product saved to queue',
     );
-
+    _queuedProducts.add(qp);
     await _saveQueuedProducts();
     _notify();
     _processIfOnline();
-    debugPrint('✅ Producto añadido a la cola con ID: $id');
+    debugPrint('✅ Product added to queue: ${product.title}');
 
     return id;
   }
 
   Future<void> removeFromQueue(String id) async {
-    debugPrint('🗑️ Eliminando producto de la cola: $id');
+    debugPrint('🗑️ Removing product from queue: $id');
     _queuedProducts.removeWhere((p) => p.queueId == id);
     await _saveQueuedProducts();
     _notify();
-    debugPrint('✅ Producto eliminado de la cola: $id');
+    debugPrint('✅ Product removed from queue: $id');
   }
 
   Future<void> retryQueuedUpload(String id) async {
-    debugPrint('🔄 Reintentando subida del producto: $id');
+    debugPrint('🔄 Retrying product upload: $id');
     final idx = _queuedProducts.indexWhere((p) => p.queueId == id);
     if (idx == -1) {
-      debugPrint('⚠️ Producto no encontrado en la cola: $id');
+      debugPrint('⚠️ Product not found in queue: $id');
       return;
     }
 
     _queuedProducts[idx] = _queuedProducts[idx].copyWith(
       status: 'queued',
       errorMessage: null,
+      statusMessage: 'Retrying upload...',
     );
 
     await _saveQueuedProducts();
     _notify();
-    debugPrint('✅ Producto marcado para reintento: $id');
+    debugPrint('✅ Product marked for retry: $id');
     _processIfOnline();
   }
 
@@ -244,8 +257,8 @@ class OfflineQueueService {
 
       // Procesar cada producto
       for (final qp in toUpload) {
-        debugPrint('⬆️ Procesando producto: ${qp.queueId} (${qp.product.title})');
-        await _updateStatus(qp.queueId, 'uploading');
+        debugPrint('⬆️ Procesando producto: ${qp.product.title}');
+        await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Checking internet connection...');
 
         try {
           // ------------------- 1. subir imágenes -------------------
@@ -253,8 +266,10 @@ class OfflineQueueService {
           final pendingPaths = qp.product.pendingImagePaths ?? [];
           
           debugPrint('🖼️ Subiendo ${pendingPaths.length} imágenes');
+          await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Uploading images (0/${pendingPaths.length})...');
           
-          for (final local in pendingPaths) {
+          for (var i = 0; i < pendingPaths.length; i++) {
+            final local = pendingPaths[i];
             // Verificar si el archivo existe
             final file = File(local);
             if (!await file.exists()) {
@@ -265,6 +280,7 @@ class OfflineQueueService {
             // Subir imagen con timeout
             String? url;
             try {
+              await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Uploading images (${i + 1}/${pendingPaths.length})...');
               url = await _firebaseDAO.uploadProductImage(local)
                   .timeout(const Duration(seconds: 30));
             } catch (e) {
@@ -283,6 +299,8 @@ class OfflineQueueService {
 
           // ------------------- 2. crear documento -------------------
           debugPrint('📄 Creando documento del producto');
+          await _updateStatus(qp.queueId, 'uploading', statusMessage: '¡Ya casi! Guardando información del producto...');
+          
           final updatedProduct = qp.product.copyWith(
             imageUrls: [...qp.product.imageUrls, ...uploaded],
             pendingImagePaths: [],
@@ -303,24 +321,22 @@ class OfflineQueueService {
             throw 'createProduct devolvió null';
           }
 
-          debugPrint('✅ Producto creado con ID: $newId');
-          await _updateStatus(qp.queueId, 'completed');
+          debugPrint('✅ Producto creado: ${qp.product.title}');
+          await _updateStatus(qp.queueId, 'completed', statusMessage: 'Product uploaded successfully!');
           
-          // Limpieza diferida
-          Timer(const Duration(hours: 24), () {
-            removeCompletedItems();
-          });
         } catch (e) {
-          debugPrint('❌ Error procesando producto ${qp.queueId}: $e');
+          debugPrint('❌ Error procesando producto ${qp.product.title}: $e');
           await _updateStatus(
             qp.queueId,
             'failed',
             error: e.toString(),
+            statusMessage: 'Upload failed. Tap to retry.'
           );
         }
       }
       
       debugPrint('✅ Procesamiento de cola completado');
+      
     } catch (e, st) {
       debugPrint('🚨 Error general en processQueue: $e\n$st');
     } finally {
@@ -329,35 +345,27 @@ class OfflineQueueService {
   }
 
   Future<void> removeCompletedItems() async {
-    debugPrint('🧹 Limpiando productos completados antiguos');
-    final initialCount = _queuedProducts.length;
-    _queuedProducts.removeWhere((p) =>
-        p.status == 'completed' &&
-        DateTime.now().difference(p.queuedTime).inHours > 24);
-    
-    final removedCount = initialCount - _queuedProducts.length;
-    if (removedCount > 0) {
-      debugPrint('🗑️ Se eliminaron $removedCount productos completados antiguos');
-      await _saveQueuedProducts();
-      _notify();
-    } else {
-      debugPrint('ℹ️ No se encontraron productos completados antiguos para eliminar');
-    }
+    await forceCleanup();
   }
 
   // ---------------------------------------------------------------------------
   //  Auxiliares privados
   // ---------------------------------------------------------------------------
-  Future<void> _updateStatus(String id, String status, {String? error}) async {
-    final idx = _queuedProducts.indexWhere((p) => p.queueId == id);
-    if (idx == -1) {
-      debugPrint('⚠️ No se encontró el producto $id para actualizar estado');
+  Future<void> _updateStatus(String queueId, String status, {String? error, String? statusMessage}) async {
+    final index = _queuedProducts.indexWhere((qp) => qp.queueId == queueId);
+    if (index == -1) {
+      debugPrint('⚠️ No se encontró el producto $queueId para actualizar estado');
       return;
     }
 
-    debugPrint('🔄 Actualizando estado de $id a "$status"${error != null ? " (error: $error)" : ""}');
+    debugPrint('🔄 Actualizando estado de $queueId a "$status"${error != null ? " (error: $error)" : ""}');
     
-    var qp = _queuedProducts[idx].copyWith(status: status);
+    var qp = _queuedProducts[index].copyWith(
+      status: status,
+      queuedTime: status == 'completed' ? DateTime.now() : _queuedProducts[index].queuedTime,
+      statusMessage: statusMessage
+    );
+    
     if (status == 'failed') {
       qp = qp.copyWith(
         retryCount: qp.retryCount + 1,
@@ -365,10 +373,10 @@ class OfflineQueueService {
       );
     }
 
-    _queuedProducts[idx] = qp;
+    _queuedProducts[index] = qp;
     await _saveQueuedProducts();
     _notify();
-    debugPrint('✅ Estado actualizado para $id: $status');
+    debugPrint('✅ Estado actualizado para $queueId: $status');
   }
 
   void _notify() => _internalController.add(List.unmodifiable(_queuedProducts));
@@ -485,5 +493,31 @@ class OfflineQueueService {
     _queuedOrders[index] = updated;
     await _saveOrders();
     _notifyOrders();
+  }
+
+  // Nuevo método para forzar limpieza
+  Future<void> forceCleanup() async {
+    debugPrint('🧹 Forzando limpieza de la cola');
+    
+    // Debug: mostrar estado inicial
+    _queuedProducts.forEach((p) => 
+      debugPrint('Before force cleanup - Product ${p.queueId}: ${p.status} (${p.queuedTime})')
+    );
+    
+    // Eliminar solo productos completados que tengan más de 24 horas
+    final now = DateTime.now();
+    _queuedProducts.removeWhere((p) => 
+      p.status == 'completed' && 
+      now.difference(p.queuedTime).inHours >= 24
+    );
+    
+    // Guardar cambios
+    await _saveQueuedProducts();
+    _notify();
+    
+    // Debug: mostrar estado final
+    _queuedProducts.forEach((p) => 
+      debugPrint('After force cleanup - Product ${p.queueId}: ${p.status} (${p.queuedTime})')
+    );
   }
 }
