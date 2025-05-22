@@ -29,67 +29,61 @@ class OfflineQueueService {
   List<QueuedOrderModel> _queuedOrders = [];
   bool _isProcessingOrders = false;
   Timer? _processingTimer;
-  // Añadimos la variable de suscripción para manejar los listeners
   StreamSubscription? _connectivitySubscription;
 
   // ---- Constantes ----
   static const String _storageKey = 'offline_product_queue';
   static const String _qrscanKey = 'product_delivery_queue';
   static const int _maxRetries = 3;
-  static const Duration _retryDelay = Duration(minutes: 5);
+  static const Duration _connectionTimeout = Duration(seconds: 10);
+  static const Duration _uploadTimeout = Duration(seconds: 20);
 
   // ---- **** Stream **** ----
-  // 1) Este controller solo emite *cambios* posteriores
   final _internalController =
       StreamController<List<QueuedProductModel>>.broadcast();
 
-
-  // 2) Este getter emite el snapshot actual **y** luego sigue
   Stream<List<QueuedProductModel>> get queueStream =>
       Stream.multi((controller) {
-        // snapshot inmediato — soluciona el "no se ve nada" estando offline
         controller.add(List.unmodifiable(_queuedProducts));
-
-        // subsiguientes cambios
         final sub = _internalController.stream.listen(controller.add);
         controller.onCancel = () => sub.cancel();
       });
 
-  // 3) Getter síncrono para usar como `initialData`
   List<QueuedProductModel> get queuedProducts =>
       List.unmodifiable(_queuedProducts);
+
+  // Get only pending products (queued or failed)
+  List<QueuedProductModel> get pendingProducts =>
+      _queuedProducts.where((p) => p.status == 'queued' || p.status == 'failed').toList();
+
+  int get pendingCount => pendingProducts.length;
 
   // ---------------------------------------------------------------------------
   // Inicialización
   // ---------------------------------------------------------------------------
   Future<void> initialize() async {
-    debugPrint('🔧 Inicializando OfflineQueueService');
+    debugPrint('🔧 Initializing OfflineQueueService');
     try {
-      await _loadQueuedProducts(); // carga lo que había en disco
+      await _loadQueuedProducts();
       await _loadOrders();
-      debugPrint('📦 Cargados ${_queuedProducts.length} productos en la cola');
+      debugPrint('📦 Loaded ${_queuedProducts.length} products in queue');
       
-      // Forzar limpieza inicial
-      await forceCleanup();
+      // Immediate cleanup of old completed items
+      await _cleanupCompletedItems();
       
-      // Cancelar suscripciones anteriores para evitar duplicados
       _connectivitySubscription?.cancel();
-      
-      // Suscribirse a cambios de conectividad
       _connectivitySubscription = _connectivityService.connectivityStream.listen(_onConnectivityChange);
-      debugPrint('🔌 Listener de conectividad configurado');
+      debugPrint('🔌 Connectivity listener configured');
       
-      // Configurar verificación periódica
       _setupPeriodicCheck();
-      debugPrint('⏰ Verificación periódica configurada');
+      debugPrint('⏰ Periodic check configured');
       
-      // Verificar inmediatamente si hay conexión y procesar
-      _processIfOnline();
+      // Only process if we have reliable connection
+      _processIfOnlineReliable();
       
-      debugPrint('✅ OfflineQueueService inicializado correctamente');
+      debugPrint('✅ OfflineQueueService initialized correctly');
     } catch (e, st) {
-      debugPrint('🚨 Error al inicializar OfflineQueueService: $e\n$st');
-      // Asegurar que incluso con error, la cola se inicialice vacía
+      debugPrint('🚨 Error initializing OfflineQueueService: $e\n$st');
       _queuedProducts = [];
       _notify();
     }
@@ -98,59 +92,87 @@ class OfflineQueueService {
   void _setupPeriodicCheck() {
     _processingTimer?.cancel();
     _processingTimer =
-        Timer.periodic(const Duration(minutes: 15), (_) => _processIfOnline());
-    debugPrint('⏱️ Temporizador de verificación configurado (cada 15 min)');
+        Timer.periodic(const Duration(minutes: 10), (_) => _processIfOnlineReliable());
+    debugPrint('⏱️ Verification timer configured (every 10 min)');
   }
 
   void _onConnectivityChange(bool hasInternet) {
-    debugPrint('🔌 Cambio de conectividad detectado: $hasInternet');
+    debugPrint('🔌 Connectivity change detected: $hasInternet');
     
     if (hasInternet) {
-      // Agregar un pequeño retraso para asegurar que la conexión sea estable
-      Future.delayed(const Duration(seconds: 2), () async {
-        // Verificar nuevamente la conectividad para confirmar
-        if (await _connectivityService.checkConnectivity()) {
-          debugPrint('🔌 Conexión confirmada, procesando cola...');
+      // Wait longer to ensure stable connection
+      Future.delayed(const Duration(seconds: 5), () async {
+        if (await _isConnectionReliable()) {
+          debugPrint('🔌 Stable connection confirmed, processing queue...');
           processQueue();
           processOrderQueue();
+        } else {
+          debugPrint('🔌 Connection not stable enough for upload');
         }
       });
     }
   }
 
-  Future<void> _processIfOnline() async {
-    debugPrint('🔍 Verificando conectividad para procesar cola...');
-    if (await _connectivityService.checkConnectivity()) {
-      debugPrint('✅ Conexión disponible, procesando cola');
+  // Better connection reliability check
+  Future<bool> _isConnectionReliable() async {
+    try {
+      debugPrint('🔍 Testing connection reliability...');
+      
+      // First check basic connectivity
+      if (!await _connectivityService.checkConnectivity()) {
+        debugPrint('❌ Basic connectivity check failed');
+        return false;
+      }
+
+      // Test actual network access with timeout
+      final result = await InternetAddress.lookup('google.com')
+          .timeout(_connectionTimeout);
+      
+      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+        debugPrint('✅ Connection is reliable');
+        return true;
+      } else {
+        debugPrint('❌ DNS lookup failed');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Connection test failed: $e');
+      return false;
+    }
+  }
+
+  Future<void> _processIfOnlineReliable() async {
+    debugPrint('🔍 Checking reliable connectivity for processing...');
+    if (await _isConnectionReliable()) {
+      debugPrint('✅ Reliable connection available, processing queue');
       processQueue();
       processOrderQueue();
     } else {
-      debugPrint('❌ Sin conexión, no se procesará la cola ahora');
+      debugPrint('❌ No reliable connection, skipping upload');
     }
   }
 
   // ---------------------------------------------------------------------------
-  //  Carga / Guarda en SharedPreferences
+  //  Load / Save to SharedPreferences
   // ---------------------------------------------------------------------------
   Future<void> _loadQueuedProducts() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getStringList(_storageKey) ?? [];
 
-      debugPrint('📂 Cargando cola desde SharedPreferences (${raw.length} elementos)');
+      debugPrint('📂 Loading queue from SharedPreferences (${raw.length} elements)');
       _queuedProducts = raw
           .map((s) => QueuedProductModel.fromJson(jsonDecode(s)))
           .toList();
 
-      // Debug: mostrar todos los productos cargados
       _queuedProducts.forEach((p) => 
         debugPrint('Loaded from storage - Product ${p.queueId}: ${p.status} (${p.queuedTime})')
       );
 
-      _notify(); // primer disparo para quien ya está escuchando
-      debugPrint('✅ Cola cargada exitosamente desde almacenamiento persistente');
+      _notify();
+      debugPrint('✅ Queue loaded successfully from persistent storage');
     } catch (e, st) {
-      debugPrint('🚨 Error al cargar la cola: $e\n$st');
+      debugPrint('🚨 Error loading queue: $e\n$st');
       _queuedProducts = [];
       _notify();
     }
@@ -161,19 +183,14 @@ class OfflineQueueService {
       final prefs = await SharedPreferences.getInstance();
       final raw = _queuedProducts.map((p) => jsonEncode(p.toJson())).toList();
       await prefs.setStringList(_storageKey, raw);
-      debugPrint('💾 Cola guardada en SharedPreferences (${raw.length} elementos)');
-      
-      // Debug: mostrar todos los productos guardados
-      _queuedProducts.forEach((p) => 
-        debugPrint('Saved to storage - Product ${p.queueId}: ${p.status} (${p.queuedTime})')
-      );
+      debugPrint('💾 Queue saved to SharedPreferences (${raw.length} elements)');
     } catch (e) {
-      debugPrint('🚨 Error al guardar la cola: $e');
+      debugPrint('🚨 Error saving queue: $e');
     }
   }
 
   // ---------------------------------------------------------------------------
-  //  API pública
+  //  Public API
   // ---------------------------------------------------------------------------
   Future<String> addToQueue(ProductModel product) async {
     final id = const Uuid().v4();
@@ -186,11 +203,16 @@ class OfflineQueueService {
       queuedTime: DateTime.now(),
       statusMessage: 'Product saved to queue',
     );
+    
     _queuedProducts.add(qp);
     await _saveQueuedProducts();
     _notify();
-    _processIfOnline();
+    
     debugPrint('✅ Product added to queue: ${product.title}');
+
+    // Only try to process if we have a reliable connection
+    // Don't block the UI waiting for this
+    _processIfOnlineReliable();
 
     return id;
   }
@@ -214,92 +236,104 @@ class OfflineQueueService {
     _queuedProducts[idx] = _queuedProducts[idx].copyWith(
       status: 'queued',
       errorMessage: null,
-      statusMessage: 'Retrying upload...',
+      statusMessage: 'Queued for retry...',
     );
 
     await _saveQueuedProducts();
     _notify();
     debugPrint('✅ Product marked for retry: $id');
-    _processIfOnline();
+    
+    // Only try to process if connection is reliable
+    _processIfOnlineReliable();
   }
 
-  /// Procesa toda la cola (si no se está procesando ya).
   Future<void> processQueue() async {
     if (_isProcessing) {
-      debugPrint('⚠️ Ya hay un procesamiento en curso, abortando');
+      debugPrint('⚠️ Processing already in progress, aborting');
       return;
     }
     
-    debugPrint('🔄 Iniciando procesamiento de cola');
+    debugPrint('🔄 Starting queue processing');
     _isProcessing = true;
 
     try {
-      // Verificar conectividad primero
-      if (!await _connectivityService.checkConnectivity()) {
-        debugPrint('📵 Sin conexión, abortando procesamiento');
+      // Double-check connection reliability before processing
+      if (!await _isConnectionReliable()) {
+        debugPrint('📵 No reliable connection, aborting processing');
         _isProcessing = false;
         return;
       }
 
-      // Obtener productos para subir
       final toUpload = _queuedProducts.where((qp) =>
               qp.status == 'queued' ||
               (qp.status == 'failed' && qp.retryCount < _maxRetries))
           .toList();
 
-      debugPrint('📋 Productos para procesar: ${toUpload.length}');
+      debugPrint('📋 Products to process: ${toUpload.length}');
       
       if (toUpload.isEmpty) {
-        debugPrint('✅ No hay productos para procesar');
+        debugPrint('✅ No products to process');
         _isProcessing = false;
         return;
       }
 
-      // Procesar cada producto
       for (final qp in toUpload) {
-        debugPrint('⬆️ Procesando producto: ${qp.product.title}');
-        await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Checking internet connection...');
+        debugPrint('⬆️ Processing product: ${qp.product.title}');
+        
+        // Re-check connection before each upload
+        if (!await _isConnectionReliable()) {
+          debugPrint('⚠️ Lost connection during processing');
+          break;
+        }
+
+        await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Preparing upload...');
 
         try {
-          // ------------------- 1. subir imágenes -------------------
+          // Upload images with shorter timeout and better error handling
           final uploaded = <String>[];
           final pendingPaths = qp.product.pendingImagePaths ?? [];
           
-          debugPrint('🖼️ Subiendo ${pendingPaths.length} imágenes');
-          await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Uploading images (0/${pendingPaths.length})...');
+          debugPrint('🖼️ Uploading ${pendingPaths.length} images');
+          await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Uploading images...');
           
           for (var i = 0; i < pendingPaths.length; i++) {
             final local = pendingPaths[i];
-            // Verificar si el archivo existe
             final file = File(local);
+            
             if (!await file.exists()) {
-              debugPrint('⚠️ Archivo no encontrado: $local');
-              throw 'Archivo no encontrado: $local';
+              debugPrint('⚠️ File not found: $local');
+              throw 'Image file not found';
             }
             
-            // Subir imagen con timeout
+            // Check connection before each image upload
+            if (!await _isConnectionReliable()) {
+              throw 'Connection lost during upload';
+            }
+            
             String? url;
             try {
-              await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Uploading images (${i + 1}/${pendingPaths.length})...');
+              await _updateStatus(qp.queueId, 'uploading', 
+                statusMessage: 'Uploading image ${i + 1} of ${pendingPaths.length}...');
+                
               url = await _firebaseDAO.uploadProductImage(local)
-                  .timeout(const Duration(seconds: 30));
+                  .timeout(_uploadTimeout);
+                  
             } catch (e) {
-              debugPrint('⚠️ Error subiendo imagen: $e');
-              throw 'Error subiendo imagen: $e';
+              debugPrint('⚠️ Error uploading image: $e');
+              throw 'Failed to upload image: ${e.toString()}';
             }
             
-            if (url != null) {
+            if (url != null && url.isNotEmpty) {
               uploaded.add(url);
-              debugPrint('✅ Imagen subida: $url');
+              debugPrint('✅ Image uploaded: $url');
             } else {
-              debugPrint('⚠️ URL nula al subir $local');
-              throw 'Error subiendo $local: URL nula';
+              throw 'Image upload returned empty URL';
             }
           }
 
-          // ------------------- 2. crear documento -------------------
-          debugPrint('📄 Creando documento del producto');
-          await _updateStatus(qp.queueId, 'uploading', statusMessage: '¡Ya casi! Guardando información del producto...');
+          // Create product document
+          debugPrint('📄 Creating product document');
+          await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Saving product...');
           
           final updatedProduct = qp.product.copyWith(
             imageUrls: [...qp.product.imageUrls, ...uploaded],
@@ -310,55 +344,70 @@ class OfflineQueueService {
           String? newId;
           try {
             newId = await _firebaseDAO.createProduct(updatedProduct.toMap())
-                .timeout(const Duration(seconds: 20));
+                .timeout(_uploadTimeout);
           } catch (e) {
-            debugPrint('⚠️ Error creando producto: $e');
-            throw 'Error creando producto: $e';
+            debugPrint('⚠️ Error creating product: $e');
+            throw 'Failed to save product: ${e.toString()}';
           }
           
-          if (newId == null) {
-            debugPrint('⚠️ ID nulo al crear producto');
-            throw 'createProduct devolvió null';
+          if (newId == null || newId.isEmpty) {
+            throw 'Product creation returned empty ID';
           }
 
-          debugPrint('✅ Producto creado: ${qp.product.title}');
-          await _updateStatus(qp.queueId, 'completed', statusMessage: 'Product uploaded successfully!');
+          debugPrint('✅ Product created successfully: ${qp.product.title}');
+          await _updateStatus(qp.queueId, 'completed', statusMessage: 'Upload completed!');
+          
+          // Auto-cleanup completed item after a short delay
+          Future.delayed(const Duration(seconds: 3), () async {
+            await _removeCompletedItem(qp.queueId);
+          });
           
         } catch (e) {
-          debugPrint('❌ Error procesando producto ${qp.product.title}: $e');
+          debugPrint('❌ Error processing product ${qp.product.title}: $e');
+          String errorMessage = e.toString();
+          
+          // Simplify error messages for user
+          if (errorMessage.contains('TimeoutException')) {
+            errorMessage = 'Upload timeout - check connection';
+          } else if (errorMessage.contains('Connection lost')) {
+            errorMessage = 'Connection lost during upload';
+          } else if (errorMessage.contains('unavailable')) {
+            errorMessage = 'Service temporarily unavailable';
+          }
+          
           await _updateStatus(
             qp.queueId,
             'failed',
-            error: e.toString(),
-            statusMessage: 'Upload failed. Tap to retry.'
+            error: errorMessage,
+            statusMessage: 'Upload failed - tap to retry'
           );
         }
       }
       
-      debugPrint('✅ Procesamiento de cola completado');
+      debugPrint('✅ Queue processing completed');
       
     } catch (e, st) {
-      debugPrint('🚨 Error general en processQueue: $e\n$st');
+      debugPrint('🚨 General error in processQueue: $e\n$st');
     } finally {
       _isProcessing = false;
     }
   }
 
   Future<void> removeCompletedItems() async {
-    await forceCleanup();
+    await _cleanupCompletedItems();
   }
 
   // ---------------------------------------------------------------------------
-  //  Auxiliares privados
+  //  Private helpers
   // ---------------------------------------------------------------------------
   Future<void> _updateStatus(String queueId, String status, {String? error, String? statusMessage}) async {
     final index = _queuedProducts.indexWhere((qp) => qp.queueId == queueId);
     if (index == -1) {
-      debugPrint('⚠️ No se encontró el producto $queueId para actualizar estado');
+      debugPrint('⚠️ Product $queueId not found to update status');
       return;
     }
 
-    debugPrint('🔄 Actualizando estado de $queueId a "$status"${error != null ? " (error: $error)" : ""}');
+    debugPrint('🔄 Updating status of $queueId to "$status"${error != null ? " (error: $error)" : ""}');
     
     var qp = _queuedProducts[index].copyWith(
       status: status,
@@ -376,26 +425,58 @@ class OfflineQueueService {
     _queuedProducts[index] = qp;
     await _saveQueuedProducts();
     _notify();
-    debugPrint('✅ Estado actualizado para $queueId: $status');
+    debugPrint('✅ Status updated for $queueId: $status');
   }
 
   void _notify() => _internalController.add(List.unmodifiable(_queuedProducts));
 
+  // Remove a specific completed item
+  Future<void> _removeCompletedItem(String queueId) async {
+    final index = _queuedProducts.indexWhere((p) => p.queueId == queueId && p.status == 'completed');
+    if (index != -1) {
+      _queuedProducts.removeAt(index);
+      await _saveQueuedProducts();
+      _notify();
+      debugPrint('🧹 Removed completed item: $queueId');
+    }
+  }
+
+  // Cleanup old completed items
+  Future<void> _cleanupCompletedItems() async {
+    debugPrint('🧹 Cleaning up completed items');
+    
+    final now = DateTime.now();
+    final initialCount = _queuedProducts.length;
+    
+    // Remove completed items older than 30 minutes
+    _queuedProducts.removeWhere((p) => 
+      p.status == 'completed' && 
+      now.difference(p.queuedTime).inMinutes >= 30
+    );
+    
+    final removedCount = initialCount - _queuedProducts.length;
+    if (removedCount > 0) {
+      await _saveQueuedProducts();
+      _notify();
+      debugPrint('🧹 Removed $removedCount completed items');
+    }
+  }
+
   // ---------------------------------------------------------------------------
-  //  Limpieza
+  //  Cleanup
   // ---------------------------------------------------------------------------
   void dispose() {
-    debugPrint('🧹 Limpiando recursos de OfflineQueueService');
+    debugPrint('🧹 Cleaning up OfflineQueueService resources');
     _processingTimer?.cancel();
     _connectivitySubscription?.cancel();
     _internalController.close();
     _orderController.close();
-    debugPrint('✅ OfflineQueueService limpiado correctamente');
+    debugPrint('✅ OfflineQueueService cleaned up correctly');
   }
 
-/////_--------------------------------------------------------------------------------------------
-  //Vainas para el orders
-  //controller solo para ordenes
+  // ---------------------------------------------------------------------------
+  // Orders section
+  // ---------------------------------------------------------------------------
   final _orderController = StreamController<List<QueuedOrderModel>>.broadcast();
 
   Stream<List<QueuedOrderModel>> get orderQueueStream => Stream.multi((controller) {
@@ -405,7 +486,6 @@ class OfflineQueueService {
   });
 
   List<QueuedOrderModel> get queuedOrders => List.unmodifiable(_queuedOrders);
-
 
   Future<String> addOrderToQueue(String orderID, String hashConfirm) async {
     final id = const Uuid().v4();
@@ -422,7 +502,7 @@ class OfflineQueueService {
     
     await _saveOrders();
     _notifyOrders();
-    _processIfOnline();
+    _processIfOnlineReliable();
     return id;
   }
 
@@ -444,7 +524,7 @@ class OfflineQueueService {
   void _notifyOrders() => _orderController.add(List.unmodifiable(_queuedOrders));
 
   Future<void> processOrderQueue() async {
-    if (_isProcessingOrders || !await _connectivityService.checkConnectivity()) {
+    if (_isProcessingOrders || !await _isConnectionReliable()) {
       return;
     }
     
@@ -462,7 +542,7 @@ class OfflineQueueService {
           await _firebaseDAO.updateOrderStatus(
             order.orderID, 
             'Delivered'
-          ).timeout(const Duration(seconds: 20));
+          ).timeout(_uploadTimeout);
           
           await _updateOrderStatus(order.queueId, 'completed');
         } catch (e) {
@@ -493,31 +573,5 @@ class OfflineQueueService {
     _queuedOrders[index] = updated;
     await _saveOrders();
     _notifyOrders();
-  }
-
-  // Nuevo método para forzar limpieza
-  Future<void> forceCleanup() async {
-    debugPrint('🧹 Forzando limpieza de la cola');
-    
-    // Debug: mostrar estado inicial
-    _queuedProducts.forEach((p) => 
-      debugPrint('Before force cleanup - Product ${p.queueId}: ${p.status} (${p.queuedTime})')
-    );
-    
-    // Eliminar solo productos completados que tengan más de 24 horas
-    final now = DateTime.now();
-    _queuedProducts.removeWhere((p) => 
-      p.status == 'completed' && 
-      now.difference(p.queuedTime).inHours >= 24
-    );
-    
-    // Guardar cambios
-    await _saveQueuedProducts();
-    _notify();
-    
-    // Debug: mostrar estado final
-    _queuedProducts.forEach((p) => 
-      debugPrint('After force cleanup - Product ${p.queueId}: ${p.status} (${p.queuedTime})')
-    );
   }
 }
