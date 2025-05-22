@@ -158,68 +158,91 @@ class _QueuedProductsScreenState extends State<QueuedProductsScreen> {
       child: SafeArea(
         child: Column(
           children: [
-            //──────────────────  BANNER ONLINE/OFFLINE  ──────────────────
-            StreamBuilder<bool>(
-              stream: _net.connectivityStream,
-              initialData: _net.hasInternetAccess,
-              builder: (_, s) {
-                final online = s.data ?? false;
+          
+StreamBuilder<bool>(
+  stream: _net.connectivityStream,
+  initialData: _net.hasInternetAccess,
+  builder: (_, s) {
+    final online = s.data ?? false;
 
-                if (online && !_net.isChecking) {
-                  final pending = _product.queuedProductsSnapshot
-                      .where((p) => p.status == 'queued' || p.status == 'failed')
-                      .length;
-                  return pending == 0
-                      ? const SizedBox.shrink()
-                      : _banner(
-                          icon: CupertinoIcons.cloud_upload,
-                          color: AppColors.primaryBlue,
-                          text: '$pending product${pending == 1 ? '' : 's'} ready to upload',
-                          button: 'Upload Now',
-                          onTap: () async {
-                            showUploadProgress(context, message: 'Starting upload...');
-                            try {
-                              await _product.processQueue();
-                              // Small delay to show completion
-                              await Future.delayed(const Duration(milliseconds: 500));
-                            } finally {
-                              hideUploadProgress(context);
-                            }
-                          },
-                        );
-                }
+    return StreamBuilder<List<QueuedProductModel>>(
+      stream: _product.queuedProductsStream,
+      initialData: _product.queuedProductsSnapshot,
+      builder: (context, queueSnapshot) {
+        final queuedProducts = queueSnapshot.data ?? [];
+        final pending = queuedProducts
+            .where((p) => p.status == 'queued' || p.status == 'failed')
+            .length;
+        final uploading = queuedProducts
+            .where((p) => p.status == 'uploading')
+            .length;
 
-                if (!online) {
-                  final hasItems = _product.queuedProductsSnapshot
-                      .where((p) => p.status == 'queued' || p.status == 'failed')
-                      .isNotEmpty;
-                  
-                  return hasItems ? _banner(
-                    icon: CupertinoIcons.wifi_slash,
-                    color: CupertinoColors.systemOrange,
-                    text: 'No internet. Products will upload automatically when connected.',
-                    button: 'Retry',
-                    onTap: () => _net.checkConnectivity(),
-                  ) : const SizedBox.shrink();
-                }
+        // Show auto-upload in progress
+        if (uploading > 0) {
+          return _banner(
+            icon: CupertinoIcons.cloud_upload,
+            color: AppColors.primaryBlue,
+            text: 'Auto-uploading $uploading product${uploading == 1 ? '' : 's'}...',
+            button: 'View',
+            onTap: () {}, // Do nothing, just show status
+          );
+        }
 
-                return Container(
-                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: CupertinoColors.systemGrey6,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(children: [
-                    const CupertinoActivityIndicator(radius: 10),
-                    const SizedBox(width: 12),
-                    Text('Checking connection...',
-                        style: GoogleFonts.inter(
-                            fontSize: 14, color: CupertinoColors.systemGrey))
-                  ]),
-                );
-              },
+        // Show manual upload option when online with pending items
+        if (online && !_net.isChecking && pending > 0) {
+          return _banner(
+            icon: CupertinoIcons.cloud_upload,
+            color: AppColors.primaryBlue,
+            text: '$pending product${pending == 1 ? '' : 's'} ready to upload',
+            button: 'Upload Now',
+            onTap: () async {
+              showUploadProgress(context, message: 'Starting upload...');
+              try {
+                await _product.processQueue();
+                await Future.delayed(const Duration(milliseconds: 500));
+              } finally {
+                hideUploadProgress(context);
+              }
+            },
+          );
+        }
+
+        // Show offline status when there are pending items
+        if (!online && pending > 0) {
+          return _banner(
+            icon: CupertinoIcons.wifi_slash,
+            color: CupertinoColors.systemOrange,
+            text: '$pending product${pending == 1 ? '' : 's'} waiting for internet. Will upload automatically when connected.',
+            button: 'Retry',
+            onTap: () => _net.checkConnectivity(),
+          );
+        }
+
+        // Show checking connection
+        if (_net.isChecking) {
+          return Container(
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemGrey6,
+              borderRadius: BorderRadius.circular(12),
             ),
+            child: Row(children: [
+              const CupertinoActivityIndicator(radius: 10),
+              const SizedBox(width: 12),
+              Text('Checking connection...',
+                  style: GoogleFonts.inter(
+                      fontSize: 14, color: CupertinoColors.systemGrey))
+            ]),
+          );
+        }
+
+        // No banner needed
+        return const SizedBox.shrink();
+      },
+    );
+  },
+),
 
             const SizedBox(height: 8),
 

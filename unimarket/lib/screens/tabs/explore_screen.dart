@@ -128,6 +128,8 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
     _isDisposed = true;
     super.dispose();
   }
+
+  
   
   void _handleRetryPressed() async {
     // Force a connectivity check
@@ -505,47 +507,17 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
                 ),
               ),
             
-            // NUEVO: Botón para ver la cola de productos
-            Padding(
-              padding: const EdgeInsets.only(right: 8.0),
-              child: GestureDetector(
-                onTap: _navigateToQueuedProducts,
-                child: Stack(
-                  children: [
-                    Icon(
-                      CupertinoIcons.clock,
-                      size: 24,
-                      color: AppColors.primaryBlue,
-                    ),
-                    if (_queuedProductsCount > 0)
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        child: Container(
-                          padding: EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: CupertinoColors.systemRed,
-                            shape: BoxShape.circle,
-                          ),
-                          constraints: BoxConstraints(
-                            minWidth: 14,
-                            minHeight: 14,
-                          ),
-                          child: Text(
-                            _queuedProductsCount > 9 ? '9+' : _queuedProductsCount.toString(),
-                            style: TextStyle(
-                              color: CupertinoColors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
+        Padding(
+  padding: const EdgeInsets.only(right: 8.0),
+  child: GestureDetector(
+    onTap: _navigateToQueuedProducts,
+    child: Icon(
+      CupertinoIcons.clock,
+      size: 24,
+      color: AppColors.primaryBlue,
+    ),
+  ),
+),
             
             // Ícono de búsqueda
             CupertinoButton(

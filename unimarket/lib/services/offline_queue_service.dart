@@ -88,14 +88,8 @@ Future<void> initialize() async {
     _notify();
   }
 }
-  void _setupPeriodicCheck() {
-    _processingTimer?.cancel();
-    _processingTimer =
-        Timer.periodic(const Duration(minutes: 15), (_) => _processIfOnline());
-    debugPrint('⏱️ Verification timer configured (every 15 min)');
-  }
 
-  void _onConnectivityChange(bool hasInternet) {
+ void _onConnectivityChange(bool hasInternet) {
     debugPrint('🔌 Connectivity change detected: $hasInternet');
     
     if (hasInternet) {
@@ -110,16 +104,35 @@ Future<void> initialize() async {
     }
   }
 
-  Future<void> _processIfOnline() async {
-    debugPrint('🔍 Checking connectivity to process queue...');
-    if (await _connectivityService.checkConnectivity()) {
-      debugPrint('✅ Connection available, processing queue');
-      processQueue();
-      processOrderQueue();
-    } else {
-      debugPrint('❌ No connection, queue will not be processed now');
-    }
+  void _setupPeriodicCheck() {
+    _processingTimer?.cancel();
+    _processingTimer =
+        Timer.periodic(const Duration(minutes: 15), (_) => _processIfOnline());
+    debugPrint('⏱️ Verification timer configured (every 15 min)');
   }
+
+ 
+
+  Future<void> _processIfOnline() async {
+  debugPrint('🔍 Checking connectivity to process queue...');
+  
+  // Check for pending items first
+  final pendingItems = _queuedProducts.where((qp) =>
+      qp.status == 'queued' || qp.status == 'failed').toList();
+  
+  if (pendingItems.isEmpty) {
+    debugPrint('ℹ️ No pending items to process');
+    return;
+  }
+  
+  if (await _connectivityService.checkConnectivity()) {
+    debugPrint('✅ Connection available, processing ${pendingItems.length} pending items');
+    processQueue();
+    processOrderQueue();
+  } else {
+    debugPrint('❌ No connection, ${pendingItems.length} items will wait for connectivity');
+  }
+}
 
   // ---------------------------------------------------------------------------
   //  Load / Save to SharedPreferences
