@@ -26,28 +26,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
   List<Map<String, dynamic>> buyingProducts = [];
   List<Map<String, dynamic>> historyProducts = [];
   List<Map<String, dynamic>> sellingProducts = [];
-  final ProductService _productService = ProductService();
+  final ProductService _productService =  ProductService();
 
-  //Aquí se guardan todas las órdenes (compras, ventas, historial) usando su orderId como clave.
   final CacheOrdersService<String, Map<String, dynamic>> _ordersCache =
-      CacheOrdersService(50, "orders_cache"); // Almacena hasta 50 órdenes individuales
-  final ConnectivityService _connectivityService = ConnectivityService(); // Singleton instance
+      CacheOrdersService(50, "orders_cache");
+  final ConnectivityService _connectivityService = ConnectivityService();
   late StreamSubscription<bool> _connectivitySubscription;
   late StreamSubscription<bool> _checkingSubscription;
 
-  bool _isConnected = true; // Connectivity state
+  bool _isConnected = true;
   bool _isCheckingConnectivity = false;
 
   @override
-  // `_initializeCache()` es una función que realiza una tarea asíncrona (cargar datos del caché).
-  // Debido a que `initState()` no puede ser `async`, se usa `.then()` para manejar la ejecución del código después de que la tarea asíncrona haya terminado.
   void initState() {
     super.initState();
-      // Se usa then para encadenar acciones que se ejecutan después de que el Future de _initializeCache haya completado su ejecución.
     _initializeCache().then((_) {
       _setupConnectivityListener();
-
-      // Cargar las órdenes desde el caché o usa fetch si no están en caché
       _loadOrdersWithCache("buying", _fetchBuyingOrders);
       _loadOrdersWithCache("history", _fetchHistoryOrders);
       _loadOrdersWithCache("selling", _fetchSellingOrders);
@@ -56,7 +50,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Future<void> _initializeCache() async {
-    await _ordersCache.loadFromStorage(); // Load data from SharedPreferences
+    await _ordersCache.loadFromStorage();
   }
 
   void _setupConnectivityListener() {
@@ -64,11 +58,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
       setState(() {
         _isConnected = isConnected;
       });
-      if (!_isConnected) {
-        print("You are offline. Some features may not work.");
-      } else {
-        print("You are online.");
-      }
     });
 
     _checkingSubscription = _connectivityService.checkingStream.listen((bool isChecking) {
@@ -79,7 +68,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   void _handleRetryPressed() async {
-    // Forzar una verificación de conectividad
     bool hasInternet = await _connectivityService.checkConnectivity();
     setState(() {
       _isConnected = hasInternet;
@@ -88,14 +76,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   @override
   void dispose() {
-    _connectivitySubscription.cancel(); // Cancel the subscription
+    _connectivitySubscription.cancel();
     _checkingSubscription.cancel();
     super.dispose();
   }
 
   void _clearCache() async {
-    await _ordersCache.clear(); // Clear the cache in memory and SharedPreferences
-    print("Cache cleared");
+    await _ordersCache.clear();
     setState(() {
       buyingProducts = [];
       historyProducts = [];
@@ -104,65 +91,40 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   void _checkAndShowPeakHourNotification() {
-    // Placeholder implementation for the method
     print("Checking and showing peak hour notification...");
   }
 
- Future<void> _loadOrdersWithCache(
-
-  //parámetro 1
-    String cacheKey, //indica el tipo de orden (buying, history, selling)
-  //parámetro 2 que trae función que devuelve lista de ordenes desde el servidor 
-  Future<List<Map<String, dynamic>>> Function() fetchFunction) async {
-
-  // Verifica si las órdenes están en el caché
-  final cachedOrders = <Map<String, dynamic>>[];
-  print("Checking cache for $cacheKey orders...");
-
-  //recorre lista actual e intenta cargar ese id correspondiente desde el caché
-  for (var order in buyingProducts) {
-    //Se intenta cargar las ordenes desde el caché
-    final cachedOrder = _ordersCache.get(order['orderId']);
-    if (cachedOrder != null) {
-      print("Found cached order: ${order['orderId']}");
-      cachedOrders.add(cachedOrder);
+  Future<void> _loadOrdersWithCache(
+      String cacheKey, Future<List<Map<String, dynamic>>> Function() fetchFunction) async {
+    final cachedOrders = <Map<String, dynamic>>[];
+    for (var order in buyingProducts) {
+      final cachedOrder = _ordersCache.get(order['orderId']);
+      if (cachedOrder != null) {
+        cachedOrders.add(cachedOrder);
+      }
     }
-  }
-  if (cachedOrders.isNotEmpty) {
-    print("Loaded $cacheKey orders from cache: ${cachedOrders.length} items");
-
-    //actualizar interfaz con las ordenes que se cargaron desde el caché
+    if (cachedOrders.isNotEmpty) {
+      setState(() {
+        if (cacheKey == "buying") buyingProducts = cachedOrders;
+        if (cacheKey == "history") historyProducts = cachedOrders;
+        if (cacheKey == "selling") sellingProducts = cachedOrders;
+      });
+      return;
+    }
+    final orders = await fetchFunction();
+    for (var order in orders) {
+      await _ordersCache.put(order['orderId'], order);
+    }
     setState(() {
-      if (cacheKey == "buying") buyingProducts = cachedOrders;
-      if (cacheKey == "history") historyProducts = cachedOrders;
-      if (cacheKey == "selling") sellingProducts = cachedOrders;
+      if (cacheKey == "buying") buyingProducts = orders;
+      if (cacheKey == "history") historyProducts = orders;
+      if (cacheKey == "selling") sellingProducts = orders;
     });
-    return;
   }
-  // Si no están en el caché, se obtienen las ordenes desde el servidor
-  print("Fetching $cacheKey orders from server...");
-  final orders = await fetchFunction();
-  for (var order in orders) {
-    //como no estaban en caché, se agregan
-    print("Adding order to cache: ${order['orderId']}");
-    await _ordersCache.put(order['orderId'], order); // Agrega cada orden al caché
-  }
-  print("Stored $cacheKey orders in cache: ${orders.length} items");
-  setState(() {
-    if (cacheKey == "buying") buyingProducts = orders;
-    if (cacheKey == "history") historyProducts = orders;
-    if (cacheKey == "selling") sellingProducts = orders;
-  });
-}
-
 
   Future<List<Map<String, dynamic>>> _fetchBuyingOrders() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      print("User is not authenticated");
-      return [];
-    }
-
+    if (user == null) return [];
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('orders')
@@ -175,13 +137,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return {
           "orderId": doc.id,
           "productId": doc['productID'],
-          "name": product != null ? product.title : "Product ID: ${doc['productID']}",
+          "name": product?.title ?? "Product ID: ${doc['productID']}",
           "details": "Order Date: ${doc['orderDate'].toDate()}",
           "status": doc['status'],
           "action": doc['status'] == "Delivered" ? "Help" : doc['status'] == "Unpaid" ? "Complete" : "",
-          "image": product != null && product.imageUrls.isNotEmpty
-              ? product.imageUrls[0]
-              : "assets/svgs/ImagePlaceHolder.svg",
+          "image": product?.imageUrls.isNotEmpty == true ? product!.imageUrls[0] : "assets/svgs/ImagePlaceHolder.svg",
           "price": _formatPrice(doc['price']),
         };
       }).toList());
@@ -261,19 +221,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   String _formatPrice(dynamic price) {
-    int wholePart = price.toInt();
-    String priceString = wholePart.toString();
-    String result = '';
-
-    for (int i = 0; i < priceString.length; i++) {
-      result += priceString[i];
-      int positionFromRight = priceString.length - 1 - i;
-      if (positionFromRight % 3 == 0 && i < priceString.length - 1) {
-        result += '.';
-      }
-    }
-
-    return "$result \$";
+    final priceString = price.toInt().toString();
+    return "${priceString.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (match) => '.')} \$";
   }
 
   List<Map<String, dynamic>> _getCurrentProducts() {
@@ -290,21 +239,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   @override
-Widget build(BuildContext context) {
-  return CupertinoPageScaffold(
-    navigationBar: CupertinoNavigationBar(
-      middle: Text(
-        "Orders",
-        style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+  Widget build(BuildContext context) {
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        //microoptimization const 
+        middle: const Text(
+          "Orders",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          child: const Icon(CupertinoIcons.trash, color: AppColors.primaryBlue),
+          onPressed: _clearCache,
+        ),
       ),
-      trailing: CupertinoButton(
-        padding: EdgeInsets.zero,
-        child: const Icon(CupertinoIcons.trash, color: AppColors.primaryBlue),
-        onPressed: _clearCache, // Llama al método para borrar el caché
-      ),
-    ),
-    child: Stack(
-      children: [
+      child: Stack(
+        children: [
           SafeArea(
             child: Column(
               children: [
@@ -338,12 +288,9 @@ Widget build(BuildContext context) {
                           CupertinoButton(
                             padding: EdgeInsets.zero,
                             minSize: 0,
-                            child: Text(
+                            child: const Text(
                               "Retry",
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: AppColors.primaryBlue,
-                              ),
+                              style: TextStyle(fontSize: 12, color: AppColors.primaryBlue),
                             ),
                             onPressed: _handleRetryPressed,
                           ),
@@ -378,8 +325,8 @@ Widget build(BuildContext context) {
       padding: const EdgeInsets.symmetric(horizontal: 30),
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.transparentGrey,
-          borderRadius: BorderRadius.circular(30),
+          color: CupertinoColors.white, // Fondo blanco para que no se vea raro
+          borderRadius: BorderRadius.circular(30), // Bordes redondeados
         ),
         padding: const EdgeInsets.all(8),
         child: CupertinoSegmentedControl<int>(
@@ -394,11 +341,10 @@ Widget build(BuildContext context) {
             1: _buildTabItem("Buying", 1),
             2: _buildTabItem("Selling", 2),
           },
-          selectedColor: AppColors.primaryBlue,
-          borderColor: CupertinoColors.transparent,
-          unselectedColor: CupertinoColors.transparent,
-          pressedColor: CupertinoColors.systemGrey4.withOpacity(0.2),
-          padding: EdgeInsets.zero,
+          selectedColor: AppColors.primaryBlue, // Color del botón seleccionado
+          borderColor: AppColors.primaryBlue, // Borde azul para que se vea como antes
+          unselectedColor: CupertinoColors.white, // Fondo blanco para los botones no seleccionados
+          pressedColor: CupertinoColors.systemGrey4.withOpacity(0.2), // Color al presionar
         ),
       ),
     );
@@ -413,86 +359,81 @@ Widget build(BuildContext context) {
         style: GoogleFonts.inter(
           fontSize: 14,
           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          color: isSelected ? CupertinoColors.white : CupertinoColors.black.withOpacity(0.7),
+          color: isSelected ? CupertinoColors.white : AppColors.primaryBlue, // Ajuste de color
         ),
       ),
     );
   }
 
   Widget _buildProductItem(Map<String, dynamic> product) {
-  return CupertinoButton(
-    padding: EdgeInsets.zero,
-    onPressed: () {
-      // Marca el producto como usado en el caché
-      _ordersCache.put(product['orderId'], product);
-
-      // Navega a la pantalla de detalles
-      Navigator.push(
-        context,
-        CupertinoPageRoute(
-          builder: (context) => OrderDetailsScreen(order: product),
-        ),
-      );
-    },
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: FutureBuilder<File?>(
-              //future es el resultado de la función _loadCachedImage
-              // que carga la imagen desde el caché o la descarga si no está en caché
-              future: _loadCachedImage(product["image"]),
-              //función que construye el widget basado en el estado del Future (snapshot contiene estado actual)
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const CupertinoActivityIndicator();
-                } else if (snapshot.hasError || snapshot.data == null) {
-                  return SvgPicture.asset(
-                    "assets/svgs/ImagePlaceHolder.svg",
-                    width: 100,
-                    height: 100,
-                    fit: BoxFit.cover,
-                  );
-                } else {
-                  return Image.file(
-                    snapshot.data!,
-                    width: 100,
-                    height: 100,
-                    fit: BoxFit.cover,
-                  );
-                }
-              },
-            ),
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: () {
+        _ordersCache.put(product['orderId'], product);
+        Navigator.push(
+          context,
+          CupertinoPageRoute(
+            builder: (context) => OrderDetailsScreen(order: product),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product["name"]!,
-                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
-                ),
-                Text(
-                  product["details"]!,
-                  style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
-                ),
-                if (product.containsKey("price"))
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: FutureBuilder<File?>(
+                future: _loadCachedImage(product["image"]),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    // microoptimization const
+                    return const CupertinoActivityIndicator();
+                  } else if (snapshot.hasError || snapshot.data == null) {
+                    return SvgPicture.asset(
+                      "assets/svgs/ImagePlaceHolder.svg",
+                      width: 100,
+                      height: 100,
+                      fit: BoxFit.cover,
+                    );
+                  } else {
+                    return Image.file(
+                      snapshot.data!,
+                      width: 100,
+                      height: 100,
+                      fit: BoxFit.cover,
+                    );
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    product["price"]!,
-                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.primaryBlue),
+                    product["name"]!,
+                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
                   ),
-                if (product.containsKey("status"))
                   Text(
-                    product["status"]!,
+                    product["details"]!,
                     style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
                   ),
-              ],
+                  if (product.containsKey("price"))
+                    Text(
+                      product["price"]!,
+                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.primaryBlue),
+                    ),
+                  if (product.containsKey("status"))
+                    Text(
+                      product["status"]!,
+                      style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
+                    ),
+                ],
+              ),
             ),
-          ),
             if (_selectedTab != 2) ...[
               CupertinoButton(
                 padding: EdgeInsets.zero,
@@ -517,22 +458,20 @@ Widget build(BuildContext context) {
                 padding: EdgeInsets.zero,
                 onPressed: () {
                   if (!_isConnected) {
-                    // Show offline pop-up
                     showCupertinoDialog(
                       context: context,
                       builder: (ctx) => CupertinoAlertDialog(
-                        title: Text("Uh! Oh!"),
-                        content: Text("You can't make payments offline."),
+                        title: const Text("Uh! Oh!"),
+                        content: const Text("You can't make payments offline."),
                         actions: [
                           CupertinoDialogAction(
-                            child: Text("OK"),
+                            child: const Text("OK"),
                             onPressed: () => Navigator.pop(ctx),
                           ),
                         ],
                       ),
                     );
                   } else {
-                    // Navigate to payment screen
                     Navigator.push(
                       context,
                       CupertinoPageRoute(
@@ -578,35 +517,13 @@ Widget build(BuildContext context) {
     );
   }
 
-//Cache strategy sprint 3: Librería Flutter cache manager con DefaultCacheManager
-Future<File?> _loadCachedImage(String? imageUrl) async {
-  if (imageUrl == null || imageUrl.isEmpty) {
-    print("No image URL provided.");
-    return null;
-  }
-
-  try {
-    // Intenta obtener la imagen desde el caché primero (caching strategy: Librería Flutter cache manager)
-    final file = await DefaultCacheManager().getSingleFile(imageUrl);
-
-    if (file.existsSync()) {
-      // Si la imagen está en caché y existe, la carga desde el caché
-      if (_isConnected) {
-        print("Image downloaded and cached successfully: $imageUrl");
-      } else {
-        print("Offline: Loaded image from cache: $imageUrl");
-      }
-      return file;
-    } else {
-      // Si no existe en el caché, la descarga
-      print("Image not found in cache, downloading: $imageUrl");
-      final downloadedFile = await DefaultCacheManager().getSingleFile(imageUrl);
-      print("Image downloaded and cached: $imageUrl");
-      return downloadedFile;
+  Future<File?> _loadCachedImage(String? imageUrl) async {
+    if (imageUrl == null || imageUrl.isEmpty) return null;
+    try {
+      final file = await DefaultCacheManager().getSingleFile(imageUrl);
+      return file.existsSync() ? file : null;
+    } catch (e) {
+      return null;
     }
-  } catch (e) {
-    print("Error loading or caching image: $imageUrl. Error: $e");
-    return null;
   }
-}
 }
