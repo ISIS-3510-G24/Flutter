@@ -5,6 +5,7 @@ import 'package:unimarket/services/product_service.dart';
 import 'package:unimarket/services/offline_queue_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/screens/product/queued_products_screen.dart';
+import 'package:flutter/foundation.dart';
 
 class QueuedProductIndicator extends StatelessWidget {
   const QueuedProductIndicator({Key? key}) : super(key: key);
@@ -18,9 +19,15 @@ class QueuedProductIndicator extends StatelessWidget {
       builder: (context, snapshot) {
         final queuedProducts = snapshot.data ?? [];
         
-        // Filtrar para obtener sólo elementos pendientes (no completados)
+        // Debug log para ver todos los productos y sus estados
+        debugPrint('📦 Total products in queue: ${queuedProducts.length}');
+        queuedProducts.forEach((p) => debugPrint('Product ${p.queueId}: ${p.status}'));
+        
+        // Filtrar para obtener sólo elementos pendientes (no completados ni uploading)
         final pendingProducts = queuedProducts.where((item) => 
-          item.status != 'completed').toList();
+          item.status == 'queued' || item.status == 'failed').toList();
+        
+        debugPrint('📋 Pending products: ${pendingProducts.length}');
         
         if (pendingProducts.isEmpty) {
           return SizedBox.shrink(); // Ocultar si no hay productos pendientes
@@ -28,8 +35,9 @@ class QueuedProductIndicator extends StatelessWidget {
         
         // Contar por estado
         final queuedCount = pendingProducts.where((p) => p.status == 'queued').length;
-        final uploadingCount = pendingProducts.where((p) => p.status == 'uploading').length;
         final failedCount = pendingProducts.where((p) => p.status == 'failed').length;
+        
+        debugPrint('📊 Queued: $queuedCount, Failed: $failedCount');
         
         return GestureDetector(
           onTap: () {
@@ -65,28 +73,23 @@ class QueuedProductIndicator extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "${pendingProducts.length} producto${pendingProducts.length == 1 ? '' : 's'} en cola",
+                        '${queuedProducts.length} product${queuedProducts.length != 1 ? 's' : ''} in queue',
                         style: GoogleFonts.inter(
+                          color: CupertinoColors.white,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.primaryBlue,
                         ),
                       ),
                       SizedBox(height: 4),
                       Row(
                         children: [
-                          if (uploadingCount > 0)
-                            _buildStatusBadge(
-                              "$uploadingCount subiendo", 
-                              AppColors.primaryBlue
-                            ),
                           if (queuedCount > 0)
                             _buildStatusBadge(
-                              "$queuedCount en cola", 
+                              "$queuedCount pending", 
                               CupertinoColors.systemOrange
                             ),
                           if (failedCount > 0)
                             _buildStatusBadge(
-                              "$failedCount con error", 
+                              "$failedCount failed", 
                               CupertinoColors.systemRed
                             ),
                         ],

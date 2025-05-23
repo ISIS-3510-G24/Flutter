@@ -62,14 +62,40 @@ class ConnectivityService {
   static void _connectivityCheckIsolate(SendPort sendPort) async {
     bool hasAccess = false;
     
-    try {
-      // Try to connect to a reliable service (Google DNS)
-      final socket = await Socket.connect('8.8.8.8', 53)
-          .timeout(Duration(seconds: 3));
-      socket.destroy();
-      hasAccess = true;
-    } catch (e) {
-      hasAccess = false;
+    // Lista de endpoints para probar
+    final endpoints = [
+      {'host': '8.8.8.8', 'port': 53},      // Google DNS
+      {'host': '1.1.1.1', 'port': 53},      // Cloudflare DNS
+      {'host': 'www.google.com', 'port': 80}, // Google Web
+      {'host': 'www.cloudflare.com', 'port': 80}, // Cloudflare Web
+    ];
+    
+    // Intentar cada endpoint hasta que uno funcione
+    for (final endpoint in endpoints) {
+      try {
+        final socket = await Socket.connect(
+          endpoint['host'] as String,
+          endpoint['port'] as int,
+        ).timeout(const Duration(seconds: 2));
+        socket.destroy();
+        hasAccess = true;
+        break;
+      } catch (e) {
+        // Continuar con el siguiente endpoint
+        continue;
+      }
+    }
+    
+    // Si ningún endpoint funcionó, intentar una última vez con un timeout más largo
+    if (!hasAccess) {
+      try {
+        final socket = await Socket.connect('www.google.com', 80)
+            .timeout(const Duration(seconds: 5));
+        socket.destroy();
+        hasAccess = true;
+      } catch (e) {
+        hasAccess = false;
+      }
     }
     
     // Send result to main thread
@@ -84,7 +110,7 @@ class ConnectivityService {
     _checkingController.add(true); // Notify listeners that we're checking
     
     // Add a timeout to prevent getting stuck in checking state
-    Timer timeoutTimer = Timer(Duration(seconds: 5), () {
+    Timer timeoutTimer = Timer(Duration(seconds: 8), () {
       if (_isCheckingConnectivity) {
         _isCheckingConnectivity = false;
         _checkingController.add(false);
@@ -122,7 +148,7 @@ class ConnectivityService {
         
         // Wait for response with timeout
         bool hasInternet = await receivePort.first.timeout(
-          Duration(seconds: 3),
+          Duration(seconds: 6),
           onTimeout: () => false,
         );
         
