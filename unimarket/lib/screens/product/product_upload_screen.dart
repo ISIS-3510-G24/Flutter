@@ -38,6 +38,13 @@ class UploadProductScreenState extends State<UploadProductScreen> {
   MeasurementData? _measurementData;
   List<String> _measurementTexts = [];
 
+  // Límites de caracteres
+  final int _maxCharLength = 100;
+  final int _maxPriceLength = 10;
+  int _titleLength = 0;
+  int _descriptionLength = 0;
+  int _priceLength = 0;
+
   // Form fields
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
@@ -84,9 +91,65 @@ class UploadProductScreenState extends State<UploadProductScreen> {
       }
     });
     
-    _titleController.addListener(_saveDraftLocally);
-    _descriptionController.addListener(_saveDraftLocally);
-    _priceController.addListener(_saveDraftLocally);
+    // Agregar listeners para el contador de caracteres
+    _titleController.addListener(() {
+      if (_titleController.text.length > _maxCharLength) {
+        _titleController.text = _titleController.text.substring(0, _maxCharLength);
+        _titleController.selection = TextSelection.fromPosition(
+          TextPosition(offset: _maxCharLength)
+        );
+        _showCharLimitAlert();
+      }
+      setState(() {
+        _titleLength = _titleController.text.length;
+      });
+      _saveDraftLocally();
+    });
+    
+    _descriptionController.addListener(() {
+      if (_descriptionController.text.length > _maxCharLength) {
+        _descriptionController.text = _descriptionController.text.substring(0, _maxCharLength);
+        _descriptionController.selection = TextSelection.fromPosition(
+          TextPosition(offset: _maxCharLength)
+        );
+        _showCharLimitAlert();
+      }
+      setState(() {
+        _descriptionLength = _descriptionController.text.length;
+      });
+      _saveDraftLocally();
+    });
+    
+    _priceController.addListener(() {
+      if (_priceController.text.length > _maxPriceLength) {
+        _priceController.text = _priceController.text.substring(0, _maxPriceLength);
+        _priceController.selection = TextSelection.fromPosition(
+          TextPosition(offset: _maxPriceLength)
+        );
+        _showPriceLimitAlert();
+      }
+      
+      // Validar que solo contenga números y un punto decimal
+      String value = _priceController.text;
+      if (value.isNotEmpty) {
+        // Remover el símbolo de peso si existe
+        value = value.replaceAll('\$', '').trim();
+        
+        // Validar formato
+        if (!RegExp(r'^\d*\.?\d{0,2}$').hasMatch(value)) {
+          // Si no coincide con el formato, revertir al último valor válido
+          _priceController.text = value.replaceAll(RegExp(r'[^\d.]'), '');
+          _priceController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _priceController.text.length)
+          );
+        }
+      }
+      
+      setState(() {
+        _priceLength = _priceController.text.length;
+      });
+      _saveDraftLocally();
+    });
   }
 
   Future<void> _checkConnectivityAndLoad() async {
@@ -113,9 +176,44 @@ class UploadProductScreenState extends State<UploadProductScreen> {
     _descriptionController.dispose();
     _priceController.dispose();
     
-    _titleController.removeListener(_saveDraftLocally);
-    _descriptionController.removeListener(_saveDraftLocally);
-    _priceController.removeListener(_saveDraftLocally);
+    _titleController.removeListener(() {
+      setState(() {
+        _titleLength = _titleController.text.length;
+        if (_titleLength > _maxCharLength) {
+          _titleController.text = _titleController.text.substring(0, _maxCharLength);
+          _titleController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _maxCharLength)
+          );
+        }
+      });
+      _saveDraftLocally();
+    });
+    
+    _descriptionController.removeListener(() {
+      setState(() {
+        _descriptionLength = _descriptionController.text.length;
+        if (_descriptionLength > _maxCharLength) {
+          _descriptionController.text = _descriptionController.text.substring(0, _maxCharLength);
+          _descriptionController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _maxCharLength)
+          );
+        }
+      });
+      _saveDraftLocally();
+    });
+    
+    _priceController.removeListener(() {
+      setState(() {
+        _priceLength = _priceController.text.length;
+        if (_priceLength > _maxPriceLength) {
+          _priceController.text = _priceController.text.substring(0, _maxPriceLength);
+          _priceController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _maxPriceLength)
+          );
+        }
+      });
+      _saveDraftLocally();
+    });
     
     super.dispose();
   }
@@ -649,6 +747,38 @@ class UploadProductScreenState extends State<UploadProductScreen> {
     );
   }
 
+  void _showCharLimitAlert() {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text("Character Limit Reached"),
+        content: Text("Please keep your input under $_maxCharLength characters."),
+        actions: [
+          CupertinoDialogAction(
+            child: Text("OK"),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPriceLimitAlert() {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text("Price Limit Reached"),
+        content: Text("Please keep your input under $_maxPriceLength characters."),
+        actions: [
+          CupertinoDialogAction(
+            child: Text("OK"),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
@@ -810,15 +940,32 @@ class UploadProductScreenState extends State<UploadProductScreen> {
                           const Text('Product Title *',
                               style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
-                          CupertinoTextField(
-                            controller: _titleController,
-                            placeholder: 'Enter a descriptive title',
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              border:
-                                  Border.all(color: CupertinoColors.systemGrey4),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              CupertinoTextField(
+                                controller: _titleController,
+                                placeholder: 'Enter a descriptive title',
+                                padding: const EdgeInsets.all(12),
+                                maxLength: _maxCharLength,
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: CupertinoColors.systemGrey4),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4, right: 4),
+                                child: Text(
+                                  "$_titleLength/$_maxCharLength",
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    color: _titleLength >= _maxCharLength
+                                        ? CupertinoColors.systemRed
+                                        : CupertinoColors.systemGrey
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 16),
                           
@@ -826,16 +973,33 @@ class UploadProductScreenState extends State<UploadProductScreen> {
                           const Text('Description *',
                               style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
-                          CupertinoTextField(
-                            controller: _descriptionController,
-                            placeholder: 'Describe your product in detail',
-                            padding: const EdgeInsets.all(12),
-                            maxLines: 5,
-                            decoration: BoxDecoration(
-                              border:
-                                  Border.all(color: CupertinoColors.systemGrey4),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              CupertinoTextField(
+                                controller: _descriptionController,
+                                placeholder: 'Describe your product in detail',
+                                padding: const EdgeInsets.all(12),
+                                maxLines: 5,
+                                maxLength: _maxCharLength,
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: CupertinoColors.systemGrey4),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4, right: 4),
+                                child: Text(
+                                  "$_descriptionLength/$_maxCharLength",
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    color: _descriptionLength >= _maxCharLength
+                                        ? CupertinoColors.systemRed
+                                        : CupertinoColors.systemGrey
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 16),
                           
@@ -843,21 +1007,37 @@ class UploadProductScreenState extends State<UploadProductScreen> {
                           const Text('Price (COP) *',
                               style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
-                          CupertinoTextField(
-                            controller: _priceController,
-                            placeholder: 'Enter price in COP',
-                            prefix: const Padding(
-                              padding: EdgeInsets.only(left: 12),
-                              child: Text('\$ '),
-                            ),
-                            padding: const EdgeInsets.all(12),
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: false),
-                            decoration: BoxDecoration(
-                              border:
-                                  Border.all(color: CupertinoColors.systemGrey4),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              CupertinoTextField(
+                                controller: _priceController,
+                                placeholder: 'Enter price in COP',
+                                prefix: const Padding(
+                                  padding: EdgeInsets.only(left: 12),
+                                  child: Text('\$ '),
+                                ),
+                                padding: const EdgeInsets.all(12),
+                                maxLength: _maxPriceLength,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: CupertinoColors.systemGrey4),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4, right: 4),
+                                child: Text(
+                                  "$_priceLength/$_maxPriceLength",
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    color: _priceLength >= _maxPriceLength
+                                        ? CupertinoColors.systemRed
+                                        : CupertinoColors.systemGrey
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 16),
                           

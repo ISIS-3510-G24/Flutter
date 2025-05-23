@@ -218,8 +218,8 @@ StreamBuilder<bool>(
           );
         }
 
-        // Show checking connection
-        if (_net.isChecking) {
+        // Show checking connection ONLY when offline AND checking (not when online)
+        if (!online && _net.isChecking) {
           return Container(
             margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
