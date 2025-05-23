@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:unimarket/services/find_service.dart';
@@ -26,7 +25,7 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _imageController = TextEditingController();
   final FindService _findService = FindService();
-  final ConnectivityService _connectivityService = ConnectivityService(); // Singleton instance
+  final ConnectivityService _connectivityService = ConnectivityService();
 
   List<String> _majors = [];
   String _selectedMajor = "";
@@ -40,7 +39,7 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
   late StreamSubscription<bool> _connectivitySubscription;
   late StreamSubscription<bool> _checkingSubscription;
 
-  bool _isConnected = true; // Estado de conectividad
+  bool _isConnected = true;
   bool _isCheckingConnectivity = false;
 
   @override
@@ -57,9 +56,9 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
       });
 
       if (isConnected && !_isSyncing) {
-  print("Internet connection restored. Syncing offline finds...");
-  _uploadOfflineFinds();
-} else {
+        print("Internet connection restored. Syncing offline finds...");
+        _uploadOfflineFinds();
+      } else {
         print("You are offline. Some features may not work.");
       }
     });
@@ -71,57 +70,54 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
     });
   }
 
- bool _isSyncing = false;
+  bool _isSyncing = false;
 
-Future<void> _uploadOfflineFinds() async {
-  if (_isSyncing) return; // Previene múltiples ejecuciones simultáneas
-  _isSyncing = true;
+  Future<void> _uploadOfflineFinds() async {
+    if (_isSyncing) return;
+    _isSyncing = true;
 
-  try {
-    print("Starting offline finds sync...");
-    final findsMap = await HiveFindStorage.getAllFinds();
+    try {
+      print("Starting offline finds sync...");
+      final findsMap = await HiveFindStorage.getAllFinds();
 
-    if (findsMap.isNotEmpty) {
-      print("Found ${findsMap.length} offline finds to sync.");
-      for (final entry in findsMap.entries) {
-        final key = entry.key;
-        final find = entry.value;
+      if (findsMap.isNotEmpty) {
+        print("Found ${findsMap.length} offline finds to sync.");
+        for (final entry in findsMap.entries) {
+          final key = entry.key;
+          final find = entry.value;
 
-        try {
-          // Verifica si el find ya existe en Firebase
-          final exists = await _findService.findExists(find['title']);
-          if (exists) {
-            print("Find with title '${find['title']}' already exists in Firebase. Skipping upload.");
-            await HiveFindStorage.deleteFind(key); // Elimina el find localmente
-            continue;
+          try {
+            final exists = await _findService.findExists(find['title']);
+            if (exists) {
+              print("Find with title '${find['title']}' already exists in Firebase. Skipping upload.");
+              await HiveFindStorage.deleteFind(key);
+              continue;
+            }
+
+            print("Uploading find with key $key: $find");
+            await _findService.createFind(
+              title: find['title'],
+              description: find['description'],
+              image: find['image'],
+              major: find['major'],
+              labels: List<String>.from(find['labels']),
+            );
+
+            await HiveFindStorage.deleteFind(key);
+            print('Find uploaded and removed from local storage');
+          } catch (e) {
+            print('Error uploading find with key $key: $e');
           }
-
-          print("Uploading find with key $key: $find");
-          await _findService.createFind(
-            title: find['title'],
-            description: find['description'],
-            image: find['image'],
-            major: find['major'],
-            labels: List<String>.from(find['labels']),
-          );
-
-          await HiveFindStorage.deleteFind(key);
-          print('Find uploaded and removed from local storage');
-        } catch (e) {
-          print('Error uploading find with key $key: $e');
         }
+      } else {
+        print("No offline finds to sync.");
       }
-    } else {
-      print("No offline finds to sync.");
+    } finally {
+      _isSyncing = false;
     }
-  } finally {
-    _isSyncing = false;
   }
-}
-
 
   void _handleRetryPressed() async {
-    // Forzar una verificación de conectividad
     bool hasInternet = await _connectivityService.checkConnectivity();
     setState(() {
       _isConnected = hasInternet;
@@ -131,7 +127,9 @@ Future<void> _uploadOfflineFinds() async {
   @override
   void dispose() {
     _connectivitySubscription.cancel();
-    _checkingSubscription.cancel(); // Verifica si está inicializado antes de cancelarlo
+
+    _checkingSubscription?.cancel();
+
     super.dispose();
   }
 
@@ -223,33 +221,34 @@ Future<void> _uploadOfflineFinds() async {
   }
 
   void _openAudioToTextScreen() {
-  Navigator.push(
-    context,
-    CupertinoPageRoute(
-      builder: (context) => AudioToTextScreen(
-        onTextGenerated: (generatedText) {
-          setState(() {
-            _descriptionController.text = generatedText; // Actualiza solo la descripción
-          });
-        },
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (context) => AudioToTextScreen(
+          onTextGenerated: (generatedText) {
+            setState(() {
+              _descriptionController.text = generatedText;
+            });
+          },
+        ),
       ),
-    ),
-  );
-}
- void _openAudioToTextScreenForTitle() {
-  Navigator.push(
-    context,
-    CupertinoPageRoute(
-      builder: (context) => AudioToTextScreen(
-        onTextGenerated: (generatedText) {
-          setState(() {
-            _titleController.text = generatedText; // Actualiza solo el título
-          });
-        },
+    );
+  }
+
+  void _openAudioToTextScreenForTitle() {
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (context) => AudioToTextScreen(
+          onTextGenerated: (generatedText) {
+            setState(() {
+              _titleController.text = generatedText;
+            });
+          },
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -324,7 +323,7 @@ Future<void> _uploadOfflineFinds() async {
                       maxLines: 1,
                       suffix: CupertinoButton(
                         padding: EdgeInsets.zero,
-                        onPressed: _openAudioToTextScreenForTitle, // Abre la pantalla de grabación para el título
+                        onPressed: _openAudioToTextScreenForTitle,
                         child: const Icon(
                           CupertinoIcons.mic,
                           color: AppColors.primaryBlue,
@@ -339,7 +338,7 @@ Future<void> _uploadOfflineFinds() async {
                       maxLines: 3,
                       suffix: CupertinoButton(
                         padding: EdgeInsets.zero,
-                        onPressed: _openAudioToTextScreen, // Abre la pantalla de Audio to Text
+                        onPressed: _openAudioToTextScreen,
                         child: const Icon(
                           CupertinoIcons.mic,
                           color: AppColors.primaryBlue,
@@ -379,28 +378,65 @@ Future<void> _uploadOfflineFinds() async {
                       style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    Material(
-                      color: Colors.transparent,
-                      child: ListView(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        children: _labels.map((label) {
-                          return CheckboxListTile(
-                            activeColor: AppColors.primaryBlue,
-                            title: Text(label),
-                            value: _selectedLabels.contains(label),
-                            onChanged: (bool? value) {
+                    // Replace Material ListView with Cupertino components
+                    Column(
+                      children: _labels.map((label) {
+                        final isSelected = _selectedLabels.contains(label);
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 4),
+                          child: CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: () {
                               setState(() {
-                                if (value == true) {
-                                  _selectedLabels.add(label);
-                                } else {
+                                if (isSelected) {
                                   _selectedLabels.remove(label);
+                                } else {
+                                  _selectedLabels.add(label);
                                 }
                               });
                             },
-                          );
-                        }).toList(),
-                      ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                              decoration: BoxDecoration(
+                                color: isSelected 
+                                    ? AppColors.primaryBlue.withOpacity(0.1)
+                                    : CupertinoColors.systemGrey6,
+                                borderRadius: BorderRadius.circular(8),
+                                border: isSelected 
+                                    ? Border.all(color: AppColors.primaryBlue, width: 1)
+                                    : null,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    isSelected 
+                                        ? CupertinoIcons.checkmark_circle_fill
+                                        : CupertinoIcons.circle,
+                                    color: isSelected 
+                                        ? AppColors.primaryBlue
+                                        : CupertinoColors.systemGrey,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      label,
+                                      style: GoogleFonts.inter(
+                                        color: isSelected 
+                                            ? AppColors.primaryBlue
+                                            : CupertinoColors.label,
+                                        fontWeight: isSelected 
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
                     ),
                     const SizedBox(height: 32),
                     Center(
