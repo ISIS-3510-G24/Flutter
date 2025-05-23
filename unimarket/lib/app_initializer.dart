@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:unimarket/data/hive_chat_storage.dart';
 import 'package:unimarket/data/hive_find_storage.dart';
+import 'package:unimarket/data/image_storage_service.dart';
 import 'package:unimarket/data/sqlite_user_dao.dart';
 import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/services/image_cache_service.dart';
@@ -102,6 +103,7 @@ class AppInitializer {
 
       print('AppInitializer: Checking connectivity...');
       final connectivityService = ConnectivityService();
+      await OfflineQueueService().initialize();
       final isOnline = await _withTimeout(
         connectivityService.checkConnectivity(),
         const Duration(seconds: 3),

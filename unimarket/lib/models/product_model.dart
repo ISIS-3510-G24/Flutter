@@ -53,7 +53,7 @@ class ProductModel {
     );
   }
 
-  // Also add a fromJson factory for deserializing from cache
+  // Fábrica para cache/local storage
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     return ProductModel(
       id: json['id'],
@@ -74,6 +74,10 @@ class ProductModel {
       updatedAt: json['updatedAt'] != null 
           ? DateTime.parse(json['updatedAt']) 
           : DateTime.now(),
+
+      pendingImagePaths: (json['pendingImagePaths'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
     );
   }
 
@@ -137,6 +141,7 @@ class ProductModel {
       'price': price,
       'sellerID': sellerID,
       'status': status,
+      'pendingImagePaths': pendingImagePaths,
       'title': title,
       'updatedAt': updatedAt.toIso8601String(),
     };
