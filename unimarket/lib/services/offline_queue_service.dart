@@ -13,20 +13,16 @@ import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/data/firebase_dao.dart';
 import 'package:unimarket/models/product_model.dart';
 
-/// ***Servicio Singleton que gestiona la cola***
 class OfflineQueueService {
   // ---- Singleton ----
   static final OfflineQueueService _instance = OfflineQueueService._internal();
   factory OfflineQueueService() => _instance;
   OfflineQueueService._internal();
   
-  final ImageStorageService _imageStorage = ImageStorageService(); 
-
-  // ---- Dependencias ----
+  final ImageStorageService _imageStorage = ImageStorageService();
   final ConnectivityService _connectivityService = ConnectivityService();
   final FirebaseDAO _firebaseDAO = FirebaseDAO();
 
-  // ---- Estado interno ----
   List<QueuedProductModel> _queuedProducts = [];
   bool _isProcessing = false;
   List<QueuedOrderModel> _queuedOrders = [];
@@ -350,152 +346,82 @@ class OfflineQueueService {
     _processIfOnline();
   }
 
-  /// CORREGIDO: Procesa toda la cola sin eliminar imágenes prematuramente
-  Future<void> processQueue() async {
-    if (_isProcessing) {
-      debugPrint('⚠️ Processing already in progress, aborting');
-      return;
-    }
-    
-    debugPrint('🔄 Starting queue processing');
+Future<void> processQueue() async {
+    if (_isProcessing) return;
     _isProcessing = true;
 
     try {
-      // Verificar conectividad primero
       if (!await _connectivityService.checkConnectivity()) {
-        debugPrint('📵 No connection, aborting processing');
         _isProcessing = false;
         return;
       }
 
-      // Obtener productos para subir
       final toUpload = _queuedProducts.where((qp) =>
-              qp.status == 'queued' ||
-              (qp.status == 'failed' && qp.retryCount < _maxRetries))
-          .toList();
+        qp.status == 'queued' ||
+        (qp.status == 'failed' && qp.retryCount < _maxRetries)
+      ).toList();
 
-      debugPrint('📋 Products to process: ${toUpload.length}');
-      
       if (toUpload.isEmpty) {
-        debugPrint('✅ No products to process');
         _isProcessing = false;
         return;
       }
 
-      // Procesar cada producto
-      for (final qp in toUpload) {
-        debugPrint('⬆️ Processing product: ${qp.product.title}');
-        await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Preparing upload...');
+      debugPrint('🌀 Procesando ${toUpload.length} productos en paralelo con isolates');
+      // Crear tareas de isolate para cada producto
+      final futures = toUpload.map((qp) {
+        return compute(_uploadProductInIsolate, qp.toJson());
+      }).toList();
 
-        try {
-          // ------------------- 1. subir imágenes -------------------
-          final uploaded = <String>[];
-          final pendingPaths = qp.product.pendingImagePaths ?? [];
-          
-          debugPrint('🖼️ Uploading ${pendingPaths.length} images');
-          
-          if (pendingPaths.isNotEmpty) {
-            await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Uploading images...');
-            
-            for (var i = 0; i < pendingPaths.length; i++) {
-              final local = pendingPaths[i];
-              final file = File(local);
-              
-              // Verificar que el archivo existe
-              if (!await file.exists()) {
-                debugPrint('⚠️ File not found: $local');
-                throw 'Image file not found: $local';
-              }
-              
-              // Verificar tamaño del archivo
-              final fileSize = await file.length();
-              debugPrint('📏 Uploading image ${i + 1}/${pendingPaths.length}: $local (${(fileSize / 1024).toInt()} KB)');
-              
-              String? url;
-              try {
-                await _updateStatus(qp.queueId, 'uploading', 
-                    statusMessage: 'Uploading image ${i + 1}/${pendingPaths.length}...');
-                url = await _firebaseDAO.uploadProductImage(local)
-                    .timeout(const Duration(seconds: 45));
-              } catch (e) {
-                debugPrint('⚠️ Error uploading image: $e');
-                throw 'Error uploading image ${i + 1}: $e';
-              }
-              
-              if (url != null && url.isNotEmpty) {
-                uploaded.add(url);
-                debugPrint('✅ Image ${i + 1} uploaded successfully: $url');
-              } else {
-                debugPrint('⚠️ Null/empty URL when uploading $local');
-                throw 'Error uploading image ${i + 1}: Received null/empty URL';
-              }
-            }
-          }
+      final results = await Future.wait<Map<String, dynamic>>(futures);
 
-          // ------------------- 2. crear documento -------------------
-          debugPrint('📄 Creating product document');
-          await _updateStatus(qp.queueId, 'uploading', statusMessage: 'Saving product...');
-          
-          final updatedProduct = qp.product.copyWith(
-            imageUrls: [...qp.product.imageUrls, ...uploaded],
-            pendingImagePaths: [], // Clear pending paths after successful upload
-            updatedAt: DateTime.now(),
-          );
-          
-          String? newId;
-          try {
-            newId = await _firebaseDAO.createProduct(updatedProduct.toMap())
-                .timeout(const Duration(seconds: 20));
-          } catch (e) {
-            debugPrint('⚠️ Error creating product: $e');
-            throw 'Error creating product document: $e';
-          }
-          
-          if (newId == null || newId.isEmpty) {
-            debugPrint('⚠️ Null/empty ID when creating product');
-            throw 'Product creation failed: received null/empty ID';
-          }
-
-          debugPrint('✅ Product created successfully: ${qp.product.title} (ID: $newId)');
-          
-          // CRÍTICO: Actualizar el producto con las URLs de red y mantener imágenes locales para historial
-          final completedProduct = updatedProduct.copyWith(
-            id: newId,
-            imageUrls: uploaded, // URLs de Firebase
-            // MANTENER pendingImagePaths para que se puedan mostrar en el historial
-            pendingImagePaths: qp.product.pendingImagePaths,
-          );
-          
-          // Actualizar el item de la cola con el producto completado
-          await _updateStatusWithProduct(qp.queueId, 'completed', completedProduct,
-              statusMessage: 'Upload completed successfully!');
-          
-          // NO eliminar las imágenes locales - mantenerlas para el historial
-          debugPrint('✅ Product completed and images preserved for history');
-          
-          // Solo limpiar imágenes huérfanas ocasionalmente (no en cada subida)
-          // Las imágenes de productos completados se mantienen para el historial
-          
-        } catch (e) {
-          debugPrint('❌ Error processing product ${qp.product.title}: $e');
-          // NO eliminar imágenes en caso de error - mantenerlas para retry
+      for (var result in results) {
+        final queueId = result['queueId'] as String;
+        if (result['success'] == true) {
+          await _updateStatus(queueId, 'completed', statusMessage: 'Upload completed successfully!');
+        } else {
           await _updateStatus(
-            qp.queueId,
+            queueId,
             'failed',
-            error: e.toString(),
-            statusMessage: 'Upload failed. Tap to retry.'
+            error: result['error'] as String?,
+            statusMessage: 'Upload failed. Tap to retry.',
           );
         }
       }
-      
-      debugPrint('✅ Queue processing completed');
-      
+
     } catch (e, st) {
-      debugPrint('🚨 General error in processQueue: $e\n$st');
+      debugPrint('🚨 Error general en processQueue: $e\n$st');
     } finally {
       _isProcessing = false;
     }
   }
+
+  static Future<Map<String, dynamic>> _uploadProductInIsolate(Map<String, dynamic> data) async {
+    final qp = QueuedProductModel.fromJson(data);
+    final dao = FirebaseDAO();
+    try {
+      final uploadedUrls = <String>[];
+      for (final localPath in qp.product.pendingImagePaths ?? []) {
+        final url = await dao.uploadProductImage(localPath).timeout(const Duration(seconds: 45));
+        if (url == null || url.isEmpty) throw 'Error uploading image: $localPath';
+        uploadedUrls.add(url);
+      }
+
+      final updatedProduct = qp.product.copyWith(
+        imageUrls: [...qp.product.imageUrls, ...uploadedUrls],
+        pendingImagePaths: [],
+        updatedAt: DateTime.now(),
+      );
+
+      final newId = await dao.createProduct(updatedProduct.toMap()).timeout(const Duration(seconds: 20));
+      if (newId == null || newId.isEmpty) throw 'Error creating product document';
+
+      return {'queueId': qp.queueId, 'success': true};
+    } catch (e) {
+      return {'queueId': qp.queueId, 'success': false, 'error': e.toString()};
+    }
+  }
+
+
 
   // ---------------------------------------------------------------------------
   //  Auxiliares privados
