@@ -557,8 +557,6 @@ class UploadProductScreenState extends State<UploadProductScreen> {
       _showErrorAlert('Por favor agrega al menos una imagen del producto');
       return;
     }
-
-
     // Verificar que la imagen existe antes de continuar
     if (!await _productImage!.exists()) {
       _showErrorAlert('Error: La imagen seleccionada no existe. Por favor toma una nueva foto.');
