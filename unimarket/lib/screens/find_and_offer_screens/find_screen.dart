@@ -10,15 +10,19 @@ import 'package:unimarket/services/find_service.dart';
 import 'package:unimarket/theme/app_colors.dart';
 import 'package:unimarket/services/user_service.dart';
 import 'dart:isolate';
+import 'dart:async';
+import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:unimarket/screens/find_and_offer_screens/offerDetailScreen.dart';
+import 'package:unimarket/services/connectivity_service.dart';
 
 class FindsScreen extends StatefulWidget {
   final FindModel find;
 
   const FindsScreen({
-    Key? key,
+    super.key,
     required this.find,
-  }) : super(key: key);
+  });
 
   @override
   State<FindsScreen> createState() => _FindsScreenState();
@@ -26,14 +30,47 @@ class FindsScreen extends StatefulWidget {
 
 class _FindsScreenState extends State<FindsScreen> {
   final FindService _findService = FindService();
+  final ConnectivityService _connectivityService = ConnectivityService(); // Servicio de conectividad
+  late StreamSubscription<bool> _connectivitySubscription;
+  late StreamSubscription<bool> _checkingSubscription;
+
   List<OfferModel> _offers = [];
   bool _isLoading = true;
+  bool _isConnected = true; // Estado de conexión
+  bool _isCheckingConnectivity = false;
 
   @override
   void initState() {
     super.initState();
+    _setupConnectivityListener();
     _loadOffers();
     _loadSavedFilter();
+  }
+
+  void _setupConnectivityListener() {
+    _connectivitySubscription = _connectivityService.connectivityStream.listen((bool isConnected) {
+      setState(() {
+        _isConnected = isConnected;
+      });
+      if (!_isConnected) {
+        print("You are offline. Some features may not work.");
+      } else {
+        print("You are online.");
+      }
+    });
+
+    _checkingSubscription = _connectivityService.checkingStream.listen((bool isChecking) {
+      setState(() {
+        _isCheckingConnectivity = isChecking;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription.cancel();
+    _checkingSubscription.cancel();
+    super.dispose();
   }
 
   Future<void> _loadOffers() async {
@@ -411,14 +448,90 @@ class _FindsScreenState extends State<FindsScreen> {
     );
   }
 
+  Future<void> _saveOfferToLocalStorage(OfferModel offer) async {
+  final prefs = await SharedPreferences.getInstance();
+  final offerData = {
+    "id": offer.id,
+    "price": offer.price,
+    "description": offer.description,
+    "image": offer.image,
+    "userName": offer.userName,
+    "timestamp": offer.timestamp.toIso8601String(),
+    "status": offer.status,
+    "userId": offer.userId,
+  };
+  await prefs.setString("selected_offer", jsonEncode(offerData)); // Usar jsonEncode
+  print("Saved offer to SharedPreferences: ${jsonEncode(offerData)}");
+}
+
+Future<OfferModel?> _getOfferFromLocalStorage() async {
+  final prefs = await SharedPreferences.getInstance();
+  final offerDataString = prefs.getString("selected_offer");
+  if (offerDataString == null) return null;
+
+  final offerData = jsonDecode(offerDataString); // Decodificar JSON
+  print("Retrieved offer from SharedPreferences: $offerData");
+  return OfferModel(
+    id: offerData["id"],
+    price: offerData["price"],
+    description: offerData["description"],
+    image: offerData["image"],
+    userName: offerData["userName"],
+    timestamp: DateTime.parse(offerData["timestamp"]),
+    status: offerData["status"],
+    userId: offerData["userId"],
+  );
+}
+
   Widget _buildOffersList() {
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _offers.length,
-      itemBuilder: (context, index) {
-        final offer = _offers[index];
-        return Container(
+  return ListView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: _offers.length,
+    itemBuilder: (context, index) {
+      final offer = _offers[index];
+      return GestureDetector(
+        onTap: () async {
+          if (_isConnected) {
+            // Guardar los detalles de la oferta en el almacenamiento local
+            await _saveOfferToLocalStorage(offer);
+
+            // Navegar a la pantalla de detalles de la oferta
+            Navigator.push(
+              context,
+              CupertinoPageRoute(
+                builder: (context) => OfferDetailsScreen(offer: offer),
+              ),
+            );
+          } else {
+            // Recuperar los detalles de la oferta desde el almacenamiento local
+            final cachedOffer = await _getOfferFromLocalStorage();
+            if (cachedOffer != null) {
+              Navigator.push(
+                context,
+                CupertinoPageRoute(
+                  builder: (context) => OfferDetailsScreen(offer: cachedOffer),
+                ),
+              );
+            } else {
+              // Mostrar un mensaje de error si no hay datos en caché
+              showCupertinoDialog(
+                context: context,
+                builder: (context) => CupertinoAlertDialog(
+                  title: const Text("No Internet Connection"),
+                  content: const Text("Unable to load offer details offline."),
+                  actions: [
+                    CupertinoDialogAction(
+                      child: const Text("OK"),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              );
+            }
+          }
+        },
+        child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: CupertinoColors.systemGrey6,
@@ -434,116 +547,41 @@ class _FindsScreenState extends State<FindsScreen> {
                     topLeft: Radius.circular(12),
                     topRight: Radius.circular(12),
                   ),
-                  child: SizedBox(
+                  child: CachedNetworkImage(
+                    imageUrl: offer.image,
                     height: 120,
                     width: double.infinity,
-                    child: CachedNetworkImage(
-                      imageUrl: offer.image, // URL de la imagen
-                      placeholder: (context, url) => const Center(
-                        child: CupertinoActivityIndicator(),
-                      ), // Indicador de carga
-                      errorWidget: (context, url, error) => const Center(
-                        child: Icon(
-                          CupertinoIcons.photo,
-                          size: 40,
-                          color: CupertinoColors.systemGrey,
-                        ),
-                      ), // Icono en caso de error
-                      fit: BoxFit.cover,
-                    ),
+                    fit: BoxFit.cover,
                   ),
                 ),
-              // Detalles de la oferta
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Precio
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                      Text(
-                        "\$${offer.price.toStringAsFixed(2)}",
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primaryBlue,
-                        ),
-                      ),
-                      Text(
-                        offer.status,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: offer.status.toLowerCase() == 'active'
-                              ? Colors.green
-                              : Colors.orange,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  // Descripción de la oferta
-                  Text(
-                    offer.description,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: CupertinoColors.systemGrey,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Información del usuario
-                  Row(
-                    children: [
-                      const Icon(
-                        CupertinoIcons.person_circle_fill,
+                    // Precio de la oferta
+                    Text(
+                      "\$${offer.price.toStringAsFixed(2)}",
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                         color: AppColors.primaryBlue,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        offer.userName,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        _formatDate(offer.timestamp),
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: CupertinoColors.systemGrey,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Botón de contactar
-                  SizedBox(
-                    width: double.infinity,
-                    child: CupertinoButton(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      color: AppColors.primaryBlue,
-                      borderRadius: BorderRadius.circular(8),
-                      onPressed: () {
-                        _showContactDialog(offer);
-                      },
-                      child: Text(
-                        "Contact",
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: CupertinoColors.white,
-                        ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    // Descripción de la oferta
+                    Text(
+                      offer.description,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: CupertinoColors.systemGrey,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     },

@@ -8,14 +8,14 @@ import 'package:unimarket/screens/product/queued_products_screen.dart';
 import 'package:flutter/foundation.dart';
 
 class QueuedProductIndicator extends StatelessWidget {
-  const QueuedProductIndicator({Key? key}) : super(key: key);
+  const QueuedProductIndicator({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final ProductService _productService = ProductService();
+    final ProductService productService = ProductService();
     
     return StreamBuilder<List<QueuedProductModel>>(
-      stream: _productService.queuedProductsStream,
+      stream: productService.queuedProductsStream,
       builder: (context, snapshot) {
         final queuedProducts = snapshot.data ?? [];
         

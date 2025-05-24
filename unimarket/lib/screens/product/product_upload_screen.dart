@@ -367,7 +367,7 @@ class UploadProductScreenState extends State<UploadProductScreen> {
             
             if (_measurementTexts.isNotEmpty) {
               String currentDescription = _descriptionController.text;
-              String measurementsText = "\n\nMeasurements:\n- " + _measurementTexts.join("\n- ");
+              String measurementsText = "\n\nMeasurements:\n- ${_measurementTexts.join("\n- ")}";
               
               if (!currentDescription.contains("Measurements:")) {
                 _descriptionController.text = currentDescription + measurementsText;
@@ -449,6 +449,8 @@ class UploadProductScreenState extends State<UploadProductScreen> {
       });
       _showBriefToast('No se pudieron cargar carreras. Usando default.');
     }
+
+
   }
 
   void _showBriefToast(String message) {
@@ -555,6 +557,7 @@ class UploadProductScreenState extends State<UploadProductScreen> {
       _showErrorAlert('Por favor agrega al menos una imagen del producto');
       return;
     }
+
 
     // Verificar que la imagen existe antes de continuar
     if (!await _productImage!.exists()) {

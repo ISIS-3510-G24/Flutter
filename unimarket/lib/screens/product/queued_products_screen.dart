@@ -74,7 +74,7 @@ void hideUploadProgress(BuildContext context) {
 }
 
 class QueuedProductsScreen extends StatefulWidget {
-  const QueuedProductsScreen({Key? key}) : super(key: key);
+  const QueuedProductsScreen({super.key});
 
   @override
   State<QueuedProductsScreen> createState() => _QueuedProductsScreenState();
@@ -934,6 +934,7 @@ StreamBuilder<bool>(
     ) ?? false;
   }
 
+
   Future<bool> _checkConnection() async {
     final result = await Connectivity().checkConnectivity();
     if (result == ConnectivityResult.none) {
@@ -941,6 +942,7 @@ StreamBuilder<bool>(
       return false;
     }
     return true;
+
   }
 
   void _showNoInternetDialog() {

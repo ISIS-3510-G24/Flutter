@@ -256,6 +256,7 @@ Widget _buildProfileImage(User? user) {
     ),
     CupertinoButton(
       padding: EdgeInsets.zero,
+      onPressed: _pickProfileImage,
       child: Container(
         padding: const EdgeInsets.all(5),
         decoration: BoxDecoration(
@@ -268,7 +269,6 @@ Widget _buildProfileImage(User? user) {
           size: 16,
         ),
       ),
-      onPressed: _pickProfileImage,
     ),
   ],
 ),

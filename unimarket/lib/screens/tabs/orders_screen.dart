@@ -239,6 +239,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   @override
+
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
@@ -252,6 +253,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           child: const Icon(CupertinoIcons.trash, color: AppColors.primaryBlue),
           onPressed: _clearCache,
         ),
+
       ),
       child: Stack(
         children: [
@@ -288,11 +290,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           CupertinoButton(
                             padding: EdgeInsets.zero,
                             minSize: 0,
+
                             child: const Text(
+
                               "Retry",
                               style: TextStyle(fontSize: 12, color: AppColors.primaryBlue),
                             ),
-                            onPressed: _handleRetryPressed,
                           ),
                       ],
                     ),

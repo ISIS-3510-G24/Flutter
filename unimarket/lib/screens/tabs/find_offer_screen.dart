@@ -20,7 +20,7 @@ import 'package:unimarket/data/hive_find_storage.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class FindAndOfferScreen extends StatefulWidget {
-  const FindAndOfferScreen({Key? key}) : super(key: key);
+  const FindAndOfferScreen({super.key});
 
   @override
   State<FindAndOfferScreen> createState() => _FindAndOfferScreenState();
@@ -28,7 +28,7 @@ class FindAndOfferScreen extends StatefulWidget {
 
 class _FindAndOfferScreenState extends State<FindAndOfferScreen> {
   StreamSubscription? _connectivitySubscription; // Declare the variable
-  String _selectedCategory = "All requests"; 
+  final String _selectedCategory = "All requests"; 
   final FindService _findService = FindService();
   List<FindModel> _finds = [];
   List<Map<String, dynamic>> _recommendedFinds = []; // Nueva lista para finds recomendados
@@ -957,24 +957,23 @@ Widget _buildMajorCard(FindModel find, OfferModel? offer) {
         ),
         
         // Date label
-        if (find.timestamp != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4, left: 8), // Reduced padding
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1), // Smaller padding
-              decoration: BoxDecoration(
-                color: AppColors.primaryBlue.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                "${find.timestamp.month}/${find.timestamp.day}",
-                style: GoogleFonts.inter(
-                  fontSize: 9, // Smaller font
-                  color: AppColors.primaryBlue,
-                ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4, left: 8), // Reduced padding
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1), // Smaller padding
+            decoration: BoxDecoration(
+              color: AppColors.primaryBlue.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              "${find.timestamp.month}/${find.timestamp.day}",
+              style: GoogleFonts.inter(
+                fontSize: 9, // Smaller font
+                color: AppColors.primaryBlue,
               ),
             ),
           ),
+        ),
           
         // Title
         Padding(

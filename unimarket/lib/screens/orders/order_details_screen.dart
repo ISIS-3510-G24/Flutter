@@ -112,6 +112,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                           CupertinoButton(
                             padding: EdgeInsets.zero,
                             minSize: 0,
+                            onPressed: _handleRetryPressed,
                             child: Text(
                               "Retry",
                               style: GoogleFonts.inter(
@@ -119,7 +120,6 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                                 color: AppColors.primaryBlue,
                               ),
                             ),
-                            onPressed: _handleRetryPressed,
                           ),
                       ],
                     ),

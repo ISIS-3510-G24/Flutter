@@ -14,7 +14,7 @@ import 'package:unimarket/data/firebase_dao.dart';
 class ConfirmProductScreen extends StatefulWidget {
   final String postType; // "find" o "offer"
 
-  const ConfirmProductScreen({Key? key, required this.postType}) : super(key: key);
+  const ConfirmProductScreen({super.key, required this.postType});
 
   @override
   State<ConfirmProductScreen> createState() => _ConfirmProductScreenState();
@@ -127,7 +127,9 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
   @override
   void dispose() {
     _connectivitySubscription.cancel();
+
     _checkingSubscription?.cancel();
+
     super.dispose();
   }
 
@@ -301,6 +303,7 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
                               CupertinoButton(
                                 padding: EdgeInsets.zero,
                                 minSize: 0,
+                                onPressed: _handleRetryPressed,
                                 child: const Text(
                                   "Retry",
                                   style: TextStyle(
@@ -308,7 +311,6 @@ class _ConfirmProductScreenState extends State<ConfirmProductScreen> {
                                     color: CupertinoColors.activeBlue,
                                   ),
                                 ),
-                                onPressed: _handleRetryPressed,
                               ),
                           ],
                         ),

@@ -105,10 +105,10 @@ class ProductModel {
       pendingImagePaths: pendingImagePaths ?? this.pendingImagePaths,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      sellerID: sellerId ?? this.sellerID,
-      classId: category ?? this.classId,
-      status: condition ?? this.status,
-      labels: isAvailable != null && isAvailable ? ['Available'] : this.labels, majorID: '',
+      sellerID: sellerId ?? sellerID,
+      classId: category ?? classId,
+      status: condition ?? status,
+      labels: isAvailable != null && isAvailable ? ['Available'] : labels, majorID: '',
     );
   }
   // Convert ProductModel to a Map for Firestore

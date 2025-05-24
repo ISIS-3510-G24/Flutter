@@ -13,14 +13,14 @@ class ProductImageWidget extends StatelessWidget {
   final String placeholderAsset;
 
   const ProductImageWidget({
-    Key? key,
+    super.key,
     required this.imageUrls,
     this.fit = BoxFit.cover,
     this.width,
     this.height,
     this.borderRadius,
     this.placeholderAsset = "assets/svgs/ImagePlaceHolder.svg",
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

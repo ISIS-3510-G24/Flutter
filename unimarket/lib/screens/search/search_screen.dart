@@ -11,7 +11,7 @@ import 'package:unimarket/screens/product/product_detail_screen.dart';
 import 'package:unimarket/theme/app_colors.dart';
 
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({Key? key}) : super(key: key);
+  const SearchScreen({super.key});
 
   @override
   _SearchScreenState createState() => _SearchScreenState();

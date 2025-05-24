@@ -105,7 +105,7 @@ Future<void> _storeInCache(String key, Map<String, dynamic> data) async {
     await cache.putFile(key, bytes);
   } catch (e) {
     debugPrint("Error storing in cache: $e");
-    throw e; // Re-throw to trigger fallback
+    rethrow; // Re-throw to trigger fallback
   }
 }
 

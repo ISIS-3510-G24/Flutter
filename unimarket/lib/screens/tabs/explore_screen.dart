@@ -327,7 +327,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
     if (priceString.length > 6) {
       // For millions (7+ digits)
       // Add apostrophe after first digit
-      result = priceString[0] + "'";
+      result = "${priceString[0]}'";
       
       // Add the rest of the digits with thousands separator
       String remainingDigits = priceString.substring(1);
@@ -570,6 +570,7 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
                           CupertinoButton(
                             padding: EdgeInsets.zero,
                             minSize: 0,
+                            onPressed: _handleRetryPressed,
                             child: Text(
                               "Retry",
                               style: GoogleFonts.inter(
@@ -577,7 +578,6 @@ class ExploreScreenState extends State<ExploreScreen> with WidgetsBindingObserve
                                 color: AppColors.primaryBlue,
                               ),
                             ),
-                            onPressed: _handleRetryPressed,
                           ),
                       ],
                     ),
