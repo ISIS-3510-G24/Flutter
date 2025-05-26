@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unimarket/models/offer_model.dart';
 import 'package:unimarket/theme/app_colors.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class OfferDetailsScreen extends StatelessWidget {
   final OfferModel offer;
@@ -28,11 +29,19 @@ class OfferDetailsScreen extends StatelessWidget {
               if (offer.image.isNotEmpty)
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    offer.image,
+                  child: CachedNetworkImage(
+                    imageUrl: offer.image,
                     height: 200,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    placeholder: (context, url) => const Center(
+                      child: CupertinoActivityIndicator(),
+                    ),
+                    errorWidget: (context, url, error) => const Icon(
+                      CupertinoIcons.photo,
+                      size: 40,
+                      color: CupertinoColors.systemGrey,
+                    ),
                   ),
                 ),
               const SizedBox(height: 16),
