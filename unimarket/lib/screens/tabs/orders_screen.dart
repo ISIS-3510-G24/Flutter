@@ -560,6 +560,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Future<void> _generateAndCacheReceipt(Map<String, dynamic> product) async {
     try {
+      // Verificar si el archivo ya está en el caché
+      final cachedFile = await DefaultCacheManager().getFileFromCache('${product["orderId"]}_receipt.txt');
+      if (cachedFile != null) {
+        print("Receipt already cached: ${cachedFile.file.path}");
+        await OpenFile.open(cachedFile.file.path);
+        return;
+      }
+
       // Generar el contenido del recibo
       final receiptContent = '''
 Order Receipt
@@ -585,15 +593,18 @@ Order Date: ${product["details"]}
       );
 
       // Abrir el archivo generado
-      try {
-        await OpenFile.open(receiptFile.path);
-      } catch (e) {
-        print("Error opening file: $e");
-      }
+      await OpenFile.open(receiptFile.path);
 
       print("Receipt generated and cached: ${receiptFile.path}");
     } catch (e) {
       print("Error generating receipt: $e");
     }
+  }
+
+  Future<void> _saveToDownloads(File file) async {
+    final downloadsDir = await getApplicationDocumentsDirectory(); // Cambiar a getDownloadsDirectory() si es compatible
+    final newFile = File('${downloadsDir.path}/${file.path.split('/').last}');
+    await file.copy(newFile.path);
+    print("File saved to downloads: ${newFile.path}");
   }
 }
