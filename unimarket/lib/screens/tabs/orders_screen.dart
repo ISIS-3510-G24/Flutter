@@ -13,6 +13,8 @@ import 'package:unimarket/services/cache_orders_service.dart';
 import 'package:unimarket/services/connectivity_service.dart';
 import 'package:unimarket/screens/orders/order_details_screen.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -288,6 +290,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                         if (!_isCheckingConnectivity)
                           CupertinoButton(
+                            onPressed: () {}, // Add an empty callback or your desired functionality
                             padding: EdgeInsets.zero,
                             minSize: 0,
 
@@ -501,6 +504,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ),
                 ),
               ),
+            if (product["status"] == "Purchased")
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () async {
+                  await _generateAndCacheReceipt(product);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.primaryBlue,
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.printer,
+                    color: CupertinoColors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
             if (_selectedTab == 2) ...[
               const SizedBox(width: 10),
               CupertinoButton(
@@ -533,6 +555,45 @@ class _OrdersScreenState extends State<OrdersScreen> {
       return file.existsSync() ? file : null;
     } catch (e) {
       return null;
+    }
+  }
+
+  Future<void> _generateAndCacheReceipt(Map<String, dynamic> product) async {
+    try {
+      // Generar el contenido del recibo
+      final receiptContent = '''
+Order Receipt
+=============
+Order ID: ${product["orderId"]}
+Product Name: ${product["name"]}
+Price: ${product["price"]}
+Status: ${product["status"]}
+Order Date: ${product["details"]}
+''';
+
+      // Crear un archivo temporal para el recibo
+      final tempDir = await getTemporaryDirectory();
+      final receiptFile = File('${tempDir.path}/${product["orderId"]}_receipt.txt');
+
+      // Escribir el contenido en el archivo
+      await receiptFile.writeAsString(receiptContent);
+
+      // Guardar el archivo en el caché
+      await DefaultCacheManager().putFile(
+        receiptFile.path,
+        receiptFile.readAsBytesSync(),
+      );
+
+      // Abrir el archivo generado
+      try {
+        await OpenFile.open(receiptFile.path);
+      } catch (e) {
+        print("Error opening file: $e");
+      }
+
+      print("Receipt generated and cached: ${receiptFile.path}");
+    } catch (e) {
+      print("Error generating receipt: $e");
     }
   }
 }
