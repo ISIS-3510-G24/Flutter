@@ -19,6 +19,11 @@ class UserService {
   factory UserService() => _instance;
   UserService._internal();
 
+  // Cache for frequently accessed users
+  final Map<String, UserModel> _userCache = {};
+  final Map<String, DateTime> _cacheTimestamps = {};
+  static const Duration _cacheExpiry = Duration(minutes: 15);
+
   // Flag to ensure initialization happens once
   bool _isInitialized = false;
 
@@ -44,7 +49,7 @@ class UserService {
     return _firebaseDAO.getCurrentUser();
   }
 
-  // Get current user profile details (with improved local fallback)
+  // Get current user profile details with improved offline-first strategy
   Future<UserModel?> getCurrentUserProfile() async {
     try {
       print('UserService: Getting current user profile');
@@ -54,91 +59,267 @@ class UserService {
         await initialize();
       }
       
-      // First check local database with timeout to prevent waiting too long
-      UserModel? localUser = await Future.value(_sqliteUserDAO.getCurrentUser())
-          .timeout(const Duration(seconds: 2), onTimeout: () {
-        print('UserService: Local database lookup timed out');
+      // Get current user ID
+      final currentUserId = _firebaseDAO.getCurrentUserId();
+      if (currentUserId == null) {
+        print('UserService: No current user ID found');
         return null;
-      });
-      
-      // If we have a local user, use it immediately (offline first approach)
-      if (localUser != null) {
-        print('UserService: Retrieved user from local database: ${localUser.displayName}');
-        
-        // Then try to refresh from server in background if online
-        _refreshUserFromServer(localUser.id).then((updated) {
-          print('UserService: Background sync completed');
-        }).catchError((e) {
-          print('UserService: Background sync error: $e');
-        });
-        
-        return localUser;
       }
       
-      // If online but no local user, try to get from Firebase
-      if (await _connectivityService.checkConnectivity()) {
-        print('UserService: No local user, fetching from Firebase');
-        
-        final firebaseUser = await _firebaseDAO.getCurrentUserDetails()
-            .timeout(const Duration(seconds: 5), onTimeout: () {
-          print('UserService: Firebase fetch timed out');
-          return null;
-        });
-        
-        if (firebaseUser != null) {
-          // Update local database
-          await _sqliteUserDAO.saveUser(firebaseUser, isCurrentUser: true);
-          print('UserService: Saved Firebase user to local database');
-          return firebaseUser;
-        }
-      }
+      // Use the enhanced getUserById method which has better caching
+      return await getUserById(currentUserId);
       
-      // If we got here, we couldn't get the user from either source
-      // Create a fallback user from Firebase Auth as last resort
-      final authUser = _firebaseDAO.getCurrentUser();
-      if (authUser != null) {
-        print('UserService: Creating fallback user from Firebase Auth');
-        final fallbackUser = UserModel(
-          id: authUser.uid,
-          displayName: authUser.displayName ?? "User",
-          email: authUser.email ?? "user@example.com",
-          photoURL: authUser.photoURL,
-        );
-        
-        // Save this fallback user to local database
-        await _sqliteUserDAO.saveUser(fallbackUser, isCurrentUser: true);
-        return fallbackUser;
-      }
-      
-      return null;
     } catch (e) {
       print("UserService: Error getting current user profile: $e");
       return null;
     }
   }
 
-  // Helper method to refresh user from server in background
-  Future<bool> _refreshUserFromServer(String userId) async {
+  // Enhanced getUserById with comprehensive offline-first strategy
+  Future<UserModel?> getUserById(String userId) async {
     try {
-      if (await _connectivityService.checkConnectivity()) {
+      print('UserService: Getting user by ID: $userId');
+      
+      // Ensure service is initialized
+      if (!_isInitialized) {
+        await initialize();
+      }
+      
+      // Check memory cache first (fastest)
+      final cachedUser = _getCachedUser(userId);
+      if (cachedUser != null) {
+        print('UserService: Using memory cached user: ${cachedUser.displayName}');
+        
+        // Refresh in background if online and cache is getting old
+        _refreshUserInBackground(userId);
+        
+        return cachedUser;
+      }
+      
+      // Try local database (fast)
+      UserModel? user = await _sqliteUserDAO.getUserById(userId)
+          .timeout(const Duration(seconds: 2), onTimeout: () => null);
+      
+      if (user != null) {
+        print('UserService: Found user in local database: ${user.displayName}');
+        
+        // Add to memory cache
+        _cacheUser(userId, user);
+        
+        // Refresh from server in background if online
+        _refreshUserInBackground(userId);
+        
+        return user;
+      }
+      
+      // Check connectivity before attempting network request
+      final hasInternet = await _connectivityService.checkConnectivity();
+      if (!hasInternet) {
+        print('UserService: Offline - creating fallback user for $userId');
+        return _createFallbackUser(userId);
+      }
+      
+      // Try Firebase (slow but comprehensive)
+      print('UserService: User not found locally, fetching from Firebase');
+      
+      final firebaseUser = await _firebaseDAO.getUserById(userId)
+          .timeout(const Duration(seconds: 5), onTimeout: () => null);
+      
+      if (firebaseUser != null) {
+        // Save to local database for future use
+        await _sqliteUserDAO.saveUser(firebaseUser, 
+            isCurrentUser: _firebaseDAO.getCurrentUserId() == userId);
+        
+        // Add to memory cache
+        _cacheUser(userId, firebaseUser);
+        
+        print('UserService: Saved Firebase user to local database');
+        return firebaseUser;
+      }
+      
+      // If all else fails, create a fallback user
+      print('UserService: Creating fallback user for missing user: $userId');
+      return _createFallbackUser(userId);
+      
+    } catch (e) {
+      print("UserService: Error getting user by ID: $e");
+      
+      // Return fallback user on error to prevent UI crashes
+      return _createFallbackUser(userId);
+    }
+  }
+
+  // Check memory cache for user
+  UserModel? _getCachedUser(String userId) {
+    if (!_userCache.containsKey(userId)) return null;
+    
+    final cacheTime = _cacheTimestamps[userId];
+    if (cacheTime == null) return null;
+    
+    // Check if cache is still valid
+    if (DateTime.now().difference(cacheTime) > _cacheExpiry) {
+      _userCache.remove(userId);
+      _cacheTimestamps.remove(userId);
+      return null;
+    }
+    
+    return _userCache[userId];
+  }
+
+  // Add user to memory cache
+  void _cacheUser(String userId, UserModel user) {
+    _userCache[userId] = user;
+    _cacheTimestamps[userId] = DateTime.now();
+    
+    // Clean old cache entries periodically
+    if (_userCache.length > 50) {
+      _cleanOldCacheEntries();
+    }
+  }
+
+  // Clean old cache entries
+  void _cleanOldCacheEntries() {
+    final now = DateTime.now();
+    final keysToRemove = <String>[];
+    
+    for (final entry in _cacheTimestamps.entries) {
+      if (now.difference(entry.value) > _cacheExpiry) {
+        keysToRemove.add(entry.key);
+      }
+    }
+    
+    for (final key in keysToRemove) {
+      _userCache.remove(key);
+      _cacheTimestamps.remove(key);
+    }
+    
+    print('UserService: Cleaned ${keysToRemove.length} old cache entries');
+  }
+
+  // Refresh user from server in background
+  Future<void> _refreshUserInBackground(String userId) async {
+    // Don't await this - let it run in background
+    Future.delayed(Duration.zero, () async {
+      try {
+        final hasInternet = await _connectivityService.checkConnectivity();
+        if (!hasInternet) return;
+        
         final firebaseUser = await _firebaseDAO.getUserById(userId)
-            .timeout(const Duration(seconds: 5), onTimeout: () => null);
+            .timeout(const Duration(seconds: 3), onTimeout: () => null);
         
         if (firebaseUser != null) {
           // Update local database
           await _sqliteUserDAO.saveUser(firebaseUser, 
               isCurrentUser: _firebaseDAO.getCurrentUserId() == userId);
-          return true;
+          
+          // Update memory cache
+          _cacheUser(userId, firebaseUser);
+          
+          print('UserService: Background refresh completed for ${firebaseUser.displayName}');
         }
+      } catch (e) {
+        print("UserService: Background refresh error for $userId: $e");
       }
-      return false;
-    } catch (e) {
-      print("UserService: Error refreshing user from server: $e");
-      return false;
-    }
+    });
   }
 
-  // Update user profile
+  // Create fallback user to prevent UI errors
+  UserModel _createFallbackUser(String userId) {
+    return UserModel(
+      id: userId,
+      displayName: 'User',
+      email: '',
+      bio: '',
+      major: '',
+      ratingAverage: 0.0,
+      reviewsCount: 0,
+      createdAt: DateTime.now(),
+    );
+  }
+
+  // Batch load users for better performance
+  Future<List<UserModel>> batchGetUsers(List<String> userIds) async {
+    if (userIds.isEmpty) return [];
+    
+    print('UserService: Batch loading ${userIds.length} users');
+    
+    final List<UserModel> users = [];
+    final List<String> usersToFetchFromNetwork = [];
+    
+    // First pass: get from cache and local database
+    for (final userId in userIds) {
+      // Try memory cache first
+      final cachedUser = _getCachedUser(userId);
+      if (cachedUser != null) {
+        users.add(cachedUser);
+        continue;
+      }
+      
+      // Try local database
+      try {
+        final localUser = await _sqliteUserDAO.getUserById(userId)
+            .timeout(const Duration(seconds: 1), onTimeout: () => null);
+        
+        if (localUser != null) {
+          users.add(localUser);
+          _cacheUser(userId, localUser);
+        } else {
+          usersToFetchFromNetwork.add(userId);
+        }
+      } catch (e) {
+        usersToFetchFromNetwork.add(userId);
+      }
+    }
+    
+    // Second pass: fetch missing users from network if online
+    if (usersToFetchFromNetwork.isNotEmpty && 
+        await _connectivityService.checkConnectivity()) {
+      print('UserService: Fetching ${usersToFetchFromNetwork.length} users from network');
+      
+      // Fetch users in parallel with reasonable timeout
+      final networkFutures = usersToFetchFromNetwork.map((userId) => 
+        _firebaseDAO.getUserById(userId)
+            .timeout(const Duration(seconds: 2), onTimeout: () => null)
+            .then((user) => user != null ? MapEntry(userId, user) : null)
+      );
+      
+      final networkResults = await Future.wait(networkFutures);
+      
+      for (final result in networkResults) {
+        if (result != null) {
+          final user = result.value;
+          users.add(user);
+          
+          // Save to local database and cache
+          await _sqliteUserDAO.saveUser(user);
+          _cacheUser(result.key, user);
+        }
+      }
+    }
+    
+    // Create fallback users for any missing users
+    final foundUserIds = users.map((u) => u.id).toSet();
+    for (final userId in userIds) {
+      if (!foundUserIds.contains(userId)) {
+        users.add(_createFallbackUser(userId));
+      }
+    }
+    
+    print('UserService: Batch load completed: ${users.length}/${userIds.length} users');
+    return users;
+  }
+
+  // Preload user data for faster access (improved version)
+  Future<void> preloadUserData(List<String> userIds) async {
+    if (userIds.isEmpty) return;
+    
+    print('UserService: Preloading data for ${userIds.length} users');
+    
+    // Use batch loading for better performance
+    await batchGetUsers(userIds);
+  }
+
+  // Update user profile with offline support
   Future<bool> updateUserProfile(Map<String, dynamic> userData) async {
     final userId = _firebaseDAO.getCurrentUserId();
     if (userId == null) {
@@ -146,13 +327,9 @@ class UserService {
     }
     
     try {
-      // First update in Firebase if online
       bool success = false;
-      if (await _connectivityService.checkConnectivity()) {
-        success = await _firebaseDAO.updateUserProfile(userId, userData);
-      }
       
-      // Get the current user from local database
+      // Get current user data
       UserModel? currentUser = await _sqliteUserDAO.getUserById(userId);
       
       if (currentUser != null) {
@@ -160,9 +337,29 @@ class UserService {
         final Map<String, dynamic> updatedData = {...currentUser.toMap(), ...userData};
         final updatedUser = UserModel.fromMap(updatedData);
         
-        // Save to local database
+        // Save to local database first (offline-first)
         await _sqliteUserDAO.saveUser(updatedUser, isCurrentUser: true);
+        
+        // Update memory cache
+        _cacheUser(userId, updatedUser);
+        
         success = true;
+        print('UserService: Updated user profile locally');
+      }
+      
+      // Try to update in Firebase if online
+      if (await _connectivityService.checkConnectivity()) {
+        try {
+          final firebaseSuccess = await _firebaseDAO.updateUserProfile(userId, userData)
+              .timeout(const Duration(seconds: 10));
+          
+          if (firebaseSuccess) {
+            print('UserService: Updated user profile in Firebase');
+          }
+        } catch (e) {
+          print('UserService: Error updating in Firebase (kept local changes): $e');
+          // Don't fail here - we have local changes
+        }
       }
       
       return success;
@@ -181,103 +378,25 @@ class UserService {
 
     try {
       // Check if we're online
-      if (await _connectivityService.checkConnectivity()) {
-        final ref = _storage.ref().child('profile_images').child('$userId.jpg');
-        final uploadTask = ref.putFile(imageFile);
-        final snapshot = await uploadTask;
-        final downloadUrl = await snapshot.ref.getDownloadURL();
-
-        // Update user profile with new photo URL
-        await _firebaseDAO.updateUserProfile(userId, {'photoURL': downloadUrl});
-        
-        // Also update in local database
-        final currentUser = await _sqliteUserDAO.getCurrentUser();
-        if (currentUser != null) {
-          final updatedUser = UserModel(
-            id: currentUser.id,
-            displayName: currentUser.displayName,
-            email: currentUser.email,
-            photoURL: downloadUrl,
-            bio: currentUser.bio,
-            ratingAverage: currentUser.ratingAverage,
-            reviewsCount: currentUser.reviewsCount,
-            createdAt: currentUser.createdAt,
-            updatedAt: currentUser.updatedAt,
-            major: currentUser.major,
-          );
-          await _sqliteUserDAO.saveUser(updatedUser, isCurrentUser: true);
-        }
-
-        return downloadUrl;
-      } else {
+      if (!(await _connectivityService.checkConnectivity())) {
         throw Exception("Cannot upload profile picture while offline");
       }
+      
+      final ref = _storage.ref().child('profile_images').child('$userId.jpg');
+      final uploadTask = ref.putFile(imageFile);
+      final snapshot = await uploadTask;
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+
+      // Update user profile with new photo URL
+      await updateUserProfile({'photoURL': downloadUrl});
+
+      return downloadUrl;
     } catch (e) {
       print("UserService: Error uploading profile picture: $e");
       return null;
     }
   }
 
-  // Get user by ID (with improved local fallback)
-  Future<UserModel?> getUserById(String userId) async {
-    try {
-      print('UserService: Getting user by ID: $userId');
-      
-      // Check if this is the current user, if so use getCurrentUserProfile
-      if (userId == _firebaseDAO.getCurrentUserId()) {
-        return await getCurrentUserProfile();
-      }
-      
-      // First try to get from local database
-      UserModel? user = await _sqliteUserDAO.getUserById(userId);
-      
-      if (user != null) {
-        print('UserService: Found user in local database: ${user.displayName}');
-        
-        // Try to refresh in background if online
-        _refreshUserFromServer(userId).then((updated) {
-          if (updated) {
-            print('UserService: User updated from server in background');
-          }
-        });
-        
-        return user;
-      }
-      
-      // If not found locally and online, try to get from Firebase
-      if (await _connectivityService.checkConnectivity()) {
-        print('UserService: User not found locally, fetching from Firebase');
-        
-        final firebaseUser = await _firebaseDAO.getUserById(userId)
-            .timeout(const Duration(seconds: 3), onTimeout: () => null);
-        
-        if (firebaseUser != null) {
-          // Save to local database
-          await _sqliteUserDAO.saveUser(firebaseUser);
-          print('UserService: Saved Firebase user to local database');
-          return firebaseUser;
-        }
-      }
-      
-      // If we still don't have a user, create a minimal placeholder
-      print('UserService: Creating minimal placeholder user');
-      return UserModel(
-        id: userId,
-        displayName: 'User',
-        email: '',
-      );
-    } catch (e) {
-      print("UserService: Error getting user by ID: $e");
-      
-      // Create a minimal placeholder user on error
-      return UserModel(
-        id: userId,
-        displayName: 'User',
-        email: '',
-      );
-    }
-  }
-  
   // Sync current user from Firebase to local database
   Future<UserModel?> syncCurrentUser() async {
     try {
@@ -304,6 +423,10 @@ class UserService {
       
       // Save to local database as current user
       await _sqliteUserDAO.saveUser(currentUser, isCurrentUser: true);
+      
+      // Update memory cache
+      _cacheUser(userId, currentUser);
+      
       print('UserService: Current user synced from Firebase: ${currentUser.displayName}');
       
       return currentUser;
@@ -318,66 +441,75 @@ class UserService {
     return await _sqliteUserDAO.getAllUsers();
   }
 
-  // Add to wishlist (keep original methods)
-  Future<bool> addToWishlist(String productId) async {
-    return await _firebaseDAO.addToWishlist(productId);
+  // Clear user cache (for debugging/memory management)
+  void clearCache() {
+    _userCache.clear();
+    _cacheTimestamps.clear();
+    print('UserService: Cache cleared');
   }
 
-  // Remove from wishlist (keep original methods)
-  Future<bool> removeFromWishlist(String productId) async {
-    return await _firebaseDAO.removeFromWishlist(productId);
-  }
-
-  // Check if product is in wishlist (keep original methods)
-  Future<bool> isProductInWishlist(String productId) async {
-    return await _firebaseDAO.isProductInWishlist(productId);
+  // Get cache statistics (for debugging)
+  Map<String, dynamic> getCacheStats() {
+    return {
+      'memoryCache': _userCache.length,
+      'oldestCacheEntry': _cacheTimestamps.values.isEmpty 
+          ? null 
+          : _cacheTimestamps.values.reduce((a, b) => a.isBefore(b) ? a : b).toIso8601String(),
+      'newestCacheEntry': _cacheTimestamps.values.isEmpty 
+          ? null 
+          : _cacheTimestamps.values.reduce((a, b) => a.isAfter(b) ? a : b).toIso8601String(),
+    };
   }
 
   // Keep original product methods
   Future<List<ProductModel>> getProductsFromUser(String userId) async {
-    final productMaps = await _firebaseDAO.getProductsByUserId(userId);
-    return productMaps.map((map) => ProductModel.fromMap(map, docId: map['id'])).toList();
-  }
-  
-  // Keep original wishlist methods
-  Future<List<ProductModel>> getWishlistProducts() async {
-    final products = await _firebaseDAO.getWishlistProducts();
-    return products.map((product) => ProductModel.fromMap(product, docId: product['id'])).toList();
-  }
-  
-  // Preload user data for faster access
-  Future<void> preloadUserData(List<String> userIds) async {
-    if (userIds.isEmpty) return;
-    
-    print('UserService: Preloading data for ${userIds.length} users');
-    
-    // First get all available local users
-    final localUsers = await _sqliteUserDAO.getAllUsers();
-    final localUserIds = localUsers.map((user) => user.id).toSet();
-    
-    // Filter out users we already have
-    final missingUserIds = userIds.where((id) => !localUserIds.contains(id)).toList();
-    
-    if (missingUserIds.isEmpty) {
-      print('UserService: All users already available locally');
-      return;
+    try {
+      final productMaps = await _firebaseDAO.getProductsByUserId(userId);
+      return productMaps.map((map) => ProductModel.fromMap(map, docId: map['id'])).toList();
+    } catch (e) {
+      print('UserService: Error getting products from user: $e');
+      return [];
     }
-    
-    // If online, fetch missing users from Firebase
-    if (await _connectivityService.checkConnectivity()) {
-      for (final userId in missingUserIds) {
-        try {
-          final user = await _firebaseDAO.getUserById(userId)
-              .timeout(const Duration(seconds: 2), onTimeout: () => null);
-              
-          if (user != null) {
-            await _sqliteUserDAO.saveUser(user);
-            print('UserService: Preloaded user ${user.displayName}');
-          }
-        } catch (e) {
-          print('UserService: Error preloading user $userId: $e');
-        }
-      }
+  }
+  
+  // Keep original wishlist methods with better error handling
+  Future<List<ProductModel>> getWishlistProducts() async {
+    try {
+      final products = await _firebaseDAO.getWishlistProducts();
+      return products.map((product) => ProductModel.fromMap(product, docId: product['id'])).toList();
+    } catch (e) {
+      print('UserService: Error getting wishlist products: $e');
+      return [];
+    }
+  }
+
+  // Add to wishlist (keep original methods)
+  Future<bool> addToWishlist(String productId) async {
+    try {
+      return await _firebaseDAO.addToWishlist(productId);
+    } catch (e) {
+      print('UserService: Error adding to wishlist: $e');
+      return false;
+    }
+  }
+
+  // Remove from wishlist (keep original methods)
+  Future<bool> removeFromWishlist(String productId) async {
+    try {
+      return await _firebaseDAO.removeFromWishlist(productId);
+    } catch (e) {
+      print('UserService: Error removing from wishlist: $e');
+      return false;
+    }
+  }
+
+  // Check if product is in wishlist (keep original methods)
+  Future<bool> isProductInWishlist(String productId) async {
+    try {
+      return await _firebaseDAO.isProductInWishlist(productId);
+    } catch (e) {
+      print('UserService: Error checking wishlist status: $e');
+      return false;
     }
   }
 }
