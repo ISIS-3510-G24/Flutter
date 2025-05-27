@@ -49,9 +49,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
       _setupConnectivityListener();
       _loadOrdersWithCache("buying", _fetchBuyingOrders);
       _loadOrdersWithCache("history", _fetchHistoryOrders).then((_) {
+         // Once history orders are loaded, calculate statistics asynchronously
         _calculateOrderStatistics(historyProducts).then((stats) {
           setState(() {
-            _orderStatistics = stats;
+            _orderStatistics = stats; // Update the state with the calculated statistics
           });
         });
       });
@@ -685,10 +686,12 @@ Order Date: ${product["details"]}
 }
 
 Future<Map<String, dynamic>> _calculateOrderStatistics(List<Map<String, dynamic>> orders) async {
+  //  compute() to offload the statistics calculation to a separate isolate
   return compute(_processOrderStatistics, orders);
 }
 
 Map<String, dynamic> _processOrderStatistics(List<Map<String, dynamic>> orders) {
+  // Process the orders to calculate statistics
   double totalSpent = 0;
   int completedOrders = 0;
   int unpaidOrders = 0;
