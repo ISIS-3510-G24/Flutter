@@ -29,7 +29,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
   List<Map<String, dynamic>> buyingProducts = [];
   List<Map<String, dynamic>> historyProducts = [];
   List<Map<String, dynamic>> sellingProducts = [];
-  final ProductService _productService =  ProductService();
+  final ProductService _productService = ProductService();
+  final PageController _pageController = PageController(initialPage: 1);
 
   final CacheOrdersService<String, Map<String, dynamic>> _ordersCache =
       CacheOrdersService(50, "orders_cache");
@@ -49,10 +50,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
       _setupConnectivityListener();
       _loadOrdersWithCache("buying", _fetchBuyingOrders);
       _loadOrdersWithCache("history", _fetchHistoryOrders).then((_) {
-         // Once history orders are loaded, calculate statistics asynchronously
         _calculateOrderStatistics(historyProducts).then((stats) {
           setState(() {
-            _orderStatistics = stats; // Update the state with the calculated statistics
+            _orderStatistics = stats;
           });
         });
       });
@@ -90,6 +90,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void dispose() {
     _connectivitySubscription.cancel();
     _checkingSubscription.cancel();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -149,7 +150,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return {
           "orderId": doc.id,
           "productId": doc['productID'],
-          "name": product?.title ?? "Product ID: ${doc['productID']}",
+          "name": product?.title ?? "Unnamed Product",
           "details": "Order Date: ${doc['orderDate'].toDate()}",
           "status": doc['status'],
           "action": doc['status'] == "Delivered" ? "Help" : doc['status'] == "Unpaid" ? "Complete" : "",
@@ -182,7 +183,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return {
           "orderId": doc.id,
           "productId": doc['productID'],
-          "name": product != null ? product.title : "Product ID: ${doc['productID']}",
+          "name": product != null ? product.title : "Unnamed Product",
           "details": "Order Date: ${doc['orderDate'].toDate()}",
           "status": doc['status'],
           "action": "Help",
@@ -216,7 +217,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return {
           "orderId": doc.id,
           "productId": doc['productID'],
-          "name": product != null ? product.title : "Product ID: ${doc['productID']}",
+          "name": product != null ? product.title : "Unnamed Product",
           "details": "Order Date: ${doc['orderDate'].toDate()}",
           "status": doc['status'],
           "action": "Modify",
@@ -250,141 +251,274 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'delivered':
+        return CupertinoColors.systemGreen;
+      case 'purchased':
+        return CupertinoColors.systemBlue;
+      case 'unpaid':
+        return CupertinoColors.systemOrange;
+      default:
+        return CupertinoColors.systemGrey;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
+      backgroundColor: CupertinoColors.white,
       navigationBar: CupertinoNavigationBar(
-        middle: const Text(
+        backgroundColor: CupertinoColors.white.withOpacity(0.9),
+        border: Border.all(color: CupertinoColors.separator, width: 0.5),
+        middle: Text(
           "Orders",
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: GoogleFonts.inter(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: CupertinoColors.black,
+          ),
         ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          child: const Icon(CupertinoIcons.trash, color: AppColors.primaryBlue),
+          child: Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemRed.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              CupertinoIcons.trash,
+              color: CupertinoColors.systemRed,
+              size: 18,
+            ),
+          ),
           onPressed: _clearCache,
         ),
       ),
-      child: Stack(
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Connectivity Banner
+            if (!_isConnected || _isCheckingConnectivity)
+              _buildConnectivityBanner(),
+            
+            // Tab Selector
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: _buildTabSelector(),
+            ),
+            
+            // Main Content
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: (index) {
+                  setState(() {
+                    _selectedTab = index;
+                  });
+                },
+                children: [
+                  _buildOrdersList(historyProducts),
+                  _buildOrdersList(buyingProducts),
+                  _buildOrdersList(sellingProducts),
+                ],
+              ),
+            ),
+            
+            // Statistics Bar
+            _buildOrderStatisticsBar(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConnectivityBanner() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            CupertinoColors.systemYellow.withOpacity(0.1),
+            CupertinoColors.systemOrange.withOpacity(0.1),
+          ],
+        ),
+        border: Border(
+          bottom: BorderSide(
+            color: CupertinoColors.systemYellow.withOpacity(0.3),
+            width: 0.5,
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+      child: Row(
         children: [
-          SafeArea(
-            child: Column(
-              children: [
-                if (!_isConnected || _isCheckingConnectivity)
-                  Container(
-                    width: double.infinity,
-                    color: CupertinoColors.systemYellow.withOpacity(0.3),
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                    child: Row(
-                      children: [
-                        _isCheckingConnectivity
-                            ? const CupertinoActivityIndicator(radius: 8)
-                            : const Icon(
-                                CupertinoIcons.exclamationmark_triangle,
-                                size: 16,
-                                color: CupertinoColors.systemYellow,
-                              ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _isCheckingConnectivity
-                                ? "Checking internet connection..."
-                                : "You are offline. Some features may not work.",
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: CupertinoColors.systemGrey,
-                            ),
-                          ),
-                        ),
-                        if (!_isCheckingConnectivity)
-                          CupertinoButton(
-                            onPressed: _handleRetryPressed,
-                            padding: EdgeInsets.zero,
-                            minSize: 0,
-                            child: const Text(
-                              "Retry",
-                              style: TextStyle(fontSize: 12, color: AppColors.primaryBlue),
-                            ),
-                          ),
-                      ],
-                    ),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemYellow.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: _isCheckingConnectivity
+                ? const CupertinoActivityIndicator(radius: 8)
+                : const Icon(
+                    CupertinoIcons.wifi_slash,
+                    size: 16,
+                    color: CupertinoColors.systemYellow,
                   ),
-                const SizedBox(height: 10),
-                _buildTabSelector(),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.only(left: 20, right: 20, bottom: 60), // Espacio para la barra
-                    itemCount: _getCurrentProducts().length,
-                    itemBuilder: (context, index) {
-                      final product = _getCurrentProducts()[index];
-                      return _buildProductItem(product);
-                    },
-                  ),
-                ),
-              ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _isCheckingConnectivity
+                  ? "Checking connection..."
+                  : "You're offline. Some features may not work.",
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: CupertinoColors.systemYellow.darkColor,
+              ),
             ),
           ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: _buildOrderStatisticsBar(), // Barra fija en la parte inferior
-          ),
+          if (!_isCheckingConnectivity)
+            CupertinoButton(
+              onPressed: _handleRetryPressed,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minSize: 0,
+              borderRadius: BorderRadius.circular(6),
+              color: CupertinoColors.systemYellow.withOpacity(0.2),
+              child: Text(
+                "Retry",
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: CupertinoColors.systemYellow.darkColor,
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
   Widget _buildTabSelector() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 30),
-      child: Container(
-        decoration: BoxDecoration(
-          color: CupertinoColors.white, // Fondo blanco para que no se vea raro
-          borderRadius: BorderRadius.circular(30), // Bordes redondeados
-        ),
-        padding: const EdgeInsets.all(8),
-        child: CupertinoSegmentedControl<int>(
-          groupValue: _selectedTab,
-          onValueChanged: (int newIndex) {
-            setState(() {
-              _selectedTab = newIndex;
-            });
-          },
-          children: const {
-            0: Text(
-              "History",
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.normal,
-                color: AppColors.primaryBlue,
-              ),
-            ),
-            1: Text(
-              "Buying",
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.normal,
-                color: AppColors.primaryBlue,
-              ),
-            ),
-            2: Text(
-              "Selling",
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.normal,
-                color: AppColors.primaryBlue,
-              ),
-            ),
-          },
-          selectedColor: AppColors.primaryBlue, // Color del botón seleccionado
-          borderColor: AppColors.primaryBlue, // Borde azul para que se vea como antes
-          unselectedColor: CupertinoColors.white, // Fondo blanco para los botones no seleccionados
-          pressedColor: CupertinoColors.systemGrey4.withOpacity(0.2), // Color al presionar
+    return Container(
+      decoration: BoxDecoration(
+        color: CupertinoColors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: CupertinoColors.systemGrey.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(4),
+      child: CupertinoSegmentedControl<int>(
+        groupValue: _selectedTab,
+        onValueChanged: (int newIndex) {
+          setState(() {
+            _selectedTab = newIndex;
+          });
+          _pageController.animateToPage(
+            newIndex,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+        },
+        children: {
+          0: _buildTabItem("History", 0),
+          1: _buildTabItem("Buying", 1),
+          2: _buildTabItem("Selling", 2),
+        },
+        selectedColor: AppColors.primaryBlue,
+        borderColor: CupertinoColors.transparent,
+        unselectedColor: CupertinoColors.transparent,
+        pressedColor: AppColors.primaryBlue.withOpacity(0.1),
+      ),
+    );
+  }
+
+  Widget _buildTabItem(String title, int index) {
+    final isSelected = _selectedTab == index;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      child: Text(
+        title,
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+          color: isSelected ? CupertinoColors.white : AppColors.primaryBlue,
         ),
       ),
     );
   }
 
-  Widget _buildProductItem(Map<String, dynamic> product) {
+  Widget _buildOrdersList(List<Map<String, dynamic>> products) {
+    if (products.isEmpty) {
+      return _buildEmptyState();
+    }
+    
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+      itemCount: products.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        final product = products[index];
+        return _buildProductCard(product);
+      },
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final tabNames = ["history", "buying orders", "selling orders"];
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: CupertinoColors.systemGrey6,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(
+                _selectedTab == 0 ? CupertinoIcons.clock : 
+                _selectedTab == 1 ? CupertinoIcons.shopping_cart : 
+                CupertinoIcons.tag,
+                size: 40,
+                color: CupertinoColors.systemGrey3,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              "No ${tabNames[_selectedTab]} yet",
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: CupertinoColors.systemGrey,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Your ${tabNames[_selectedTab]} will appear here when available.",
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: CupertinoColors.systemGrey2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductCard(Map<String, dynamic> product) {
     return CupertinoButton(
       padding: EdgeInsets.zero,
       onPressed: () {
@@ -397,160 +531,207 @@ class _OrdersScreenState extends State<OrdersScreen> {
         );
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: CupertinoColors.systemGrey.withOpacity(0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            // Product Image
             ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: FutureBuilder<File?>(
-                future: _loadCachedImage(product["image"]),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    // microoptimization const
-                    return const CupertinoActivityIndicator();
-                  } else if (snapshot.hasError || snapshot.data == null) {
-                    return SvgPicture.asset(
-                      "assets/svgs/ImagePlaceHolder.svg",
-                      width: 100,
-                      height: 100,
-                      fit: BoxFit.cover,
-                    );
-                  } else {
-                    return Image.file(
-                      snapshot.data!,
-                      width: 100,
-                      height: 100,
-                      fit: BoxFit.cover,
-                    );
-                  }
-                },
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: 80,
+                height: 80,
+                color: CupertinoColors.systemGrey6,
+                child: FutureBuilder<File?>(
+                  future: _loadCachedImage(product["image"]),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CupertinoActivityIndicator(radius: 12),
+                      );
+                    } else if (snapshot.hasError || snapshot.data == null) {
+                      return SvgPicture.asset(
+                        "assets/svgs/ImagePlaceHolder.svg",
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                      );
+                    } else {
+                      return Image.file(
+                        snapshot.data!,
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                      );
+                    }
+                  },
+                ),
               ),
             ),
-            const SizedBox(width: 10),
+            
+            const SizedBox(width: 16),
+            
+            // Product Info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     product["name"]!,
-                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: CupertinoColors.black,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 4),
                   Text(
                     product["details"]!,
-                    style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: CupertinoColors.systemGrey,
+                    ),
                   ),
-                  if (product.containsKey("price"))
-                    Text(
-                      product["price"]!,
-                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.primaryBlue),
-                    ),
-                  if (product.containsKey("status"))
-                    Text(
-                      product["status"]!,
-                      style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
-                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      if (product.containsKey("price"))
+                        Text(
+                          product["price"]!,
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primaryBlue,
+                          ),
+                        ),
+                      const Spacer(),
+                      if (product.containsKey("status"))
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _getStatusColor(product["status"]!).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            product["status"]!,
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: _getStatusColor(product["status"]!),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
-            if (_selectedTab != 2) ...[
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
+            
+            const SizedBox(width: 12),
+            
+            // Action Buttons
+            Column(
+              children: [
+                if (_selectedTab != 2)
+                  _buildActionButton(
+                    icon: CupertinoIcons.chat_bubble_text,
                     color: AppColors.primaryBlue,
+                    onPressed: () {},
                   ),
-                  child: const Icon(
-                    CupertinoIcons.chat_bubble,
-                    color: CupertinoColors.white,
-                    size: 20,
-                  ),
-                ),
-                onPressed: () {},
-              ),
-            ],
-            const SizedBox(width: 10),
-            if (_selectedTab == 1 && product["status"] == "Unpaid")
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () {
-                  if (!_isConnected) {
-                    showCupertinoDialog(
-                      context: context,
-                      builder: (ctx) => CupertinoAlertDialog(
-                        title: const Text("Uh! Oh!"),
-                        content: const Text("You can't make payments offline."),
-                        actions: [
-                          CupertinoDialogAction(
-                            child: const Text("OK"),
-                            onPressed: () => Navigator.pop(ctx),
+                
+                if (_selectedTab != 2) const SizedBox(height: 8),
+                
+                if (_selectedTab == 1 && product["status"] == "Unpaid")
+                  _buildActionButton(
+                    icon: CupertinoIcons.creditcard,
+                    color: CupertinoColors.systemGreen,
+                    onPressed: () {
+                      if (!_isConnected) {
+                        _showOfflineAlert();
+                      } else {
+                        Navigator.push(
+                          context,
+                          CupertinoPageRoute(
+                            builder: (context) => PaymentScreen(
+                              productId: product["productId"],
+                              orderId: product["orderId"],
+                            ),
                           ),
-                        ],
-                      ),
-                    );
-                  } else {
-                    Navigator.push(
-                      context,
-                      CupertinoPageRoute(
-                        builder: (context) => PaymentScreen(
-                          productId: product["productId"],
-                          orderId: product["orderId"],
-                        ),
-                      ),
-                    );
-                  }
-                },
-                child: Text(
-                  "Complete",
-                  style: GoogleFonts.inter(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                        );
+                      }
+                    },
+                  ),
+                
+                if (product["status"] == "Purchased")
+                  _buildActionButton(
+                    icon: CupertinoIcons.doc_text,
                     color: AppColors.primaryBlue,
+                    onPressed: () async {
+                      await _generateAndCacheReceipt(product);
+                    },
                   ),
-                ),
-              ),
-            if (product["status"] == "Purchased")
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () async {
-                  await _generateAndCacheReceipt(product);
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.primaryBlue,
-                  ),
-                  child: const Icon(
-                    CupertinoIcons.printer,
-                    color: CupertinoColors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-            if (_selectedTab == 2) ...[
-              const SizedBox(width: 10),
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.lightGreyBackground,
-                  ),
-                  child: const Icon(
-                    CupertinoIcons.clear_circled,
+                
+                if (_selectedTab == 2)
+                  _buildActionButton(
+                    icon: CupertinoIcons.ellipsis_circle,
                     color: CupertinoColors.systemGrey,
-                    size: 20,
+                    onPressed: () {},
                   ),
-                ),
-                onPressed: () {},
-              ),
-            ]
+              ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: onPressed,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          icon,
+          color: color,
+          size: 18,
+        ),
+      ),
+    );
+  }
+
+  void _showOfflineAlert() {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text("Connection Required"),
+        content: const Text("You need an internet connection to make payments."),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text("OK"),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+        ],
       ),
     );
   }
@@ -567,7 +748,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Future<void> _generateAndCacheReceipt(Map<String, dynamic> product) async {
     try {
-      // Verificar si el archivo ya está en el caché
       final cachedFile = await DefaultCacheManager().getFileFromCache('${product["orderId"]}_receipt.txt');
       if (cachedFile != null) {
         print("Receipt already cached: ${cachedFile.file.path}");
@@ -575,31 +755,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return;
       }
 
-      // Generar el contenido del recibo
       final receiptContent = '''
 Order Receipt
 =============
 Order ID: ${product["orderId"]}
-Product Name: ${product["name"]}
+Product: ${product["name"]}
 Price: ${product["price"]}
 Status: ${product["status"]}
 Order Date: ${product["details"]}
 ''';
 
-      // Crear un archivo temporal para el recibo
       final tempDir = await getTemporaryDirectory();
       final receiptFile = File('${tempDir.path}/${product["orderId"]}_receipt.txt');
 
-      // Escribir el contenido en el archivo
       await receiptFile.writeAsString(receiptContent);
 
-      // Guardar el archivo en el caché
       await DefaultCacheManager().putFile(
         receiptFile.path,
         receiptFile.readAsBytesSync(),
       );
 
-      // Abrir el archivo generado
       await OpenFile.open(receiptFile.path);
 
       print("Receipt generated and cached: ${receiptFile.path}");
@@ -608,90 +783,108 @@ Order Date: ${product["details"]}
     }
   }
 
-  Future<void> _saveToDownloads(File file) async {
-    final downloadsDir = await getApplicationDocumentsDirectory(); // Cambiar a getDownloadsDirectory() si es compatible
-    final newFile = File('${downloadsDir.path}/${file.path.split('/').last}');
-    await file.copy(newFile.path);
-    print("File saved to downloads: ${newFile.path}");
-  }
-
-  Widget _buildOrderStatistics() {
+  Widget _buildOrderStatisticsBar() {
     if (_orderStatistics == null) {
-      return const Center(child: CupertinoActivityIndicator());
+      return Container(
+        height: 80,
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        decoration: BoxDecoration(
+          color: CupertinoColors.white,
+          boxShadow: [
+            BoxShadow(
+              color: CupertinoColors.systemGrey.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: CupertinoActivityIndicator(),
+        ),
+      );
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      decoration: BoxDecoration(
+        color: CupertinoColors.white,
+        boxShadow: [
+          BoxShadow(
+            color: CupertinoColors.systemGrey.withOpacity(0.1),
+            blurRadius: 15,
+            offset: const Offset(0, -3),
+          ),
+        ],
+      ),
+      child: Row(
         children: [
-          Text(
-            "Order Statistics",
-            style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+          Expanded(
+            child: _buildStatItem(
+              "Total Spent",
+              "${_orderStatistics!["totalSpent"].toStringAsFixed(2)} \$",
+              AppColors.primaryBlue,
+            ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            "Total Spent: ${_orderStatistics!["totalSpent"].toStringAsFixed(2)} \$",
-            style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
+          Container(
+            width: 1,
+            height: 30,
+            color: CupertinoColors.separator,
           ),
-          Text(
-            "Completed Orders: ${_orderStatistics!["completedOrders"]}",
-            style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
+          Expanded(
+            child: _buildStatItem(
+              "Completed",
+              "${_orderStatistics!["completedOrders"]}",
+              CupertinoColors.systemGreen,
+            ),
           ),
-          Text(
-            "Unpaid Orders: ${_orderStatistics!["unpaidOrders"]}",
-            style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
+          Container(
+            width: 1,
+            height: 30,
+            color: CupertinoColors.separator,
+          ),
+          Expanded(
+            child: _buildStatItem(
+              "Unpaid",
+              "${_orderStatistics!["unpaidOrders"]}",
+              CupertinoColors.systemOrange,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildOrderStatisticsBar() {
-    if (_orderStatistics == null) {
-      return const SizedBox.shrink(); // No mostrar nada si las estadísticas no están listas
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.white,
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withOpacity(0.2),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
+  Widget _buildStatItem(String label, String value, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: color,
           ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            "Total Spent: ${_orderStatistics!["totalSpent"].toStringAsFixed(2)} \$",
-            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: CupertinoColors.systemGrey,
           ),
-          Text(
-            "Completed: ${_orderStatistics!["completedOrders"]}",
-            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
-          ),
-          Text(
-            "Unpaid: ${_orderStatistics!["unpaidOrders"]}",
-            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
 Future<Map<String, dynamic>> _calculateOrderStatistics(List<Map<String, dynamic>> orders) async {
-  //  compute() to offload the statistics calculation to a separate isolate
   return compute(_processOrderStatistics, orders);
 }
 
 Map<String, dynamic> _processOrderStatistics(List<Map<String, dynamic>> orders) {
-  // Process the orders to calculate statistics
   double totalSpent = 0;
   int completedOrders = 0;
   int unpaidOrders = 0;
