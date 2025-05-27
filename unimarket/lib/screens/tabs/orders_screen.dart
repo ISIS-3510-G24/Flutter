@@ -16,6 +16,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:flutter/foundation.dart';
+import 'package:unimarket/data/firebase_dao.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -42,6 +43,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _isCheckingConnectivity = false;
 
   Map<String, dynamic>? _orderStatistics;
+  
+  // Selection mode variables
+  bool _isSelectionMode = false;
+  Set<String> _selectedOrderIds = {};
 
   @override
   void initState() {
@@ -94,13 +99,196 @@ class _OrdersScreenState extends State<OrdersScreen> {
     super.dispose();
   }
 
-  void _clearCache() async {
-    await _ordersCache.clear();
+  void _toggleSelectionMode() {
+    setState(() {
+      _isSelectionMode = !_isSelectionMode;
+      if (!_isSelectionMode) {
+        _selectedOrderIds.clear();
+      }
+    });
+  }
+
+  void _toggleOrderSelection(String orderId) {
+    setState(() {
+      if (_selectedOrderIds.contains(orderId)) {
+        _selectedOrderIds.remove(orderId);
+      } else {
+        _selectedOrderIds.add(orderId);
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedOrders() async {
+    if (_selectedOrderIds.isEmpty) return;
+
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text("Delete Orders"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text("Are you sure you want to permanently delete ${_selectedOrderIds.length} selected orders?"),
+            const SizedBox(height: 8),
+            const Text(
+              "This action cannot be undone and will remove the orders from both your device and the server.",
+              style: TextStyle(
+                fontSize: 12,
+                color: CupertinoColors.systemRed,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text("Cancel"),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text("Delete Permanently"),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    ) ?? false;
+
+    if (confirmed) {
+      // Show loading state
+      setState(() {
+        _isSelectionMode = false; // Hide selection UI while processing
+      });
+
+      if (!_isConnected) {
+        _showOfflineAlert();
+        setState(() {
+          _isSelectionMode = true; // Restore selection mode
+        });
+        return;
+      }
+
+      try {
+        // Delete from Firebase using batch operation (more efficient)
+        final firebaseDAO = FirebaseDAO();
+        print("🗑️ Deleting ${_selectedOrderIds.length} orders from Firebase...");
+        
+        final deletionResults = await firebaseDAO.deleteMultipleOrders(_selectedOrderIds.toList());
+        
+        // Separate successful and failed deletions
+        final successfullyDeleted = <String>{};
+        final failedDeletions = <String>{};
+        
+        deletionResults.forEach((orderId, success) {
+          if (success) {
+            successfullyDeleted.add(orderId);
+          } else {
+            failedDeletions.add(orderId);
+          }
+        });
+
+        if (successfullyDeleted.isNotEmpty) {
+          // Remove successfully deleted orders from cache
+          for (String orderId in successfullyDeleted) {
+            await _ordersCache.remove(orderId);
+          }
+          
+          // Remove from UI lists
+          setState(() {
+            buyingProducts.removeWhere((order) => successfullyDeleted.contains(order['orderId']));
+            historyProducts.removeWhere((order) => successfullyDeleted.contains(order['orderId']));
+            sellingProducts.removeWhere((order) => successfullyDeleted.contains(order['orderId']));
+          });
+
+          // Recalculate statistics
+          _calculateOrderStatistics(historyProducts).then((stats) {
+            setState(() {
+              _orderStatistics = stats;
+            });
+          });
+
+          print("✅ Successfully deleted ${successfullyDeleted.length} orders");
+        }
+
+        // Show result to user
+        if (failedDeletions.isEmpty) {
+          // All deletions successful
+          _showSuccessDialog("Orders Deleted", "Successfully deleted ${successfullyDeleted.length} orders.");
+        } else if (successfullyDeleted.isEmpty) {
+          // All deletions failed
+          _showErrorDialog("Deletion Failed", "Failed to delete the selected orders. Please check your permissions and try again.");
+        } else {
+          // Partial success
+          _showErrorDialog("Partial Success", "Successfully deleted ${successfullyDeleted.length} orders, but ${failedDeletions.length} orders could not be deleted. Please try again for the remaining orders.");
+        }
+
+      } catch (e) {
+        print("❌ Error during deletion process: $e");
+        _showErrorDialog("Deletion Error", "An error occurred while deleting orders: $e");
+      } finally {
+        setState(() {
+          _selectedOrderIds.clear();
+          _isSelectionMode = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshAllOrders() async {
+    // Clear current data
     setState(() {
       buyingProducts = [];
       historyProducts = [];
       sellingProducts = [];
+      _orderStatistics = null;
     });
+
+    // Clear cache to force refresh from Firebase
+    await _ordersCache.clear();
+
+    // Reload all orders
+    await Future.wait([
+      _loadOrdersWithCache("buying", _fetchBuyingOrders),
+      _loadOrdersWithCache("history", _fetchHistoryOrders),
+      _loadOrdersWithCache("selling", _fetchSellingOrders),
+    ]);
+
+    // Recalculate statistics
+    _calculateOrderStatistics(historyProducts).then((stats) {
+      setState(() {
+        _orderStatistics = stats;
+      });
+    });
+  }
+
+  void _clearCache() async {
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text("Clear All Cache"),
+        content: const Text("This will remove all cached orders. Are you sure?"),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text("Cancel"),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text("Clear"),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    ) ?? false;
+
+    if (confirmed) {
+      await _ordersCache.clear();
+      setState(() {
+        buyingProducts = [];
+        historyProducts = [];
+        sellingProducts = [];
+        _orderStatistics = null;
+      });
+    }
   }
 
   void _checkAndShowPeakHourNotification() {
@@ -109,14 +297,49 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Future<void> _loadOrdersWithCache(
       String cacheKey, Future<List<Map<String, dynamic>>> Function() fetchFunction) async {
-    final cachedOrders = <Map<String, dynamic>>[];
-    for (var order in buyingProducts) {
-      final cachedOrder = _ordersCache.get(order['orderId']);
-      if (cachedOrder != null) {
-        cachedOrders.add(cachedOrder);
+    
+    // First, try to load from cache based on the cache key
+    List<Map<String, dynamic>> cachedOrders = [];
+    
+    try {
+      // Get all cached orders and filter by type
+      final allCachedKeys = _ordersCache.keys.toList();
+      print("🔍 Checking cache for $cacheKey. Total cached items: ${allCachedKeys.length}");
+      
+      for (var key in allCachedKeys) {
+        final cachedOrder = _ordersCache.get(key);
+        if (cachedOrder != null) {
+          // Filter orders based on cache key type
+          bool shouldInclude = false;
+          switch (cacheKey) {
+            case "buying":
+              shouldInclude = ['Delivered', 'Purchased', 'Unpaid'].contains(cachedOrder['status']);
+              break;
+            case "history":
+              shouldInclude = cachedOrder['status'] == 'Purchased';
+              break;
+            case "selling":
+              // For selling, we would need to check if current user is the seller
+              // For now, we'll fetch from Firebase for selling orders
+              shouldInclude = false;
+              break;
+          }
+          
+          if (shouldInclude) {
+            cachedOrders.add(cachedOrder);
+          }
+        }
       }
+      
+      print("🔍 Found ${cachedOrders.length} cached orders for $cacheKey");
+    } catch (e) {
+      print("❌ Error reading from cache: $e");
+      cachedOrders = [];
     }
+    
+    // If we have cached orders, use them instead of fetching from Firebase
     if (cachedOrders.isNotEmpty) {
+      print("🟢 Using cached orders for $cacheKey: ${cachedOrders.length} items");
       setState(() {
         if (cacheKey == "buying") buyingProducts = cachedOrders;
         if (cacheKey == "history") historyProducts = cachedOrders;
@@ -124,15 +347,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
       });
       return;
     }
-    final orders = await fetchFunction();
-    for (var order in orders) {
-      await _ordersCache.put(order['orderId'], order);
+    
+    // Only fetch from Firebase if cache is empty
+    print("🔄 Cache empty for $cacheKey, fetching from Firebase...");
+    try {
+      final orders = await fetchFunction();
+      
+      // Add fetched orders to cache
+      for (var order in orders) {
+        await _ordersCache.put(order['orderId'], order);
+      }
+      
+      setState(() {
+        if (cacheKey == "buying") buyingProducts = orders;
+        if (cacheKey == "history") historyProducts = orders;
+        if (cacheKey == "selling") sellingProducts = orders;
+      });
+      
+      print("✅ Fetched and cached ${orders.length} orders for $cacheKey");
+    } catch (e) {
+      print("❌ Error fetching $cacheKey orders: $e");
+      // Set empty list on error
+      setState(() {
+        if (cacheKey == "buying") buyingProducts = [];
+        if (cacheKey == "history") historyProducts = [];
+        if (cacheKey == "selling") sellingProducts = [];
+      });
     }
-    setState(() {
-      if (cacheKey == "buying") buyingProducts = orders;
-      if (cacheKey == "history") historyProducts = orders;
-      if (cacheKey == "selling") sellingProducts = orders;
-    });
   }
 
   Future<List<Map<String, dynamic>>> _fetchBuyingOrders() async {
@@ -271,30 +512,77 @@ class _OrdersScreenState extends State<OrdersScreen> {
       navigationBar: CupertinoNavigationBar(
         backgroundColor: CupertinoColors.white.withOpacity(0.9),
         border: Border.all(color: CupertinoColors.separator, width: 0.5),
+        leading: _isSelectionMode ? CupertinoButton(
+          padding: EdgeInsets.zero,
+          child: const Text(
+            "Cancel",
+            style: TextStyle(color: AppColors.primaryBlue),
+          ),
+          onPressed: _toggleSelectionMode,
+        ) : null,
         middle: Text(
-          "Orders",
+          _isSelectionMode ? "${_selectedOrderIds.length} Selected" : "Orders",
           style: GoogleFonts.inter(
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: CupertinoColors.black,
           ),
         ),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: CupertinoColors.systemRed.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+        trailing: _isSelectionMode ? 
+          _selectedOrderIds.isNotEmpty ? CupertinoButton(
+            padding: EdgeInsets.zero,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: CupertinoColors.systemRed.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                CupertinoIcons.delete,
+                color: CupertinoColors.systemRed,
+                size: 18,
+              ),
             ),
-            child: const Icon(
-              CupertinoIcons.trash,
-              color: CupertinoColors.systemRed,
-              size: 18,
-            ),
+            onPressed: _deleteSelectedOrders,
+          ) : null
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryBlue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.refresh,
+                    color: AppColors.primaryBlue,
+                    size: 18,
+                  ),
+                ),
+                onPressed: _refreshAllOrders,
+              ),
+              const SizedBox(width: 8),
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemRed.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.trash,
+                    color: CupertinoColors.systemRed,
+                    size: 18,
+                  ),
+                ),
+                onPressed: _toggleSelectionMode,
+              ),
+            ],
           ),
-          onPressed: _clearCache,
-        ),
       ),
       child: SafeArea(
         child: Column(
@@ -519,22 +807,29 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Widget _buildProductCard(Map<String, dynamic> product) {
+    final isSelected = _selectedOrderIds.contains(product['orderId']);
+    
     return CupertinoButton(
       padding: EdgeInsets.zero,
       onPressed: () {
-        _ordersCache.put(product['orderId'], product);
-        Navigator.push(
-          context,
-          CupertinoPageRoute(
-            builder: (context) => OrderDetailsScreen(order: product),
-          ),
-        );
+        if (_isSelectionMode) {
+          _toggleOrderSelection(product['orderId']);
+        } else {
+          _ordersCache.put(product['orderId'], product);
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (context) => OrderDetailsScreen(order: product),
+            ),
+          );
+        }
       },
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: CupertinoColors.white,
+          color: isSelected ? AppColors.primaryBlue.withOpacity(0.1) : CupertinoColors.white,
           borderRadius: BorderRadius.circular(16),
+          border: isSelected ? Border.all(color: AppColors.primaryBlue, width: 2) : null,
           boxShadow: [
             BoxShadow(
               color: CupertinoColors.systemGrey.withOpacity(0.08),
@@ -545,6 +840,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ),
         child: Row(
           children: [
+            // Selection indicator
+            if (_isSelectionMode)
+              Container(
+                margin: const EdgeInsets.only(right: 12),
+                child: Icon(
+                  isSelected ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.circle,
+                  color: isSelected ? AppColors.primaryBlue : CupertinoColors.systemGrey3,
+                  size: 24,
+                ),
+              ),
+            
             // Product Image
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
@@ -639,58 +945,60 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ),
             ),
             
-            const SizedBox(width: 12),
-            
-            // Action Buttons
-            Column(
-              children: [
-                if (_selectedTab != 2)
-                  _buildActionButton(
-                    icon: CupertinoIcons.chat_bubble_text,
-                    color: AppColors.primaryBlue,
-                    onPressed: () {},
-                  ),
-                
-                if (_selectedTab != 2) const SizedBox(height: 8),
-                
-                if (_selectedTab == 1 && product["status"] == "Unpaid")
-                  _buildActionButton(
-                    icon: CupertinoIcons.creditcard,
-                    color: CupertinoColors.systemGreen,
-                    onPressed: () {
-                      if (!_isConnected) {
-                        _showOfflineAlert();
-                      } else {
-                        Navigator.push(
-                          context,
-                          CupertinoPageRoute(
-                            builder: (context) => PaymentScreen(
-                              productId: product["productId"],
-                              orderId: product["orderId"],
+            if (!_isSelectionMode) ...[
+              const SizedBox(width: 12),
+              
+              // Action Buttons
+              Column(
+                children: [
+                  if (_selectedTab != 2)
+                    _buildActionButton(
+                      icon: CupertinoIcons.chat_bubble_text,
+                      color: AppColors.primaryBlue,
+                      onPressed: () {},
+                    ),
+                  
+                  if (_selectedTab != 2) const SizedBox(height: 8),
+                  
+                  if (_selectedTab == 1 && product["status"] == "Unpaid")
+                    _buildActionButton(
+                      icon: CupertinoIcons.creditcard,
+                      color: CupertinoColors.systemGreen,
+                      onPressed: () {
+                        if (!_isConnected) {
+                          _showOfflineAlert();
+                        } else {
+                          Navigator.push(
+                            context,
+                            CupertinoPageRoute(
+                              builder: (context) => PaymentScreen(
+                                productId: product["productId"],
+                                orderId: product["orderId"],
+                              ),
                             ),
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                
-                if (product["status"] == "Purchased")
-                  _buildActionButton(
-                    icon: CupertinoIcons.doc_text,
-                    color: AppColors.primaryBlue,
-                    onPressed: () async {
-                      await _generateAndCacheReceipt(product);
-                    },
-                  ),
-                
-                if (_selectedTab == 2)
-                  _buildActionButton(
-                    icon: CupertinoIcons.ellipsis_circle,
-                    color: CupertinoColors.systemGrey,
-                    onPressed: () {},
-                  ),
-              ],
-            ),
+                          );
+                        }
+                      },
+                    ),
+                  
+                  if (product["status"] == "Purchased")
+                    _buildActionButton(
+                      icon: CupertinoIcons.doc_text,
+                      color: AppColors.primaryBlue,
+                      onPressed: () async {
+                        await _generateAndCacheReceipt(product);
+                      },
+                    ),
+                  
+                  if (_selectedTab == 2)
+                    _buildActionButton(
+                      icon: CupertinoIcons.ellipsis_circle,
+                      color: CupertinoColors.systemGrey,
+                      onPressed: () {},
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -725,7 +1033,39 @@ class _OrdersScreenState extends State<OrdersScreen> {
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
         title: const Text("Connection Required"),
-        content: const Text("You need an internet connection to make payments."),
+        content: const Text("You need an internet connection to delete orders from the server."),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text("OK"),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSuccessDialog(String title, String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text("OK"),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showErrorDialog(String title, String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
         actions: [
           CupertinoDialogAction(
             child: const Text("OK"),
@@ -737,11 +1077,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Future<File?> _loadCachedImage(String? imageUrl) async {
-    if (imageUrl == null || imageUrl.isEmpty) return null;
+    if (imageUrl == null || imageUrl.isEmpty || imageUrl.startsWith('assets/')) {
+      return null;
+    }
+    
     try {
+      print("🖼️ Loading cached image: $imageUrl");
       final file = await DefaultCacheManager().getSingleFile(imageUrl);
-      return file.existsSync() ? file : null;
+      if (file.existsSync()) {
+        print("✅ Image loaded from cache successfully");
+        return file;
+      } else {
+        print("❌ Cached image file doesn't exist");
+        return null;
+      }
     } catch (e) {
+      print("❌ Error loading cached image: $e");
+      // If it's a 403 error or any other error, return null to show placeholder
       return null;
     }
   }

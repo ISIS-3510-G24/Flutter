@@ -62,6 +62,128 @@ Future<String> createUser(String email, String password, String bio, String disp
     }
   }
 
+  // Agregar este método a tu FirebaseDAO existente
+
+/// Elimina una orden específica de Firestore
+Future<bool> deleteOrder(String orderId) async {
+  try {
+    print("🔥 Attempting to delete order from Firebase: $orderId");
+    
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("❌ User not authenticated for order deletion");
+      return false;
+    }
+
+    // Get the order first to verify user permissions
+    final orderDoc = await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(orderId)
+        .get();
+
+    if (!orderDoc.exists) {
+      print("❌ Order not found: $orderId");
+      return false;
+    }
+
+    final orderData = orderDoc.data() as Map<String, dynamic>;
+    final buyerId = orderData['buyerID'] as String?;
+    final sellerId = orderData['sellerID'] as String?;
+
+    // Verify that the current user is either the buyer or seller
+    if (buyerId != user.uid && sellerId != user.uid) {
+      print("❌ User ${user.uid} not authorized to delete order $orderId");
+      print("   Buyer: $buyerId, Seller: $sellerId");
+      return false;
+    }
+
+    // Delete the order
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(orderId)
+        .delete();
+
+    print("✅ Successfully deleted order from Firebase: $orderId");
+    return true;
+
+  } catch (e) {
+    print("❌ Error deleting order $orderId: $e");
+    return false;
+  }
+}
+
+/// Elimina múltiples órdenes en batch (más eficiente)
+Future<Map<String, bool>> deleteMultipleOrders(List<String> orderIds) async {
+  final results = <String, bool>{};
+  
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("❌ User not authenticated for batch order deletion");
+      for (String orderId in orderIds) {
+        results[orderId] = false;
+      }
+      return results;
+    }
+
+    final batch = FirebaseFirestore.instance.batch();
+    final ordersToDelete = <String>[];
+
+    // First, verify permissions for all orders
+    for (String orderId in orderIds) {
+      try {
+        final orderDoc = await FirebaseFirestore.instance
+            .collection('orders')
+            .doc(orderId)
+            .get();
+
+        if (!orderDoc.exists) {
+          print("❌ Order not found: $orderId");
+          results[orderId] = false;
+          continue;
+        }
+
+        final orderData = orderDoc.data() as Map<String, dynamic>;
+        final buyerId = orderData['buyerID'] as String?;
+        final sellerId = orderData['sellerID'] as String?;
+
+        // Verify permissions
+        if (buyerId == user.uid || sellerId == user.uid) {
+          ordersToDelete.add(orderId);
+          batch.delete(FirebaseFirestore.instance.collection('orders').doc(orderId));
+        } else {
+          print("❌ User not authorized to delete order: $orderId");
+          results[orderId] = false;
+        }
+      } catch (e) {
+        print("❌ Error checking order $orderId: $e");
+        results[orderId] = false;
+      }
+    }
+
+    // Execute batch deletion
+    if (ordersToDelete.isNotEmpty) {
+      await batch.commit();
+      print("✅ Successfully deleted ${ordersToDelete.length} orders in batch");
+      
+      for (String orderId in ordersToDelete) {
+        results[orderId] = true;
+      }
+    }
+
+    return results;
+
+  } catch (e) {
+    print("❌ Error in batch deletion: $e");
+    // Mark all as failed if batch fails
+    for (String orderId in orderIds) {
+      results[orderId] = results[orderId] ?? false;
+    }
+    return results;
+  }
+}
+  
+
 Future<String?> createOrder(Map<String, dynamic> orderData) async {
   try {
     final docRef = await _firestore
@@ -73,6 +195,8 @@ Future<String?> createOrder(Map<String, dynamic> orderData) async {
     return null;
   }
 }
+
+
 
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<GET OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
