@@ -161,65 +161,28 @@ class _FindsScreenState extends State<FindsScreen> {
         previousPageTitle: "Find & Offer",
       ),
       child: SafeArea(
-        child: _isLoading
-            ? const Center(child: CupertinoActivityIndicator())
-            : SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Imagen principal
-                    _buildMainImage(),
-                    
-                    // Detalles del Find
-                    _buildFindDetails(),
-                    
-                    // Sección de Ofertas
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Column(
+          children: [
+            _buildConnectivityBanner(), // Mostrar el banner de conectividad
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CupertinoActivityIndicator())
+                  : SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            "Available Offers",
-                            style: GoogleFonts.inter(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          CupertinoButton(
-                            padding: EdgeInsets.zero,
-                            onPressed: _showFilterDialog, // Mostrar el diálogo de filtro
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  CupertinoIcons.sort_down,
-                                  size: 18,
-                                  color: AppColors.primaryBlue,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  "Filter",
-                                  style: GoogleFonts.inter(
-                                    fontSize: 14,
-                                    color: AppColors.primaryBlue,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                          _buildMainImage(),
+                          _buildFindDetails(),
+                          _offers.isEmpty
+                              ? _buildNoOffersWidget()
+                              : _buildOffersList(),
+                          const SizedBox(height: 24),
                         ],
                       ),
                     ),
-                    
-                    // Lista de ofertas o mensaje de "no hay ofertas"
-                    _offers.isEmpty
-                        ? _buildNoOffersWidget()
-                        : _buildOffersList(),
-                    
-                    const SizedBox(height: 24),
-                  ],
-                ),
-              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -649,6 +612,40 @@ void _showFilterDialog() {
       ),
     ),
   );
+}
+
+Widget _buildConnectivityBanner() {
+  if (!_isConnected || _isCheckingConnectivity) {
+    return Container(
+      width: double.infinity,
+      color: CupertinoColors.systemYellow.withOpacity(0.3),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: Row(
+        children: [
+          _isCheckingConnectivity
+              ? const CupertinoActivityIndicator(radius: 8)
+              : const Icon(
+                  CupertinoIcons.exclamationmark_triangle,
+                  size: 16,
+                  color: CupertinoColors.systemYellow,
+                ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _isCheckingConnectivity
+                  ? "Checking internet connection..."
+                  : "You are offline. Some features may not work.",
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: CupertinoColors.systemGrey,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  return const SizedBox.shrink();
 }
 }
 
