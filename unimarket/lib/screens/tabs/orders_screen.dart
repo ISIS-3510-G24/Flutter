@@ -15,6 +15,7 @@ import 'package:unimarket/screens/orders/order_details_screen.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
+import 'package:flutter/foundation.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -39,13 +40,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _isConnected = true;
   bool _isCheckingConnectivity = false;
 
+  Map<String, dynamic>? _orderStatistics;
+
   @override
   void initState() {
     super.initState();
     _initializeCache().then((_) {
       _setupConnectivityListener();
       _loadOrdersWithCache("buying", _fetchBuyingOrders);
-      _loadOrdersWithCache("history", _fetchHistoryOrders);
+      _loadOrdersWithCache("history", _fetchHistoryOrders).then((_) {
+        _calculateOrderStatistics(historyProducts).then((stats) {
+          setState(() {
+            _orderStatistics = stats;
+          });
+        });
+      });
       _loadOrdersWithCache("selling", _fetchSellingOrders);
       _checkAndShowPeakHourNotification();
     });
@@ -164,7 +173,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       final snapshot = await FirebaseFirestore.instance
           .collection('orders')
           .where('buyerID', isEqualTo: user.uid)
-          .where('status', isEqualTo: 'Completed')
+          .where('status', isEqualTo: 'Purchased')
           .get();
 
       return await Future.wait(snapshot.docs.map((doc) async {
@@ -241,11 +250,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   @override
-
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        //microoptimization const 
         middle: const Text(
           "Orders",
           style: TextStyle(fontWeight: FontWeight.bold),
@@ -255,7 +262,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
           child: const Icon(CupertinoIcons.trash, color: AppColors.primaryBlue),
           onPressed: _clearCache,
         ),
-
       ),
       child: Stack(
         children: [
@@ -290,12 +296,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                         if (!_isCheckingConnectivity)
                           CupertinoButton(
-                            onPressed: () {}, // Add an empty callback or your desired functionality
+                            onPressed: _handleRetryPressed,
                             padding: EdgeInsets.zero,
                             minSize: 0,
-
                             child: const Text(
-
                               "Retry",
                               style: TextStyle(fontSize: 12, color: AppColors.primaryBlue),
                             ),
@@ -307,11 +311,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 _buildTabSelector(),
                 const SizedBox(height: 10),
                 Expanded(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: ListView.builder(
+                    padding: const EdgeInsets.only(left: 20, right: 20, bottom: 60), // Espacio para la barra
                     itemCount: _getCurrentProducts().length,
-                    separatorBuilder: (context, index) =>
-                        Container(height: 1, color: AppColors.lightGreyBackground),
                     itemBuilder: (context, index) {
                       final product = _getCurrentProducts()[index];
                       return _buildProductItem(product);
@@ -320,6 +322,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 ),
               ],
             ),
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: _buildOrderStatisticsBar(), // Barra fija en la parte inferior
           ),
         ],
       ),
@@ -607,4 +613,98 @@ Order Date: ${product["details"]}
     await file.copy(newFile.path);
     print("File saved to downloads: ${newFile.path}");
   }
+
+  Widget _buildOrderStatistics() {
+    if (_orderStatistics == null) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Order Statistics",
+            style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Total Spent: ${_orderStatistics!["totalSpent"].toStringAsFixed(2)} \$",
+            style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
+          ),
+          Text(
+            "Completed Orders: ${_orderStatistics!["completedOrders"]}",
+            style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
+          ),
+          Text(
+            "Unpaid Orders: ${_orderStatistics!["unpaidOrders"]}",
+            style: GoogleFonts.inter(fontSize: 14, color: CupertinoColors.systemGrey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrderStatisticsBar() {
+    if (_orderStatistics == null) {
+      return const SizedBox.shrink(); // No mostrar nada si las estadísticas no están listas
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      decoration: BoxDecoration(
+        color: CupertinoColors.white,
+        boxShadow: [
+          BoxShadow(
+            color: CupertinoColors.systemGrey.withOpacity(0.2),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            "Total Spent: ${_orderStatistics!["totalSpent"].toStringAsFixed(2)} \$",
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+          ),
+          Text(
+            "Completed: ${_orderStatistics!["completedOrders"]}",
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+          ),
+          Text(
+            "Unpaid: ${_orderStatistics!["unpaidOrders"]}",
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<Map<String, dynamic>> _calculateOrderStatistics(List<Map<String, dynamic>> orders) async {
+  return compute(_processOrderStatistics, orders);
+}
+
+Map<String, dynamic> _processOrderStatistics(List<Map<String, dynamic>> orders) {
+  double totalSpent = 0;
+  int completedOrders = 0;
+  int unpaidOrders = 0;
+
+  for (var order in orders) {
+    if (order["status"] == "Purchased") {
+      totalSpent += double.tryParse(order["price"].replaceAll(" \$", "").replaceAll(".", "")) ?? 0;
+      completedOrders++;
+    } else if (order["status"] == "Unpaid") {
+      unpaidOrders++;
+    }
+  }
+
+  return {
+    "totalSpent": totalSpent,
+    "completedOrders": completedOrders,
+    "unpaidOrders": unpaidOrders,
+  };
 }
