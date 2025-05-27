@@ -62,7 +62,17 @@ Future<String> createUser(String email, String password, String bio, String disp
     }
   }
 
-
+Future<String?> createOrder(Map<String, dynamic> orderData) async {
+  try {
+    final docRef = await _firestore
+        .collection('orders')
+        .add(orderData);
+    return docRef.id;
+  } catch (e) {
+    print("Error creating order: $e");
+    return null;
+  }
+}
 
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<GET OPERATIONS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
